@@ -1,6 +1,12 @@
 #include "BlendModes.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#define KABURAGI_USE_SSE2 1
+#include <emmintrin.h>
+#endif
 
 namespace Kaburagi {
 
@@ -38,94 +44,243 @@ const std::vector<BlendModeInfo>& getAllBlendModes() {
     return s_modes;
 }
 
+// pixman / Skia スタイルの高精度 255 除算 (0〜65025 で誤差 0)
+static inline uint32_t div255(uint32_t v) {
+    return (v + 1 + (v >> 8)) >> 8;
+}
+
+// 整数ブレンドチャンネル計算
+static inline uint8_t blendChannelInt(uint32_t d, uint32_t s, BlendMode mode) {
+    switch (mode) {
+    case BlendMode::PassThrough:
+    case BlendMode::Normal:
+        return static_cast<uint8_t>(s);
+    case BlendMode::Multiply:
+        return static_cast<uint8_t>(div255(d * s));
+    case BlendMode::Screen:
+        return static_cast<uint8_t>(d + s - div255(d * s));
+    case BlendMode::Addition:
+        return static_cast<uint8_t>(std::min(255u, d + s));
+    case BlendMode::Darken:
+        return static_cast<uint8_t>(std::min(d, s));
+    case BlendMode::Lighten:
+        return static_cast<uint8_t>(std::max(d, s));
+    case BlendMode::Difference:
+        return static_cast<uint8_t>(d > s ? d - s : s - d);
+    case BlendMode::LinearBurn:
+        return static_cast<uint8_t>((d + s > 255) ? (d + s - 255) : 0);
+    default: {
+        float df = d / 255.0f;
+        float sf = s / 255.0f;
+        float bf = blendChannel(df, sf, mode);
+        return static_cast<uint8_t>(clamp01(bf) * 255.0f + 0.5f);
+    }
+    }
+}
+
+// 高速整数単一ピクセルブレンド (Normal / PassThrough 専用)
+static inline uint32_t blendPixelNormalFast(uint32_t dst, uint32_t src, uint32_t op256) {
+    uint32_t sa = (src >> 24) & 0xFF;
+    if (sa == 0) return dst;
+    sa = (sa * op256) >> 8;
+    if (sa == 0) return dst;
+
+    uint32_t da = (dst >> 24) & 0xFF;
+    if (sa >= 255) {
+        return src;
+    }
+    if (da == 0) {
+        return (sa << 24) | (src & 0x00FFFFFF);
+    }
+
+    uint32_t sr = (src >> 16) & 0xFF;
+    uint32_t sg = (src >> 8) & 0xFF;
+    uint32_t sb = src & 0xFF;
+
+    uint32_t dr = (dst >> 16) & 0xFF;
+    uint32_t dg = (dst >> 8) & 0xFF;
+    uint32_t db = dst & 0xFF;
+
+    if (da == 255) {
+        // 下地が不透明（大半のキャンバス描画領域）
+        uint32_t r = dr + (((sr - dr) * sa + 128) >> 8);
+        uint32_t g = dg + (((sg - dg) * sa + 128) >> 8);
+        uint32_t b = db + (((sb - db) * sa + 128) >> 8);
+        return (255 << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    // 一般半透明合成 (Porter-Duff Over)
+    uint32_t invSa = 255 - sa;
+    uint32_t da_term = div255(da * invSa);
+    uint32_t outA = sa + da_term;
+    if (outA == 0) return 0;
+
+    uint32_t outR = (sr * sa + dr * da_term) / outA;
+    uint32_t outG = (sg * sa + dg * da_term) / outA;
+    uint32_t outB = (sb * sa + db * da_term) / outA;
+
+    return (outA << 24) | (outR << 16) | (outG << 8) | outB;
+}
 
 uint32_t blendPixel(uint32_t dst, uint32_t src, float opacity, BlendMode mode) {
     uint32_t sa = (src >> 24) & 0xFF;
     if (sa == 0 || opacity <= 0.0f) return dst;
 
-    uint32_t da = (dst >> 24) & 0xFF;
-    float saF = (sa / 255.0f) * opacity;
-    float daF = da / 255.0f;
-
-    float sr = ((src >> 16) & 0xFF) / 255.0f;
-    float sg = ((src >> 8) & 0xFF) / 255.0f;
-    float sb = (src & 0xFF) / 255.0f;
-
-    if (da == 0) {
-        // 下地が完全透明の場合は上乗せ色そのもの
-        uint8_t outA = static_cast<uint8_t>(saF * 255.0f + 0.5f);
-        return (outA << 24) | (src & 0x00FFFFFF);
+    if (mode == BlendMode::Normal || mode == BlendMode::PassThrough) {
+        uint32_t op256 = static_cast<uint32_t>(opacity * 256.0f + 0.5f);
+        return blendPixelNormalFast(dst, src, op256);
     }
 
-    float dr = ((dst >> 16) & 0xFF) / 255.0f;
-    float dg = ((dst >> 8) & 0xFF) / 255.0f;
-    float db = (dst & 0xFF) / 255.0f;
+    uint32_t da = (dst >> 24) & 0xFF;
+    uint32_t effSa = static_cast<uint32_t>(sa * opacity + 0.5f);
+    if (effSa == 0) return dst;
 
-    // ブレンド計算
-    float br = blendChannel(dr, sr, mode);
-    float bg = blendChannel(dg, sg, mode);
-    float bb = blendChannel(db, sb, mode);
+    if (da == 0) {
+        return (effSa << 24) | (src & 0x00FFFFFF);
+    }
 
-    // アルファ合成 (Porter-Duff Over)
-    float outA = saF + daF * (1.0f - saF);
-    if (outA <= 0.0f) return 0;
+    uint32_t sr = (src >> 16) & 0xFF;
+    uint32_t sg = (src >> 8) & 0xFF;
+    uint32_t sb = src & 0xFF;
 
-    float outR = (br * saF + dr * daF * (1.0f - saF)) / outA;
-    float outG = (bg * saF + dg * daF * (1.0f - saF)) / outA;
-    float outB = (bb * saF + db * daF * (1.0f - saF)) / outA;
+    uint32_t dr = (dst >> 16) & 0xFF;
+    uint32_t dg = (dst >> 8) & 0xFF;
+    uint32_t db = dst & 0xFF;
 
-    uint8_t r8 = static_cast<uint8_t>(clamp01(outR) * 255.0f + 0.5f);
-    uint8_t g8 = static_cast<uint8_t>(clamp01(outG) * 255.0f + 0.5f);
-    uint8_t b8 = static_cast<uint8_t>(clamp01(outB) * 255.0f + 0.5f);
-    uint8_t a8 = static_cast<uint8_t>(clamp01(outA) * 255.0f + 0.5f);
+    uint32_t br = blendChannelInt(dr, sr, mode);
+    uint32_t bg = blendChannelInt(dg, sg, mode);
+    uint32_t bb = blendChannelInt(db, sb, mode);
 
-    return (a8 << 24) | (r8 << 16) | (g8 << 8) | b8;
+    uint32_t invSa = 255 - effSa;
+    uint32_t da_term = div255(da * invSa);
+    uint32_t outA = effSa + da_term;
+    if (outA == 0) return 0;
+
+    uint32_t outR = (br * effSa + dr * da_term) / outA;
+    uint32_t outG = (bg * effSa + dg * da_term) / outA;
+    uint32_t outB = (bb * effSa + db * da_term) / outA;
+
+    return (outA << 24) | (outR << 16) | (outG << 8) | outB;
 }
 
 uint32_t blendPixelClipped(uint32_t dst, uint32_t src, float opacity, BlendMode mode) {
-    float daF = ((dst >> 24) & 0xFF) / 255.0f;
-    if (daF <= 0.0f) return 0; // 下地が透明ならクリッピングにより描画されない
+    uint32_t da = (dst >> 24) & 0xFF;
+    if (da == 0) return 0; // 下地が透明ならクリッピングにより描画されない
 
-    float saF = (((src >> 24) & 0xFF) / 255.0f) * opacity;
-    if (saF <= 0.0f) return dst;
+    uint32_t sa = (src >> 24) & 0xFF;
+    uint32_t effSa = static_cast<uint32_t>(sa * opacity + 0.5f);
+    if (effSa == 0) return dst;
 
-    float sr = ((src >> 16) & 0xFF) / 255.0f;
-    float sg = ((src >> 8) & 0xFF) / 255.0f;
-    float sb = (src & 0xFF) / 255.0f;
+    uint32_t sr = (src >> 16) & 0xFF;
+    uint32_t sg = (src >> 8) & 0xFF;
+    uint32_t sb = src & 0xFF;
 
-    float dr = ((dst >> 16) & 0xFF) / 255.0f;
-    float dg = ((dst >> 8) & 0xFF) / 255.0f;
-    float db = (dst & 0xFF) / 255.0f;
+    uint32_t dr = (dst >> 16) & 0xFF;
+    uint32_t dg = (dst >> 8) & 0xFF;
+    uint32_t db = dst & 0xFF;
 
-    float br = blendChannel(dr, sr, mode);
-    float bg = blendChannel(dg, sg, mode);
-    float bb = blendChannel(db, sb, mode);
+    uint32_t br = blendChannelInt(dr, sr, mode);
+    uint32_t bg = blendChannelInt(dg, sg, mode);
+    uint32_t bb = blendChannelInt(db, sb, mode);
 
-    float effSa = saF * daF;
-    float outR = br * effSa + dr * (1.0f - effSa);
-    float outG = bg * effSa + dg * (1.0f - effSa);
-    float outB = bb * effSa + db * (1.0f - effSa);
-    float outA = daF; // 下地のアルファ値を超えない
+    uint32_t clipSa = div255(effSa * da);
+    uint32_t outR = dr + (((br - dr) * clipSa + 128) >> 8);
+    uint32_t outG = dg + (((bg - dg) * clipSa + 128) >> 8);
+    uint32_t outB = db + (((bb - db) * clipSa + 128) >> 8);
 
-    uint8_t r8 = static_cast<uint8_t>(clamp01(outR) * 255.0f + 0.5f);
-    uint8_t g8 = static_cast<uint8_t>(clamp01(outG) * 255.0f + 0.5f);
-    uint8_t b8 = static_cast<uint8_t>(clamp01(outB) * 255.0f + 0.5f);
-    uint8_t a8 = static_cast<uint8_t>(clamp01(outA) * 255.0f + 0.5f);
-
-    return (a8 << 24) | (r8 << 16) | (g8 << 8) | b8;
+    return (da << 24) | (outR << 16) | (outG << 8) | outB;
 }
+
+#if defined(KABURAGI_USE_SSE2)
+// SSE2 による 4 ピクセル並列ブレンド (下地が完全不透明 da == 255 の高速パス)
+static inline void blend4_SSE2_OpaqueDst(uint32_t* dst, const uint32_t* src, __m128i op256_vec) {
+    __m128i d = _mm_loadu_si128(reinterpret_cast<const __m128i*>(dst));
+    __m128i s = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+
+    __m128i zero = _mm_setzero_si128();
+
+    __m128i s_lo = _mm_unpacklo_epi8(s, zero);
+    __m128i s_hi = _mm_unpackhi_epi8(s, zero);
+
+    __m128i d_lo = _mm_unpacklo_epi8(d, zero);
+    __m128i d_hi = _mm_unpackhi_epi8(d, zero);
+
+    // 各ピクセルのアルファ (ワード 3) を複製
+    __m128i sa_lo = _mm_shufflelo_epi16(s_lo, _MM_SHUFFLE(3, 3, 3, 3));
+    sa_lo = _mm_shufflehi_epi16(sa_lo, _MM_SHUFFLE(3, 3, 3, 3));
+    sa_lo = _mm_srli_epi16(_mm_mullo_epi16(sa_lo, op256_vec), 8);
+
+    __m128i sa_hi = _mm_shufflelo_epi16(s_hi, _MM_SHUFFLE(3, 3, 3, 3));
+    sa_hi = _mm_shufflehi_epi16(sa_hi, _MM_SHUFFLE(3, 3, 3, 3));
+    sa_hi = _mm_srli_epi16(_mm_mullo_epi16(sa_hi, op256_vec), 8);
+
+    // out = d + ((s - d) * sa + 128) >> 8
+    __m128i diff_lo = _mm_sub_epi16(s_lo, d_lo);
+    __m128i diff_hi = _mm_sub_epi16(s_hi, d_hi);
+
+    __m128i c128 = _mm_set1_epi16(128);
+    __m128i res_lo = _mm_add_epi16(d_lo, _mm_srai_epi16(_mm_add_epi16(_mm_mullo_epi16(diff_lo, sa_lo), c128), 8));
+    __m128i res_hi = _mm_add_epi16(d_hi, _mm_srai_epi16(_mm_add_epi16(_mm_mullo_epi16(diff_hi, sa_hi), c128), 8));
+
+    __m128i alphaMask = _mm_set1_epi32(0xFF000000);
+    __m128i packed = _mm_packus_epi16(res_lo, res_hi);
+    packed = _mm_or_si128(packed, alphaMask);
+
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), packed);
+}
+#endif
 
 void blendTile(uint32_t* dst, const uint32_t* src, float opacity, BlendMode mode, size_t pixelCount, bool isClippingMask) {
     if (!dst || !src || opacity <= 0.0f) return;
+
+    uint32_t op256 = static_cast<uint32_t>(opacity * 256.0f + 0.5f);
+    if (op256 == 0) return;
 
     if (isClippingMask) {
         for (size_t i = 0; i < pixelCount; ++i) {
             dst[i] = blendPixelClipped(dst[i], src[i], opacity, mode);
         }
-    } else {
-        for (size_t i = 0; i < pixelCount; ++i) {
-            dst[i] = blendPixel(dst[i], src[i], opacity, mode);
+        return;
+    }
+
+    // 1. 最頻出パス: BlendMode::Normal / PassThrough
+    if (mode == BlendMode::Normal || mode == BlendMode::PassThrough) {
+        size_t i = 0;
+
+#if defined(KABURAGI_USE_SSE2)
+        __m128i opVec = _mm_set1_epi16(static_cast<short>(op256));
+
+        // 4 ピクセル単位で高速 SIMD 判定
+        for (; i + 4 <= pixelCount; i += 4) {
+            uint32_t s0 = src[i], s1 = src[i+1], s2 = src[i+2], s3 = src[i+3];
+            // 4 つとも完全透明ならスキップ
+            if (((s0 | s1 | s2 | s3) & 0xFF000000) == 0) {
+                continue;
+            }
+
+            uint32_t d0 = dst[i], d1 = dst[i+1], d2 = dst[i+2], d3 = dst[i+3];
+            // 4 つとも下地が完全不透明 (da == 255) なら SSE2 高速ベクトル演算
+            if ((d0 & d1 & d2 & d3 & 0xFF000000) == 0xFF000000) {
+                blend4_SSE2_OpaqueDst(&dst[i], &src[i], opVec);
+            } else {
+                // 部分透明を含む場合は整数ブレンド
+                dst[i]   = blendPixelNormalFast(d0, s0, op256);
+                dst[i+1] = blendPixelNormalFast(d1, s1, op256);
+                dst[i+2] = blendPixelNormalFast(d2, s2, op256);
+                dst[i+3] = blendPixelNormalFast(d3, s3, op256);
+            }
         }
+#endif
+
+        for (; i < pixelCount; ++i) {
+            dst[i] = blendPixelNormalFast(dst[i], src[i], op256);
+        }
+        return;
+    }
+
+    // 2. その他のブレンドモード
+    for (size_t i = 0; i < pixelCount; ++i) {
+        dst[i] = blendPixel(dst[i], src[i], opacity, mode);
     }
 }
 
@@ -140,50 +295,56 @@ void blendTileWithClipMask(
 ) {
     if (!dst || !src || !maskSrc || opacity <= 0.0f || maskOpacity <= 0.0f) return;
 
-    for (size_t i = 0; i < pixelCount; ++i) {
-        uint32_t srcPix = src[i];
-        uint8_t sa = (srcPix >> 24) & 0xFF;
-        if (sa == 0) continue;
+    uint32_t op256 = static_cast<uint32_t>(opacity * 256.0f + 0.5f);
+    uint32_t maskOp256 = static_cast<uint32_t>(maskOpacity * 256.0f + 0.5f);
+    if (op256 == 0 || maskOp256 == 0) return;
 
+    for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t maskPix = maskSrc[i];
-        uint8_t ma = (maskPix >> 24) & 0xFF;
+        uint32_t ma = (maskPix >> 24) & 0xFF;
         if (ma == 0) continue;
 
-        float maskAlphaF = (ma / 255.0f) * maskOpacity;
-        if (maskAlphaF <= 0.0f) continue;
+        uint32_t srcPix = src[i];
+        uint32_t sa = (srcPix >> 24) & 0xFF;
+        if (sa == 0) continue;
 
-        float srcAlphaF = (sa / 255.0f) * opacity;
-        float effSa = srcAlphaF * maskAlphaF;
-        if (effSa <= 0.0f) continue;
-
-        float sr = ((srcPix >> 16) & 0xFF) / 255.0f;
-        float sg = ((srcPix >> 8) & 0xFF) / 255.0f;
-        float sb = (srcPix & 0xFF) / 255.0f;
+        uint32_t effMa = (ma * maskOp256) >> 8;
+        uint32_t effSa = (sa * op256) >> 8;
+        uint32_t totalSa = div255(effSa * effMa);
+        if (totalSa == 0) continue;
 
         uint32_t dstPix = dst[i];
-        uint8_t da = (dstPix >> 24) & 0xFF;
-        float daF = da / 255.0f;
-        float dr = ((dstPix >> 16) & 0xFF) / 255.0f;
-        float dg = ((dstPix >> 8) & 0xFF) / 255.0f;
-        float db = (dstPix & 0xFF) / 255.0f;
+        uint32_t da = (dstPix >> 24) & 0xFF;
 
-        float br = blendChannel(dr, sr, mode);
-        float bg = blendChannel(dg, sg, mode);
-        float bb = blendChannel(db, sb, mode);
+        uint32_t sr = (srcPix >> 16) & 0xFF;
+        uint32_t sg = (srcPix >> 8) & 0xFF;
+        uint32_t sb = srcPix & 0xFF;
 
-        float outA = effSa + daF * (1.0f - effSa);
-        if (outA <= 0.0f) continue;
+        uint32_t dr = (dstPix >> 16) & 0xFF;
+        uint32_t dg = (dstPix >> 8) & 0xFF;
+        uint32_t db = dstPix & 0xFF;
 
-        float outR = (br * effSa + dr * daF * (1.0f - effSa)) / outA;
-        float outG = (bg * effSa + dg * daF * (1.0f - effSa)) / outA;
-        float outB = (bb * effSa + db * daF * (1.0f - effSa)) / outA;
+        uint32_t br = blendChannelInt(dr, sr, mode);
+        uint32_t bg = blendChannelInt(dg, sg, mode);
+        uint32_t bb = blendChannelInt(db, sb, mode);
 
-        uint8_t r8 = static_cast<uint8_t>(clamp01(outR) * 255.0f + 0.5f);
-        uint8_t g8 = static_cast<uint8_t>(clamp01(outG) * 255.0f + 0.5f);
-        uint8_t b8 = static_cast<uint8_t>(clamp01(outB) * 255.0f + 0.5f);
-        uint8_t a8 = static_cast<uint8_t>(clamp01(outA) * 255.0f + 0.5f);
+        if (da == 255) {
+            uint32_t r = dr + (((br - dr) * totalSa + 128) >> 8);
+            uint32_t g = dg + (((bg - dg) * totalSa + 128) >> 8);
+            uint32_t b = db + (((bb - db) * totalSa + 128) >> 8);
+            dst[i] = (255 << 24) | (r << 16) | (g << 8) | b;
+        } else {
+            uint32_t invSa = 255 - totalSa;
+            uint32_t da_term = div255(da * invSa);
+            uint32_t outA = totalSa + da_term;
+            if (outA == 0) continue;
 
-        dst[i] = (a8 << 24) | (r8 << 16) | (g8 << 8) | b8;
+            uint32_t outR = (br * totalSa + dr * da_term) / outA;
+            uint32_t outG = (bg * totalSa + dg * da_term) / outA;
+            uint32_t outB = (bb * totalSa + db * da_term) / outA;
+
+            dst[i] = (outA << 24) | (outR << 16) | (outG << 8) | outB;
+        }
     }
 }
 
