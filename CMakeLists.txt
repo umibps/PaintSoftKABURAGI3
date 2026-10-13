@@ -416,7 +416,10 @@ if (WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_qt_bin_dir}/Qt6OpenGL.dll"
                 "$<TARGET_FILE_DIR:PaintSoftKABURAGI>"
-            COMMENT "Copying Qt6OpenGL.dll to output directory..."
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/translations"
+                "$<TARGET_FILE_DIR:PaintSoftKABURAGI>/translations"
+            COMMENT "Copying Qt6OpenGL.dll and translations to output directory..."
         )
     endif()
 endif()

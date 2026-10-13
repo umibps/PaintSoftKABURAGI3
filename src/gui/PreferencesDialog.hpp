@@ -27,6 +27,9 @@ public:
     static bool isAutoBackupEnabled();
     static int autoBackupIntervalMinutes();
     static ScrollBarPosition layerScrollBarPosition();
+    static QString language();
+    static void setLanguage(const QString& lang);
+    static QString effectiveLanguage();
     static QString aiModelDirectory();
     static QString aiControlNetDirectory();
     static QString comfyUiLaunchPath();
@@ -56,6 +59,7 @@ private:
     QCheckBox* m_autoBackupCheck = nullptr;
     QSpinBox* m_backupIntervalSpin = nullptr;
     QComboBox* m_layerScrollPosCombo = nullptr;
+    QComboBox* m_comboLanguage = nullptr;
 
     QLineEdit* m_editAiModelDir = nullptr;
     QPushButton* m_btnBrowseAiModelDir = nullptr;

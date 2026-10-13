@@ -66,13 +66,13 @@ void FilterBaseDialog::setupBaseUi(QWidget* controlsWidget) {
     }
 
     auto bottomLayout = new QHBoxLayout();
-    m_chkPreview = new QCheckBox(tr("プレビュー (キャンバス表示)"), this);
+    m_chkPreview = new QCheckBox(tr("Preview (Canvas)"), this);
     m_chkPreview->setChecked(true);
     bottomLayout->addWidget(m_chkPreview);
 
     m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     m_buttonBox->button(QDialogButtonBox::Ok)->setText(tr("OK"));
-    m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("キャンセル"));
+    m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
     bottomLayout->addWidget(m_buttonBox);
 
     mainLayout->addLayout(bottomLayout);
@@ -181,7 +181,7 @@ void FilterBaseDialog::reject() {
 // 1. GaussianBlurDialog
 // ----------------------------------------------------------------------------
 GaussianBlurDialog::GaussianBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("ガウスぼかし"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Gaussian Blur"), parent)
 {
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
@@ -199,7 +199,7 @@ GaussianBlurDialog::GaussianBlurDialog(Document* doc, CanvasWidget* canvas, QWid
     layRadius->addWidget(m_sliderRadius);
     layRadius->addWidget(m_spinRadius);
 
-    form->addRow(tr("ぼかし半径:"), layRadius);
+    form->addRow(tr("Blur Radius:"), layRadius);
 
     connect(m_sliderRadius, &QSlider::valueChanged, m_spinRadius, &QSpinBox::setValue);
     connect(m_spinRadius, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderRadius, &QSlider::setValue);
@@ -221,7 +221,7 @@ void GaussianBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 // 2. FocusBlurDialog
 // ----------------------------------------------------------------------------
 FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("焦点ぼかし"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Focus Blur"), parent)
 {
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
@@ -237,7 +237,7 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     m_spinBlurRadius->setSuffix(" px");
     layBlur->addWidget(m_sliderBlurRadius);
     layBlur->addWidget(m_spinBlurRadius);
-    form->addRow(tr("ぼかし強度:"), layBlur);
+    form->addRow(tr("Blur Strength:"), layBlur);
 
     // フォーカス範囲
     auto layFocus = new QHBoxLayout();
@@ -250,7 +250,7 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     m_spinFocusRange->setSuffix(" %");
     layFocus->addWidget(m_sliderFocusRange);
     layFocus->addWidget(m_spinFocusRange);
-    form->addRow(tr("フォーカス範囲:"), layFocus);
+    form->addRow(tr("Focus Range:"), layFocus);
 
     // ぼかし遷移幅 (境界のなめらかさ)
     auto layFeather = new QHBoxLayout();
@@ -263,24 +263,24 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     m_spinFeather->setSuffix(" %");
     layFeather->addWidget(m_sliderFeather);
     layFeather->addWidget(m_spinFeather);
-    form->addRow(tr("ぼかし遷移幅:"), layFeather);
+    form->addRow(tr("Blur Transition:"), layFeather);
 
     // タイプ (放射状 / 水平チルトシフト)
     m_comboType = new QComboBox(controls);
-    m_comboType->addItem(tr("放射状 (円形フォーカス)"), 0);
-    m_comboType->addItem(tr("水平 (チルトシフト・帯状)"), 1);
-    form->addRow(tr("フォーカス形状:"), m_comboType);
+    m_comboType->addItem(tr("Radial (Circular Focus)"), 0);
+    m_comboType->addItem(tr("Linear (Tilt-Shift / Band)"), 1);
+    form->addRow(tr("Focus Shape:"), m_comboType);
 
     // フォーカス中心 (X, Y)
     m_sliderCenterX = new QSlider(Qt::Horizontal, controls);
     m_sliderCenterX->setRange(0, 100);
     m_sliderCenterX->setValue(50);
-    form->addRow(tr("中心 X 位置 (%):"), m_sliderCenterX);
+    form->addRow(tr("Center X (%):"), m_sliderCenterX);
 
     m_sliderCenterY = new QSlider(Qt::Horizontal, controls);
     m_sliderCenterY->setRange(0, 100);
     m_sliderCenterY->setValue(50);
-    form->addRow(tr("中心 Y 位置 (%):"), m_sliderCenterY);
+    form->addRow(tr("Center Y (%):"), m_sliderCenterY);
 
     connect(m_sliderBlurRadius, &QSlider::valueChanged, m_spinBlurRadius, &QSpinBox::setValue);
     connect(m_spinBlurRadius, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderBlurRadius, &QSlider::setValue);
@@ -322,7 +322,7 @@ void FocusBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 // 3. BrightnessContrastDialog
 // ----------------------------------------------------------------------------
 BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("明るさ・コントラスト"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Brightness / Contrast"), parent)
 {
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
@@ -337,7 +337,7 @@ BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* 
     m_spinBrightness->setValue(0);
     layB->addWidget(m_sliderBrightness);
     layB->addWidget(m_spinBrightness);
-    form->addRow(tr("明るさ:"), layB);
+    form->addRow(tr("Brightness:"), layB);
 
     // コントラスト
     auto layC = new QHBoxLayout();
@@ -349,7 +349,7 @@ BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* 
     m_spinContrast->setValue(0);
     layC->addWidget(m_sliderContrast);
     layC->addWidget(m_spinContrast);
-    form->addRow(tr("コントラスト:"), layC);
+    form->addRow(tr("Contrast:"), layC);
 
     connect(m_sliderBrightness, &QSlider::valueChanged, m_spinBrightness, &QSpinBox::setValue);
     connect(m_spinBrightness, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderBrightness, &QSlider::setValue);
@@ -377,7 +377,7 @@ void BrightnessContrastDialog::applyFilterToImage(const QImage& src, QImage& out
 // 4. HueSaturationDialog
 // ----------------------------------------------------------------------------
 HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("色相・彩度・明度"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Hue / Saturation / Value"), parent)
 {
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
@@ -393,7 +393,7 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     m_spinHue->setSuffix("°");
     layH->addWidget(m_sliderHue);
     layH->addWidget(m_spinHue);
-    form->addRow(tr("色相:"), layH);
+    form->addRow(tr("Hue:"), layH);
 
     // 彩度
     auto layS = new QHBoxLayout();
@@ -405,7 +405,7 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     m_spinSat->setValue(0);
     layS->addWidget(m_sliderSat);
     layS->addWidget(m_spinSat);
-    form->addRow(tr("彩度:"), layS);
+    form->addRow(tr("Saturation:"), layS);
 
     // 明度
     auto layL = new QHBoxLayout();
@@ -417,7 +417,7 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     m_spinLight->setValue(0);
     layL->addWidget(m_sliderLight);
     layL->addWidget(m_spinLight);
-    form->addRow(tr("明度:"), layL);
+    form->addRow(tr("Value:"), layL);
 
     connect(m_sliderHue, &QSlider::valueChanged, m_spinHue, &QSpinBox::setValue);
     connect(m_spinHue, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderHue, &QSlider::setValue);
@@ -450,7 +450,7 @@ void HueSaturationDialog::applyFilterToImage(const QImage& src, QImage& out) {
 // 5. ToneCurveDialog
 // ----------------------------------------------------------------------------
 ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("トーンカーブ"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Tone Curve"), parent)
 {
     // 初期制御点 (各チャンネル斜め直線)
     for (int i = 0; i < 4; ++i) {
@@ -463,16 +463,16 @@ ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     vbox->setSpacing(6);
 
     auto topBar = new QHBoxLayout();
-    topBar->addWidget(new QLabel(tr("チャンネル:"), controls));
+    topBar->addWidget(new QLabel(tr("Channel:"), controls));
 
     m_channelCombo = new QComboBox(controls);
-    m_channelCombo->addItem(tr("RGB (全体)"), static_cast<int>(AdjustmentChannel::RGB));
-    m_channelCombo->addItem(tr("レッド (R)"), static_cast<int>(AdjustmentChannel::Red));
-    m_channelCombo->addItem(tr("グリーン (G)"), static_cast<int>(AdjustmentChannel::Green));
-    m_channelCombo->addItem(tr("ブルー (B)"), static_cast<int>(AdjustmentChannel::Blue));
+    m_channelCombo->addItem(tr("RGB (All)"), static_cast<int>(AdjustmentChannel::RGB));
+    m_channelCombo->addItem(tr("Red (R)"), static_cast<int>(AdjustmentChannel::Red));
+    m_channelCombo->addItem(tr("Green (G)"), static_cast<int>(AdjustmentChannel::Green));
+    m_channelCombo->addItem(tr("Blue (B)"), static_cast<int>(AdjustmentChannel::Blue));
     topBar->addWidget(m_channelCombo);
 
-    auto btnReset = new QPushButton(tr("リセット"), controls);
+    auto btnReset = new QPushButton(tr("Reset"), controls);
     topBar->addWidget(btnReset);
     topBar->addStretch(1);
     vbox->addLayout(topBar);
@@ -512,7 +512,7 @@ void ToneCurveDialog::applyFilterToImage(const QImage& src, QImage& out) {
 // 6. MotionBlurDialog
 // ----------------------------------------------------------------------------
 MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("モーションぼかし"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Motion Blur"), parent)
 {
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
@@ -528,7 +528,7 @@ MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget*
     m_spinDistance->setMinimumWidth(75);
     layDist->addWidget(m_sliderDistance);
     layDist->addWidget(m_spinDistance);
-    form->addRow(tr("移動距離 (px):"), layDist);
+    form->addRow(tr("Distance (px):"), layDist);
 
     // 角度
     auto layAng = new QHBoxLayout();
@@ -541,7 +541,7 @@ MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget*
     m_spinAngle->setMinimumWidth(75);
     layAng->addWidget(m_sliderAngle);
     layAng->addWidget(m_spinAngle);
-    form->addRow(tr("角度 (°):"), layAng);
+    form->addRow(tr("Angle (°):"), layAng);
 
     connect(m_sliderDistance, &QSlider::valueChanged, m_spinDistance, &QSpinBox::setValue);
     connect(m_spinDistance, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderDistance, &QSlider::setValue);
@@ -569,7 +569,7 @@ void MotionBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 // 7. GradientMapDialog
 // ----------------------------------------------------------------------------
 GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
-    : FilterBaseDialog(doc, canvas, tr("グラデーションマップ"), parent)
+    : FilterBaseDialog(doc, canvas, tr("Gradient Map"), parent)
 {
     // プリセット定義
     m_presets = {
@@ -594,17 +594,17 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
 
     // プリセット
     m_comboPreset = new QComboBox(controls);
-    m_comboPreset->addItem(tr("白黒 (モノクロ)"));
-    m_comboPreset->addItem(tr("セピア"));
-    m_comboPreset->addItem(tr("夕焼け (サンセット)"));
-    m_comboPreset->addItem(tr("サイバーパンク / ネオン"));
-    m_comboPreset->addItem(tr("サーマル (熱波)"));
-    m_comboPreset->addItem(tr("フォレスト (森)"));
-    m_comboPreset->addItem(tr("パステル"));
-    form->addRow(tr("グラデーション:"), m_comboPreset);
+    m_comboPreset->addItem(tr("Grayscale (Monochrome)"));
+    m_comboPreset->addItem(tr("Sepia"));
+    m_comboPreset->addItem(tr("Sunset"));
+    m_comboPreset->addItem(tr("Cyberpunk / Neon"));
+    m_comboPreset->addItem(tr("Thermal"));
+    m_comboPreset->addItem(tr("Forest"));
+    m_comboPreset->addItem(tr("Pastel"));
+    form->addRow(tr("Gradient:"), m_comboPreset);
 
     // 反転
-    m_chkReverse = new QCheckBox(tr("グラデーションを反転"), controls);
+    m_chkReverse = new QCheckBox(tr("Reverse Gradient"), controls);
     form->addRow(QString(), m_chkReverse);
 
     // 不透明度
@@ -619,7 +619,7 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
     m_spinOpacity->setMinimumWidth(75);
     layOp->addWidget(m_sliderOpacity);
     layOp->addWidget(m_spinOpacity);
-    form->addRow(tr("不透明度:"), layOp);
+    form->addRow(tr("Opacity:"), layOp);
 
     connect(m_sliderOpacity, &QSlider::valueChanged, m_spinOpacity, &QSpinBox::setValue);
     connect(m_spinOpacity, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderOpacity, &QSlider::setValue);

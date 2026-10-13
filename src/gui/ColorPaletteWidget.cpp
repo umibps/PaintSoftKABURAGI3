@@ -285,49 +285,49 @@ void ColorPaletteWidget::showContextMenu(const QPoint& pos, int col, int row) {
     bool hasColor = m_colors[idx].isValid();
 
     if (hasColor) {
-        menu.addAction(tr("色を上書き (描画色を登録する)"), this, [this, idx]() {
+        menu.addAction(tr("Overwrite with Current Color"), this, [this, idx]() {
             setColorAt(idx, m_currentColor);
         });
-        menu.addAction(tr("色を削除"), this, [this, idx]() {
+        menu.addAction(tr("Delete Color"), this, [this, idx]() {
             setColorAt(idx, QColor());
         });
     } else {
-        menu.addAction(tr("色を登録 (描画色を登録する)"), this, [this, idx]() {
+        menu.addAction(tr("Register Current Color"), this, [this, idx]() {
             setColorAt(idx, m_currentColor);
         });
     }
 
     menu.addSeparator();
 
-    menu.addAction(tr("パレットをインポート (.acoファイルをインポート)..."), this, [this]() {
-        QString path = QFileDialog::getOpenFileName(this, tr("パレットをインポート"), "", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
+    menu.addAction(tr("Import Palette (.aco)..."), this, [this]() {
+        QString path = QFileDialog::getOpenFileName(this, tr("Import Palette"), "", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
         if (!path.isEmpty()) {
             if (!importAco(path, false)) {
-                QMessageBox::warning(this, tr("インポート失敗"), tr("ACOファイルの読み込みに失敗しました。"));
+                QMessageBox::warning(this, tr("Import Failed"), tr("Failed to load ACO file."));
             }
         }
     });
 
-    menu.addAction(tr("パレットを追加インポート..."), this, [this]() {
-        QString path = QFileDialog::getOpenFileName(this, tr("パレットを追加インポート"), "", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
+    menu.addAction(tr("Append Palette (.aco)..."), this, [this]() {
+        QString path = QFileDialog::getOpenFileName(this, tr("Append Palette"), "", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
         if (!path.isEmpty()) {
             if (!importAco(path, true)) {
-                QMessageBox::warning(this, tr("追加インポート失敗"), tr("ACOファイルの読み込みに失敗しました。"));
+                QMessageBox::warning(this, tr("Append Failed"), tr("Failed to append ACO file."));
             }
         }
     });
 
-    menu.addAction(tr("パレットをエクスポート (.acoファイルへエクスポート)..."), this, [this]() {
-        QString path = QFileDialog::getSaveFileName(this, tr("パレットをエクスポート"), "palette.aco", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
+    menu.addAction(tr("Export Palette (.aco)..."), this, [this]() {
+        QString path = QFileDialog::getSaveFileName(this, tr("Export Palette"), "palette.aco", tr("Adobe Color Swatch (*.aco);;All Files (*)"));
         if (!path.isEmpty()) {
             if (!exportAco(path)) {
-                QMessageBox::warning(this, tr("エクスポート失敗"), tr("ACOファイルの保存に失敗しました。"));
+                QMessageBox::warning(this, tr("Export Failed"), tr("Failed to save ACO file."));
             }
         }
     });
 
-    menu.addAction(tr("パレットをクリア"), this, [this]() {
-        auto ret = QMessageBox::question(this, tr("パレットのクリア"), tr("パレットの登録色をすべて消去しますか？"), QMessageBox::Yes | QMessageBox::No);
+    menu.addAction(tr("Clear Palette"), this, [this]() {
+        auto ret = QMessageBox::question(this, tr("Clear Palette"), tr("Are you sure you want to clear all colors in the palette?"), QMessageBox::Yes | QMessageBox::No);
         if (ret == QMessageBox::Yes) {
             clearPalette();
         }

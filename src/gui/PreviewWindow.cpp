@@ -11,7 +11,7 @@ namespace Kaburagi {
 PreviewWindow::PreviewWindow(QWidget* parent)
     : QWidget(parent, Qt::Window | Qt::WindowStaysOnTopHint)
 {
-    setWindowTitle(tr("プレビュー"));
+    setWindowTitle(tr("Preview"));
     resize(320, 240);
     setAttribute(Qt::WA_DeleteOnClose, false);
 
@@ -64,7 +64,7 @@ void PreviewWindow::paintEvent(QPaintEvent* /*event*/) {
 
     if (!m_document || m_document->width() <= 0 || m_document->height() <= 0) {
         painter.setPen(QColor(160, 160, 160));
-        painter.drawText(rect(), Qt::AlignCenter, tr("キャンバスがありません"));
+        painter.drawText(rect(), Qt::AlignCenter, tr("No canvas"));
         return;
     }
 

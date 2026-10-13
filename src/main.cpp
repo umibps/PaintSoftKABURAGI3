@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include "MainWindow.hpp"
+#include "PreferencesDialog.hpp"
 #include <iostream>
 
 int main(int argc, char* argv[]) {
@@ -14,22 +15,36 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("PaintSoft KABURAGI");
     app.setOrganizationName("KABURAGI");
 
-    // 日本語翻訳の読み込み (Qt標準ダイアログの日本語化: QColorDialog, QFileDialog等)
-    auto* qtTranslator = new QTranslator(&app);
-    QString transPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
-    bool loaded = qtTranslator->load("qtbase_ja", transPath);
-    if (!loaded) {
+    // 言語設定の読み込み（システム言語またはユーザー設定言語）
+    QString effectiveLang = Kaburagi::PreferencesDialog::effectiveLanguage();
+    std::cout << "[PaintSoft KABURAGI] Effective Language: " << effectiveLang.toStdString() << std::endl;
+
+    if (effectiveLang == "ja") {
         QString appDir = QApplication::applicationDirPath();
-        loaded = qtTranslator->load("qtbase_ja", appDir + "/translations") ||
-                 qtTranslator->load("qt_ja", appDir + "/translations") ||
-                 qtTranslator->load("qtbase_ja", "translations") ||
-                 qtTranslator->load("qt_ja", "translations");
-    }
-    if (loaded) {
-        app.installTranslator(qtTranslator);
-        std::cout << "[PaintSoft KABURAGI] Japanese translation loaded successfully." << std::endl;
+        // 1. アプリケーション本体の日本語翻訳
+        auto* appTranslator = new QTranslator(&app);
+        bool appLoaded = appTranslator->load("paintsoft_ja", appDir + "/translations") ||
+                         appTranslator->load("paintsoft_ja", "translations") ||
+                         appTranslator->load("paintsoft_ja", ":/translations");
+        if (appLoaded) {
+            app.installTranslator(appTranslator);
+            std::cout << "[PaintSoft KABURAGI] Application Japanese translation loaded." << std::endl;
+        }
+
+        // 2. Qt標準ダイアログ用日本語翻訳
+        auto* qtTranslator = new QTranslator(&app);
+        QString transPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
+        bool qtLoaded = qtTranslator->load("qtbase_ja", transPath) ||
+                        qtTranslator->load("qtbase_ja", appDir + "/translations") ||
+                        qtTranslator->load("qt_ja", appDir + "/translations") ||
+                        qtTranslator->load("qtbase_ja", "translations") ||
+                        qtTranslator->load("qt_ja", "translations");
+        if (qtLoaded) {
+            app.installTranslator(qtTranslator);
+            std::cout << "[PaintSoft KABURAGI] Qtbase Japanese translation loaded." << std::endl;
+        }
     } else {
-        std::cerr << "[PaintSoft KABURAGI] Warning: Could not load Japanese translation file." << std::endl;
+        std::cout << "[PaintSoft KABURAGI] English mode active (no Japanese translation installed)." << std::endl;
     }
 
     // カラーピッカー (QColorDialog) の数値入力部 (QSpinBox) が狭く数値が見切れる問題の解消用スタイルシート

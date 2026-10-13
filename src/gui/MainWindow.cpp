@@ -198,50 +198,50 @@ MainWindow::~MainWindow() {
 void MainWindow::createMenuBar() {
     auto menu = menuBar();
 
-    auto fileMenu = menu->addMenu("ファイル(&F)");
-    fileMenu->addAction("新規キャンバス(&N)...", QKeySequence::New, this, &MainWindow::onNewCanvas);
-    fileMenu->addAction("開く(&O)...", QKeySequence::Open, this, &MainWindow::onOpenCanvas);
-    m_recentFilesMenu = fileMenu->addMenu("最近使ったファイル(&R)");
+    auto fileMenu = menu->addMenu(tr("&File"));
+    fileMenu->addAction(tr("&New Canvas..."), QKeySequence::New, this, &MainWindow::onNewCanvas);
+    fileMenu->addAction(tr("&Open..."), QKeySequence::Open, this, &MainWindow::onOpenCanvas);
+    m_recentFilesMenu = fileMenu->addMenu(tr("&Recent Files"));
     fileMenu->addSeparator();
-    fileMenu->addAction("保存(&S)", QKeySequence::Save, this, &MainWindow::onSaveCanvas);
-    fileMenu->addAction("名前を付けて保存(&A)...", QKeySequence::SaveAs, this, &MainWindow::onSaveAsCanvas);
-    fileMenu->addAction("閉じる(&C)", QKeySequence::Close, this, &MainWindow::onCloseCanvas);
+    fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, &MainWindow::onSaveCanvas);
+    fileMenu->addAction(tr("Save &As..."), QKeySequence::SaveAs, this, &MainWindow::onSaveAsCanvas);
+    fileMenu->addAction(tr("&Close"), QKeySequence::Close, this, &MainWindow::onCloseCanvas);
     fileMenu->addSeparator();
-    fileMenu->addAction("終了(&X)", QKeySequence::Quit, this, &QWidget::close);
+    fileMenu->addAction(tr("E&xit"), QKeySequence::Quit, this, &QWidget::close);
 
-    auto editMenu = menu->addMenu("編集(&E)");
-    m_undoAction = editMenu->addAction("元に戻す(&U)");
+    auto editMenu = menu->addMenu(tr("&Edit"));
+    m_undoAction = editMenu->addAction(tr("&Undo"));
     m_undoAction->setShortcut(QKeySequence::Undo);
     connect(m_undoAction, &QAction::triggered, this, &MainWindow::onUndo);
 
-    m_redoAction = editMenu->addAction("やり直し(&R)");
+    m_redoAction = editMenu->addAction(tr("&Redo"));
     m_redoAction->setShortcuts({ QKeySequence::Redo, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z) });
     connect(m_redoAction, &QAction::triggered, this, &MainWindow::onRedo);
 
     editMenu->addSeparator();
-    m_cutAction = editMenu->addAction("切り取り(&T)");
+    m_cutAction = editMenu->addAction(tr("Cu&t"));
     m_cutAction->setShortcut(QKeySequence::Cut);
     connect(m_cutAction, &QAction::triggered, this, &MainWindow::onCut);
 
-    m_copyAction = editMenu->addAction("コピー(&C)");
+    m_copyAction = editMenu->addAction(tr("&Copy"));
     m_copyAction->setShortcut(QKeySequence::Copy);
     connect(m_copyAction, &QAction::triggered, this, &MainWindow::onCopy);
 
-    m_copyVisibleAction = editMenu->addAction("可視部をコピー(&V)");
+    m_copyVisibleAction = editMenu->addAction(tr("Copy &Visible"));
     m_copyVisibleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C));
     connect(m_copyVisibleAction, &QAction::triggered, this, &MainWindow::onCopyVisible);
 
-    m_pasteAction = editMenu->addAction("貼り付け(&P)");
+    m_pasteAction = editMenu->addAction(tr("&Paste"));
     m_pasteAction->setShortcut(QKeySequence::Paste);
     connect(m_pasteAction, &QAction::triggered, this, &MainWindow::onPaste);
 
     editMenu->addSeparator();
-    m_deletePixelsAction = editMenu->addAction("ピクセルデータを削除(&D)", this, &MainWindow::onDeletePixels);
+    m_deletePixelsAction = editMenu->addAction(tr("&Delete Pixels"), this, &MainWindow::onDeletePixels);
     m_deletePixelsAction->setShortcut(QKeySequence(Qt::Key_Delete));
     m_deletePixelsAction->setEnabled(false);
 
     editMenu->addSeparator();
-    m_transformAction = editMenu->addAction("変形(&T)");
+    m_transformAction = editMenu->addAction(tr("&Transform"));
     m_transformAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
     connect(m_transformAction, &QAction::triggered, this, [this]() {
         if (m_toolBox) {
@@ -258,98 +258,98 @@ void MainWindow::createMenuBar() {
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::updateEditActions);
 
     editMenu->addSeparator();
-    auto actPref = editMenu->addAction("環境設定(&P)...", this, &MainWindow::onPreferences);
+    auto actPref = editMenu->addAction(tr("&Preferences..."), this, &MainWindow::onPreferences);
     actPref->setMenuRole(QAction::PreferencesRole);
 
-    menu->addMenu("キャンバス(&C)");
-    auto layerMenu = menu->addMenu("レイヤー(&L)");
-    m_newRasterLayerAction = layerMenu->addAction("新規通常レイヤー(&N)", this, &MainWindow::onNewRasterLayer);
+    menu->addMenu(tr("&Canvas"));
+    auto layerMenu = menu->addMenu(tr("&Layer"));
+    m_newRasterLayerAction = layerMenu->addAction(tr("New &Raster Layer"), this, &MainWindow::onNewRasterLayer);
     m_newRasterLayerAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
 
-    m_newVectorLayerAction = layerMenu->addAction("新規ベクトルレイヤー(&V)", this, &MainWindow::onNewVectorLayer);
-    m_newTextLayerAction = layerMenu->addAction("新規テキストレイヤー(&T)", this, &MainWindow::onNewTextLayer);
-    m_newGroupLayerAction = layerMenu->addAction("新規レイヤーグループ(&G)", this, &MainWindow::onNewGroupLayer);
-    m_newPanelFolderAction = layerMenu->addAction("新規コマフォルダ(&F)", this, &MainWindow::onNewPanelFolder);
-    m_newThreeDLayerAction = layerMenu->addAction("新規3Dレイヤー(&3)", this, &MainWindow::onNewThreeDLayer);
-    m_newAdjustmentLayerAction = layerMenu->addAction("新規色調補正レイヤー(&J)", this, [this]() {
+    m_newVectorLayerAction = layerMenu->addAction(tr("New &Vector Layer"), this, &MainWindow::onNewVectorLayer);
+    m_newTextLayerAction = layerMenu->addAction(tr("New &Text Layer"), this, &MainWindow::onNewTextLayer);
+    m_newGroupLayerAction = layerMenu->addAction(tr("New Layer &Group"), this, &MainWindow::onNewGroupLayer);
+    m_newPanelFolderAction = layerMenu->addAction(tr("New &Panel Folder"), this, &MainWindow::onNewPanelFolder);
+    m_newThreeDLayerAction = layerMenu->addAction(tr("New &3D Layer"), this, &MainWindow::onNewThreeDLayer);
+    m_newAdjustmentLayerAction = layerMenu->addAction(tr("New Ad&justment Layer"), this, [this]() {
         if (m_document) m_document->addAdjustmentLayer(AdjustmentType::BrightnessContrast);
     });
-    m_newLayerFromVisibleAction = layerMenu->addAction("可視部をレイヤーに(&E)", this, &MainWindow::onNewLayerFromVisible);
+    m_newLayerFromVisibleAction = layerMenu->addAction(tr("New Layer from &Visible"), this, &MainWindow::onNewLayerFromVisible);
 
     layerMenu->addSeparator();
 
-    m_duplicateLayerAction = layerMenu->addAction("レイヤーを複製(&D)", this, &MainWindow::onDuplicateLayer);
-    m_mergeDownAction = layerMenu->addAction("下のレイヤーと結合(&M)", this, &MainWindow::onMergeDown);
-    m_deleteLayerAction = layerMenu->addAction("レイヤーを削除(&R)", this, &MainWindow::onDeleteLayer);
+    m_duplicateLayerAction = layerMenu->addAction(tr("&Duplicate Layer"), this, &MainWindow::onDuplicateLayer);
+    m_mergeDownAction = layerMenu->addAction(tr("&Merge Down"), this, &MainWindow::onMergeDown);
+    m_deleteLayerAction = layerMenu->addAction(tr("&Delete Layer"), this, &MainWindow::onDeleteLayer);
 
     layerMenu->addSeparator();
 
-    m_selectOpaqueAction = layerMenu->addAction("不透明部分を選択範囲にする(&O)", this, &MainWindow::onSelectOpaque);
-    m_addOpaqueToSelectionAction = layerMenu->addAction("不透明部分を選択範囲に加える(&A)", this, &MainWindow::onAddOpaqueToSelection);
+    m_selectOpaqueAction = layerMenu->addAction(tr("Select &Opaque"), this, &MainWindow::onSelectOpaque);
+    m_addOpaqueToSelectionAction = layerMenu->addAction(tr("&Add Opaque to Selection"), this, &MainWindow::onAddOpaqueToSelection);
 
     layerMenu->addSeparator();
 
-    m_rasterizeLayerAction = layerMenu->addAction("レイヤーをラスタライズ(&Z)", this, &MainWindow::onRasterizeLayer);
-    m_fillLayerAction = layerMenu->addAction("レイヤーを描画色で塗りつぶす(&F)", this, &MainWindow::onFillLayer);
+    m_rasterizeLayerAction = layerMenu->addAction(tr("Rasteri&ze Layer"), this, &MainWindow::onRasterizeLayer);
+    m_fillLayerAction = layerMenu->addAction(tr("&Fill Layer with Color"), this, &MainWindow::onFillLayer);
     m_fillLayerAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
 
     connect(layerMenu, &QMenu::aboutToShow, this, &MainWindow::updateLayerMenuActions);
     updateLayerMenuActions();
 
     // 選択(&S) メニュー (GIMP互換: すべて選択 / 選択解除 / 反転)
-    auto selectMenu = menu->addMenu("選択(&S)");
-    auto actSelectAll = selectMenu->addAction("すべて選択(&A)", this, [this]() {
+    auto selectMenu = menu->addMenu(tr("&Selection"));
+    auto actSelectAll = selectMenu->addAction(tr("Select &All"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->selectAll();
     });
     actSelectAll->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_A));
 
-    auto actClearSel = selectMenu->addAction("選択を解除(&D)", this, [this]() {
+    auto actClearSel = selectMenu->addAction(tr("&Deselect"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->clearSelection();
     });
     actClearSel->setShortcuts({ QKeySequence(Qt::CTRL | Qt::Key_D), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A) });
 
-    auto actInvertSel = selectMenu->addAction("選択範囲の反転(&I)", this, [this]() {
+    auto actInvertSel = selectMenu->addAction(tr("&Invert Selection"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->invertSelection();
     });
     actInvertSel->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I));
 
-    auto filterMenu = menu->addMenu("フィルター(&T)");
-    filterMenu->addAction("焦点ぼかし(&F)...", this, &MainWindow::onFilterFocusBlur);
-    filterMenu->addAction("ガウスぼかし(&G)...", this, &MainWindow::onFilterGaussianBlur);
-    filterMenu->addAction("モーションぼかし(&M)...", this, &MainWindow::onFilterMotionBlur);
+    auto filterMenu = menu->addMenu(tr("Fil&ter"));
+    filterMenu->addAction(tr("&Focus Blur..."), this, &MainWindow::onFilterFocusBlur);
+    filterMenu->addAction(tr("&Gaussian Blur..."), this, &MainWindow::onFilterGaussianBlur);
+    filterMenu->addAction(tr("&Motion Blur..."), this, &MainWindow::onFilterMotionBlur);
     filterMenu->addSeparator();
-    filterMenu->addAction("明るさ- コントラスト(&B)...", this, &MainWindow::onFilterBrightnessContrast);
-    filterMenu->addAction("色相/彩度/明度(&H)...", this, &MainWindow::onFilterHueSaturation);
-    filterMenu->addAction("トーンカーブ(&C)...", this, &MainWindow::onFilterToneCurve);
-    filterMenu->addAction("グラデーションマップ(&P)...", this, &MainWindow::onFilterGradientMap);
+    filterMenu->addAction(tr("&Brightness / Contrast..."), this, &MainWindow::onFilterBrightnessContrast);
+    filterMenu->addAction(tr("&Hue / Saturation / Value..."), this, &MainWindow::onFilterHueSaturation);
+    filterMenu->addAction(tr("Tone &Curve..."), this, &MainWindow::onFilterToneCurve);
+    filterMenu->addAction(tr("Gradient &Map..."), this, &MainWindow::onFilterGradientMap);
 
 
-    auto viewMenu = menu->addMenu("ビュー(&V)");
+    auto viewMenu = menu->addMenu(tr("&View"));
 
     // 表示フィルター
-    auto displayFilterMenu = viewMenu->addMenu("表示フィルター(&F)");
+    auto displayFilterMenu = viewMenu->addMenu(tr("Display &Filter"));
     m_displayFilterActionGroup = new QActionGroup(this);
     m_displayFilterActionGroup->setExclusive(true);
 
-    m_filterNoneAction = displayFilterMenu->addAction("フィルター無し(&N)", this, []() {
+    m_filterNoneAction = displayFilterMenu->addAction(tr("&None"), this, []() {
         DisplayFilterManager::instance().setFilterType(DisplayFilterType::None);
     });
     m_filterNoneAction->setCheckable(true);
     m_displayFilterActionGroup->addAction(m_filterNoneAction);
 
-    m_filterGrayscaleAction = displayFilterMenu->addAction("グレースケール(&G)", this, []() {
+    m_filterGrayscaleAction = displayFilterMenu->addAction(tr("&Grayscale"), this, []() {
         DisplayFilterManager::instance().setFilterType(DisplayFilterType::Grayscale);
     });
     m_filterGrayscaleAction->setCheckable(true);
     m_displayFilterActionGroup->addAction(m_filterGrayscaleAction);
 
-    m_filterGrayscaleYiqAction = displayFilterMenu->addAction("グレースケール (YIQ)(&Y)", this, []() {
+    m_filterGrayscaleYiqAction = displayFilterMenu->addAction(tr("Grayscale (&YIQ)"), this, []() {
         DisplayFilterManager::instance().setFilterType(DisplayFilterType::GrayscaleYIQ);
     });
     m_filterGrayscaleYiqAction->setCheckable(true);
     m_displayFilterActionGroup->addAction(m_filterGrayscaleYiqAction);
 
-    m_filterIccAction = displayFilterMenu->addAction("ICCプロファイル(&I)", this, []() {
+    m_filterIccAction = displayFilterMenu->addAction(tr("&ICC Profile"), this, []() {
         DisplayFilterManager::instance().setFilterType(DisplayFilterType::IccProfile);
     });
     m_filterIccAction->setCheckable(true);
@@ -361,7 +361,7 @@ void MainWindow::createMenuBar() {
     viewMenu->addSeparator();
 
     // GIMPスタイル: 選択範囲の境界線表示・非表示トグル (Ctrl+T / Ctrl+H)
-    auto actShowSelection = viewMenu->addAction("選択範囲の境界線を表示(&S)", this, [this](bool checked) {
+    auto actShowSelection = viewMenu->addAction(tr("&Show Selection Boundary"), this, [this](bool checked) {
         if (m_canvasWidget) m_canvasWidget->setShowSelection(checked);
     });
     actShowSelection->setCheckable(true);
@@ -370,144 +370,144 @@ void MainWindow::createMenuBar() {
 
     viewMenu->addSeparator();
 
-    viewMenu->addAction("時計回りに90°回転", this, [this]() {
+    viewMenu->addAction(tr("Rotate 90° &CW"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setRotationAngle(m_canvasWidget->rotationAngle() + 90.0);
     });
-    viewMenu->addAction("反時計回りに90°回転", this, [this]() {
+    viewMenu->addAction(tr("Rotate 90° CC&W"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setRotationAngle(m_canvasWidget->rotationAngle() - 90.0);
     });
-    auto actRotCW15 = viewMenu->addAction("時計回りに15°回転", this, [this]() {
+    auto actRotCW15 = viewMenu->addAction(tr("Rotate 15° CW"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setRotationAngle(m_canvasWidget->rotationAngle() + 15.0);
     });
     actRotCW15->setShortcut(QKeySequence(Qt::Key_End));
 
-    auto actRotCCW15 = viewMenu->addAction("反時計回りに15°回転", this, [this]() {
+    auto actRotCCW15 = viewMenu->addAction(tr("Rotate 15° CCW"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setRotationAngle(m_canvasWidget->rotationAngle() - 15.0);
     });
     actRotCCW15->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_End));
 
-    auto actResetRot = viewMenu->addAction("回転をリセット (0°)", this, [this]() {
+    auto actResetRot = viewMenu->addAction(tr("Reset &Rotation (0°)"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setRotationAngle(0.0);
     });
     actResetRot->setShortcut(QKeySequence(Qt::Key_Home));
 
     viewMenu->addSeparator();
 
-    m_flipHAction = viewMenu->addAction("左右反転表示", this, [this]() {
+    m_flipHAction = viewMenu->addAction(tr("&Flip Horizontally"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->toggleFlipHorizontally();
     });
     m_flipHAction->setCheckable(true);
     m_flipHAction->setShortcut(QKeySequence(Qt::Key_H));
 
-    viewMenu->addAction("表示位置・回転をリセット (100%)", this, [this]() {
+    viewMenu->addAction(tr("Reset View && Rotation (&100%)"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->resetTransform();
     });
-    viewMenu->addAction("画面サイズに合わせる (全体表示)", this, [this]() {
+    viewMenu->addAction(tr("&Fit to View"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->fitToView();
     });
 
     viewMenu->addSeparator();
 
-    auto actZoomIn = viewMenu->addAction("ズームイン", this, [this]() {
+    auto actZoomIn = viewMenu->addAction(tr("Zoom &In"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setZoom(m_canvasWidget->zoom() * 1.2);
     });
     actZoomIn->setShortcuts({ QKeySequence::ZoomIn, QKeySequence(Qt::CTRL | Qt::Key_Equal) });
 
-    auto actZoomOut = viewMenu->addAction("ズームアウト", this, [this]() {
+    auto actZoomOut = viewMenu->addAction(tr("Zoom &Out"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setZoom(m_canvasWidget->zoom() / 1.2);
     });
     actZoomOut->setShortcuts({ QKeySequence::ZoomOut, QKeySequence(Qt::CTRL | Qt::Key_Minus) });
 
-    auto actZoom100 = viewMenu->addAction("100%表示", this, [this]() {
+    auto actZoom100 = viewMenu->addAction(tr("&100% Zoom"), this, [this]() {
         if (m_canvasWidget) m_canvasWidget->setZoom(1.0);
     });
     actZoom100->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
 
     viewMenu->addSeparator();
-    m_previewWindowAction = viewMenu->addAction(tr("プレビューウィンドウ(&P)..."), this, &MainWindow::onTogglePreviewWindow);
+    m_previewWindowAction = viewMenu->addAction(tr("&Preview Window..."), this, &MainWindow::onTogglePreviewWindow);
     m_previewWindowAction->setCheckable(true);
-    m_referenceImageWindowAction = viewMenu->addAction(tr("参考画像ウィンドウ(&R)..."), this, &MainWindow::onToggleReferenceImageWindow);
+    m_referenceImageWindowAction = viewMenu->addAction(tr("&Reference Image Window..."), this, &MainWindow::onToggleReferenceImageWindow);
     m_referenceImageWindowAction->setCheckable(true);
 
     // ウィンドウ(&W) メニュー (ドッキング・フローティング切替)
-    auto windowMenu = menu->addMenu("ウィンドウ(&W)");
+    auto windowMenu = menu->addMenu(tr("&Window"));
     windowMenu->addAction(m_previewWindowAction);
     windowMenu->addAction(m_referenceImageWindowAction);
     windowMenu->addSeparator();
 
-    auto navMenu = windowMenu->addMenu("ナビゲーション＆レイヤー");
+    auto navMenu = windowMenu->addMenu(tr("Navigation && Layer"));
     navMenu->addAction(m_navLayerDock->toggleViewAction());
     navMenu->addSeparator();
-    navMenu->addAction("左側にドッキング", this, [this]() {
+    navMenu->addAction(tr("Dock to &Left"), this, [this]() {
         m_navLayerDock->setFloating(false);
         addDockWidget(Qt::LeftDockWidgetArea, m_navLayerDock);
         m_navLayerDock->show();
         saveSettings();
     });
-    navMenu->addAction("右側にドッキング", this, [this]() {
+    navMenu->addAction(tr("Dock to &Right"), this, [this]() {
         m_navLayerDock->setFloating(false);
         addDockWidget(Qt::RightDockWidgetArea, m_navLayerDock);
         m_navLayerDock->show();
         saveSettings();
     });
-    navMenu->addAction("フローティングウィンドウにする", this, [this]() {
+    navMenu->addAction(tr("Float"), this, [this]() {
         m_navLayerDock->setFloating(true);
         m_navLayerDock->show();
         saveSettings();
     });
 
-    auto colorMenu = windowMenu->addMenu("色選択＆ブラシ設定");
+    auto colorMenu = windowMenu->addMenu(tr("Color && Tool"));
     colorMenu->addAction(m_colorBrushDock->toggleViewAction());
     colorMenu->addSeparator();
-    colorMenu->addAction("左側にドッキング", this, [this]() {
+    colorMenu->addAction(tr("Dock to &Left"), this, [this]() {
         m_colorBrushDock->setFloating(false);
         addDockWidget(Qt::LeftDockWidgetArea, m_colorBrushDock);
         m_colorBrushDock->show();
         saveSettings();
     });
-    colorMenu->addAction("右側にドッキング", this, [this]() {
+    colorMenu->addAction(tr("Dock to &Right"), this, [this]() {
         m_colorBrushDock->setFloating(false);
         addDockWidget(Qt::RightDockWidgetArea, m_colorBrushDock);
         m_colorBrushDock->show();
         saveSettings();
     });
-    colorMenu->addAction("フローティングウィンドウにする", this, [this]() {
+    colorMenu->addAction(tr("Float"), this, [this]() {
         m_colorBrushDock->setFloating(true);
         m_colorBrushDock->show();
         saveSettings();
     });
 
-    auto aiMenu = windowMenu->addMenu("AI アシスタント");
+    auto aiMenu = windowMenu->addMenu(tr("AI &Assistant"));
     aiMenu->addAction(m_aiAssistantDock->toggleViewAction());
     aiMenu->addSeparator();
-    aiMenu->addAction("右側にドッキング", this, [this]() {
+    aiMenu->addAction(tr("Dock to &Right"), this, [this]() {
         m_aiAssistantDock->setFloating(false);
         addDockWidget(Qt::RightDockWidgetArea, m_aiAssistantDock);
         m_aiAssistantDock->show();
         saveSettings();
     });
-    aiMenu->addAction("左側にドッキング", this, [this]() {
+    aiMenu->addAction(tr("Dock to &Left"), this, [this]() {
         m_aiAssistantDock->setFloating(false);
         addDockWidget(Qt::LeftDockWidgetArea, m_aiAssistantDock);
         m_aiAssistantDock->show();
         saveSettings();
     });
-    aiMenu->addAction("フローティングウィンドウにする", this, [this]() {
+    aiMenu->addAction(tr("Float"), this, [this]() {
         m_aiAssistantDock->setFloating(true);
         m_aiAssistantDock->show();
         saveSettings();
     });
 
     windowMenu->addSeparator();
-    windowMenu->addAction("レイアウトを初期状態にリセット", this, &MainWindow::resetDockLayout);
+    windowMenu->addAction(tr("&Reset Window Layout"), this, &MainWindow::resetDockLayout);
 
-    menu->addMenu("その他(&O)");
+    menu->addMenu(tr("&Other"));
 
     // ウィンドウ右上端に "選択範囲編集" トグルボタンを追加
     m_btnToggleSelectionEdit = new QToolButton(this);
-    m_btnToggleSelectionEdit->setText(tr("選択範囲編集"));
+    m_btnToggleSelectionEdit->setText(tr("Selection Edit"));
     m_btnToggleSelectionEdit->setCheckable(true);
-    m_btnToggleSelectionEdit->setToolTip(tr("選択範囲編集モードのON/OFF\nON時は通常描画ツールで選択範囲を編集できます（クイックマスク）"));
+    m_btnToggleSelectionEdit->setToolTip(tr("Toggle selection edit mode (Quick Mask)\nWhen ON, raster tools edit the selection mask."));
     m_btnToggleSelectionEdit->setStyleSheet(
         "QToolButton {"
         "  padding: 3px 8px;"
@@ -533,12 +533,12 @@ void MainWindow::createMenuBar() {
 }
 
 void MainWindow::createQuickToolBar() {
-    auto tb = addToolBar("クイックツールバー");
+    auto tb = addToolBar(tr("Quick Toolbar"));
     tb->setObjectName("QuickToolBar");
     tb->setMovable(false);
 
     // 手ブレ補正セレクタ (SAI風: 0, 1, 2, ..., S-1, ..., S-7)
-    tb->addWidget(new QLabel(" 手ブレ補正: ", this));
+    tb->addWidget(new QLabel(tr(" Stabilizer: "), this));
     m_smoothCombo = new QComboBox(this);
     m_smoothCombo->addItem("OFF (0)", 0);
     for (int i = 1; i <= 8; ++i) {
@@ -559,8 +559,8 @@ void MainWindow::createQuickToolBar() {
     // 左右反転表示トグルボタン (手ブレ補正と元に戻すの間に配置)
     m_btnFlipH = new QToolButton(this);
     m_btnFlipH->setCheckable(true);
-    m_btnFlipH->setText("反転");
-    m_btnFlipH->setToolTip("左右反転表示 (H)");
+    m_btnFlipH->setText(tr("Flip H"));
+    m_btnFlipH->setToolTip(tr("Flip Horizontally (H)"));
     m_btnFlipH->setIcon(createFlipHorizontalIcon());
     m_btnFlipH->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     m_btnFlipH->setStyleSheet(
@@ -577,8 +577,8 @@ void MainWindow::createQuickToolBar() {
 
     // 第1背景色⇔第2背景色 切り替えボタン (左右反転表示ボタンの右隣り)
     m_btnSwitchBgColor = new QToolButton(this);
-    m_btnSwitchBgColor->setText("背景切替");
-    m_btnSwitchBgColor->setToolTip("第1背景色⇔第2背景色 切り替え");
+    m_btnSwitchBgColor->setText(tr("Switch BG"));
+    m_btnSwitchBgColor->setToolTip(tr("Switch Primary / Secondary Background Color"));
     m_btnSwitchBgColor->setIcon(createSwitchBgColorIcon());
     m_btnSwitchBgColor->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     m_btnSwitchBgColor->setStyleSheet(
@@ -619,7 +619,7 @@ void MainWindow::setupLayout() {
     setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
 
     // --- ドック 1: ナビゲーター & レイヤーパネル ---
-    m_navLayerDock = new QDockWidget("ナビゲーション / レイヤー", this);
+    m_navLayerDock = new QDockWidget(tr("Navigation / Layer"), this);
     m_navLayerDock->setObjectName("NavLayerDock");
     m_navLayerDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
@@ -662,7 +662,7 @@ void MainWindow::setupLayout() {
     addDockWidget(Qt::LeftDockWidgetArea, m_navLayerDock);
 
     // --- ドック 2: カラーサークル & ツールボックス & ブラシ設定 ---
-    m_colorBrushDock = new QDockWidget("色選択 / ツール / ブラシ設定", this);
+    m_colorBrushDock = new QDockWidget(tr("Color / Tool / Brush Settings"), this);
     m_colorBrushDock->setObjectName("ColorBrushDock");
     m_colorBrushDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
@@ -686,19 +686,19 @@ void MainWindow::setupLayout() {
     wheelBtnLayout->setContentsMargins(0, 2, 0, 2);
     wheelBtnLayout->setSpacing(4);
 
-    m_btnTogglePalette = new QPushButton("パレット", wheelBtnCol);
+    m_btnTogglePalette = new QPushButton(tr("Palette"), wheelBtnCol);
     m_btnTogglePalette->setCheckable(true);
     m_btnTogglePalette->setFixedHeight(24);
-    m_btnTogglePalette->setToolTip("カラーパレットの表示/非表示を切り替え");
+    m_btnTogglePalette->setToolTip(tr("Toggle Color Palette display"));
     m_btnTogglePalette->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 2px 4px; background: #f0f0f0; border: 1px solid #a0a0a0; border-radius: 2px; }"
         "QPushButton:hover { background: #e0e8ff; border-color: #3060b0; }"
         "QPushButton:checked { background: #316ac5; color: white; border-color: #104090; font-weight: bold; }"
     );
 
-    m_btnPickColorDialog = new QPushButton("色選択", wheelBtnCol);
+    m_btnPickColorDialog = new QPushButton(tr("Color"), wheelBtnCol);
     m_btnPickColorDialog->setFixedHeight(24);
-    m_btnPickColorDialog->setToolTip("色選択ダイアログを開く");
+    m_btnPickColorDialog->setToolTip(tr("Open Color Selection Dialog"));
     m_btnPickColorDialog->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 2px 4px; background: #f0f0f0; border: 1px solid #a0a0a0; border-radius: 2px; }"
         "QPushButton:hover { background: #e0e8ff; border-color: #3060b0; }"
@@ -838,7 +838,7 @@ void MainWindow::setupLayout() {
     // タブバー右端にも閉じるボタンを追加
     m_tabCloseBtn = new QToolButton(m_tabWidget);
     m_tabCloseBtn->setText("×");
-    m_tabCloseBtn->setToolTip(tr("キャンバスを閉じる (Ctrl+W)"));
+    m_tabCloseBtn->setToolTip(tr("Close Canvas (Ctrl+W)"));
     m_tabCloseBtn->setStyleSheet(
         "QToolButton { font-size: 13px; font-weight: bold; padding: 1px 7px; border: 1px solid #aaa; border-radius: 2px; background: #e0e0e0; }"
         "QToolButton:hover { background: #e81123; color: white; border-color: #e81123; }"
@@ -963,7 +963,7 @@ void MainWindow::setupLayout() {
         // 「色選択」ボタンの連動（色選択ダイアログを表示し、描画色を変更）
         connect(m_btnPickColorDialog, &QPushButton::clicked, this, [this, colorBox]() {
             QColor cur = m_colorWheel ? m_colorWheel->currentColor() : Qt::black;
-            QColor c = QColorDialog::getColor(cur, this, tr("色選択"), QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog);
+            QColor c = QColorDialog::getColor(cur, this, tr("Select Color"), QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog);
             if (c.isValid()) {
                 if (m_colorWheel) {
                     m_colorWheel->setColor(c);
@@ -2819,7 +2819,7 @@ void MainWindow::onCloseCanvas() {
 
     m_currentFilePath.clear();
     setupDocument(nullptr);
-    statusBar()->showMessage(tr("キャンバスを閉じました。"), 3000);
+    statusBar()->showMessage(tr("Canvas closed."), 3000);
 }
 
 bool MainWindow::onSaveCanvas() {
@@ -3629,7 +3629,7 @@ void MainWindow::onNewPanelFolder() {
 
 void MainWindow::onNewThreeDLayer() {
     if (!m_document) return;
-    auto l = m_document->addThreeDLayer(tr("3Dレイヤー"));
+    auto l = m_document->addThreeDLayer(tr("3D Layer"));
     if (l && m_threeDSettings) {
         m_threeDSettings->setFromLayer(l.get());
     }
@@ -3741,9 +3741,9 @@ void MainWindow::onAiApplyAsNewLayer(const QImage& image) {
         layerImg = image.scaled(m_document->width(), m_document->height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     }
 
-    auto newLayer = m_document->addRasterLayerWithImage(layerImg, tr("AI生成レイヤー"), offset);
+    auto newLayer = m_document->addRasterLayerWithImage(layerImg, tr("AI Generated Layer"), offset);
     if (newLayer) {
-        statusBar()->showMessage(tr("AI生成画像を新規レイヤーとして挿入しました。"), 4000);
+        statusBar()->showMessage(tr("Inserted AI generated image as a new layer."), 4000);
     }
 }
 
@@ -3752,7 +3752,7 @@ void MainWindow::onAiApplyOverwriteSelection(const QImage& image) {
 
     auto activeLayer = m_document->activeLayer();
     if (!activeLayer || activeLayer->type() != LayerType::Raster) {
-        QMessageBox::warning(this, tr("AI画像適用"), tr("選択範囲への上書きは通常（ラスター）レイヤーでのみ利用可能です。"));
+        QMessageBox::warning(this, tr("Apply AI Image"), tr("Overwriting selection is only available on raster layers."));
         return;
     }
 
@@ -3801,19 +3801,19 @@ void MainWindow::onAiApplyOverwriteSelection(const QImage& image) {
 
     if (m_document->undoStack()) {
         auto cmd = new DrawStrokeCommand(m_document, m_document->activeLayerIndex(), preTiles, postTiles, targetRect);
-        cmd->setText(tr("AI生成結果の上書き"));
+        cmd->setText(tr("Overwrite with AI Result"));
         m_document->undoStack()->push(cmd);
     }
 
     m_document->composite(targetRect);
-    statusBar()->showMessage(tr("AI生成画像を選択範囲内に上書きしました。"), 4000);
+    statusBar()->showMessage(tr("Overwrote AI generated image into selection."), 4000);
 }
 
 void MainWindow::onFilterFocusBlur() {
     if (!m_document) return;
     FocusBlurDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("焦点ぼかし"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Focus Blur"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3823,7 +3823,7 @@ void MainWindow::onFilterGaussianBlur() {
     if (!m_document) return;
     GaussianBlurDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("ガウスぼかし"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Gaussian Blur"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3833,7 +3833,7 @@ void MainWindow::onFilterBrightnessContrast() {
     if (!m_document) return;
     BrightnessContrastDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("明るさ・コントラスト"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Brightness / Contrast"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3843,7 +3843,7 @@ void MainWindow::onFilterHueSaturation() {
     if (!m_document) return;
     HueSaturationDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("色相・彩度・明度"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Hue / Saturation / Value"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3853,7 +3853,7 @@ void MainWindow::onFilterToneCurve() {
     if (!m_document) return;
     ToneCurveDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("トーンカーブ"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Tone Curve"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3864,7 +3864,7 @@ void MainWindow::onFilterMotionBlur() {
     if (!m_document) return;
     MotionBlurDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("モーションぼかし"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Motion Blur"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();
@@ -3874,7 +3874,7 @@ void MainWindow::onFilterGradientMap() {
     if (!m_document) return;
     GradientMapDialog dlg(m_document, m_canvasWidget, this);
     if (!dlg.hasTargets()) {
-        QMessageBox::information(this, tr("グラデーションマップ"), tr("フィルターを適用できる通常レイヤーが選択されていません。\n（通常レイヤーを選択するか、レイヤーをピン留めしてください）"));
+        QMessageBox::information(this, tr("Gradient Map"), tr("No editable raster layer selected for filter.\n(Please select a normal raster layer or unlock it)"));
         return;
     }
     dlg.exec();

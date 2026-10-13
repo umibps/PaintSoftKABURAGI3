@@ -13,6 +13,8 @@
 #include <QLabel>
 #include <QSettings>
 #include <QTabWidget>
+#include <QMessageBox>
+#include <QLocale>
 #include "LlmPromptService.hpp"
 #include "DisplayFilterManager.hpp"
 
@@ -59,8 +61,21 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
     layerViewForm->addRow("スクロールバー位置:", m_layerScrollPosCombo);
 
     layGeneral->addWidget(layerViewGroup);
+
+    // 3. 言語設定 (Language Settings)
+    auto langGroup = new QGroupBox(tr("Language Settings"), tabGeneral);
+    auto langForm = new QFormLayout(langGroup);
+
+    m_comboLanguage = new QComboBox(this);
+    m_comboLanguage->addItem(tr("System Default"), "system");
+    m_comboLanguage->addItem(tr("Japanese (日本語)"), "ja");
+    m_comboLanguage->addItem(tr("English"), "en");
+    langForm->addRow(tr("Language:"), m_comboLanguage);
+
+    layGeneral->addWidget(langGroup);
+
     layGeneral->addStretch();
-    tabWidget->addTab(tabGeneral, "一般");
+    tabWidget->addTab(tabGeneral, tr("General"));
 
     // ==========================================
     // タブ2: カラーマネジメント (ICCプロファイル)
@@ -444,6 +459,27 @@ PreferencesDialog::ScrollBarPosition PreferencesDialog::layerScrollBarPosition()
     return (val == static_cast<int>(ScrollBarPosition::Left)) ? ScrollBarPosition::Left : ScrollBarPosition::Right;
 }
 
+QString PreferencesDialog::language() {
+    QSettings settings = getSettings();
+    return settings.value("Preferences/language", "system").toString();
+}
+
+void PreferencesDialog::setLanguage(const QString& lang) {
+    QSettings settings = getSettings();
+    settings.setValue("Preferences/language", lang);
+}
+
+QString PreferencesDialog::effectiveLanguage() {
+    QString lang = language();
+    if (lang == "system") {
+        if (QLocale::system().language() == QLocale::Japanese) {
+            return "ja";
+        }
+        return "en";
+    }
+    return lang;
+}
+
 QString PreferencesDialog::aiModelDirectory() {
     QSettings settings = getSettings();
     return settings.value("AiLocal/modelDirectory", "").toString();
@@ -670,6 +706,14 @@ void PreferencesDialog::loadSettings() {
         m_layerScrollPosCombo->setCurrentIndex(idx);
     }
 
+    QString lang = settings.value("Preferences/language", "system").toString();
+    int lIdx = m_comboLanguage->findData(lang);
+    if (lIdx >= 0) {
+        m_comboLanguage->setCurrentIndex(lIdx);
+    } else {
+        m_comboLanguage->setCurrentIndex(0);
+    }
+
     // モニタープロファイル読み込み
     QString monPath = settings.value("display/monitorProfilePath", DisplayFilterManager::instance().monitorProfilePath()).toString();
     m_editMonitorProfilePath->setText(monPath);
@@ -727,6 +771,14 @@ void PreferencesDialog::saveSettings() {
     settings.endGroup();
 
     settings.setValue("Preferences/layerScrollBarPosition", m_layerScrollPosCombo->currentData().toInt());
+
+    QString oldLang = language();
+    QString newLang = m_comboLanguage->currentData().toString();
+    settings.setValue("Preferences/language", newLang);
+    if (m_initialized && oldLang != newLang) {
+        QMessageBox::information(this, tr("Language Setting"),
+            tr("The language setting will take effect after restarting the application."));
+    }
 
     // モニタープロファイル保存
     QString monPath = m_editMonitorProfilePath->text().trimmed();

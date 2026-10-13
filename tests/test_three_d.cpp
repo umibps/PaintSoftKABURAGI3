@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QTranslator>
 #include <QImage>
 #include <QPainter>
 #include <QTemporaryFile>
@@ -2014,6 +2015,96 @@ void testStartupNoCanvasAndOpenFileArgument() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testLanguageSwitching() {
+    std::cout << "--- Testing Language Settings and Translation Switching ---" << std::endl;
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+
+    // 1. デフォルト設定の確認
+    QSettings settings("KABURAGI", "PaintSoft");
+    QString origLang = settings.value("General/Language", "system").toString();
+
+    // デフォルト言語設定
+    PreferencesDialog::setLanguage("system");
+    assert(PreferencesDialog::language() == "system");
+    QString effSys = PreferencesDialog::effectiveLanguage();
+    std::cout << "  [System Default Language] effectiveLanguage: " << effSys.toStdString() << std::endl;
+    assert(effSys == "ja" || effSys == "en");
+
+    // 2. 言語切り替え ("ja" / "en")
+    PreferencesDialog::setLanguage("en");
+    assert(PreferencesDialog::language() == "en");
+    assert(PreferencesDialog::effectiveLanguage() == "en");
+    std::cout << "  [English Setting] effectiveLanguage correctly returns 'en'." << std::endl;
+
+    PreferencesDialog::setLanguage("ja");
+    assert(PreferencesDialog::language() == "ja");
+    assert(PreferencesDialog::effectiveLanguage() == "ja");
+    std::cout << "  [Japanese Setting] effectiveLanguage correctly returns 'ja'." << std::endl;
+
+    // 元の設定に戻す
+    PreferencesDialog::setLanguage(origLang);
+
+    // 3. 翻訳カタログ (paintsoft_ja.qm) のロード検証
+    QTranslator translator;
+    bool loaded = translator.load("paintsoft_ja", "translations") ||
+                  translator.load("paintsoft_ja", "build/translations");
+    assert(loaded);
+    std::cout << "  [QM Catalog] translations/paintsoft_ja.qm loaded successfully." << std::endl;
+
+    qApp->installTranslator(&translator);
+
+    // 日本語翻訳の検証
+    QString trFile = QCoreApplication::translate("Kaburagi::MainWindow", "&File");
+    QString trEdit = QCoreApplication::translate("Kaburagi::MainWindow", "&Edit");
+    QString trSelEdit = QCoreApplication::translate("Kaburagi::MainWindow", "Selection Edit");
+    QString trRefImg = QCoreApplication::translate("Kaburagi::ReferenceImageWindow", "Reference Image");
+    QString trPalette = QCoreApplication::translate("Kaburagi::ColorPaletteWidget", "Clear Palette");
+    QString trPrefLang = QCoreApplication::translate("Kaburagi::PreferencesDialog", "Language Settings");
+
+    std::cout << "  [Translate &File] -> " << trFile.toStdString() << std::endl;
+    std::cout << "  [Translate &Edit] -> " << trEdit.toStdString() << std::endl;
+    std::cout << "  [Translate Selection Edit] -> " << trSelEdit.toStdString() << std::endl;
+    std::cout << "  [Translate Reference Image] -> " << trRefImg.toStdString() << std::endl;
+    std::cout << "  [Translate Clear Palette] -> " << trPalette.toStdString() << std::endl;
+    std::cout << "  [Translate Language Settings] -> " << trPrefLang.toStdString() << std::endl;
+
+    assert(trFile == "ファイル(&F)");
+    assert(trEdit == "編集(&E)");
+    assert(trSelEdit == "選択範囲編集");
+    assert(trRefImg == "参考画像");
+    assert(trPalette == "パレットをクリア");
+    assert(trPrefLang == "言語設定");
+
+    // 日本語UIスナップショット
+    MainWindow mwJa;
+    mwJa.resize(1100, 750);
+    mwJa.show();
+    QApplication::processEvents();
+    QImage snapJa = mwJa.grab().toImage();
+    snapJa.save(brainDir + "language_japanese_ui_verified.png");
+    std::cout << "  [UI Snapshot] language_japanese_ui_verified.png saved." << std::endl;
+
+    // 4. 英語モード（トランスレーター解除）の検証
+    qApp->removeTranslator(&translator);
+    QString enFile = QCoreApplication::translate("Kaburagi::MainWindow", "&File");
+    QString enEdit = QCoreApplication::translate("Kaburagi::MainWindow", "&Edit");
+    QString enSelEdit = QCoreApplication::translate("Kaburagi::MainWindow", "Selection Edit");
+    assert(enFile == "&File");
+    assert(enEdit == "&Edit");
+    assert(enSelEdit == "Selection Edit");
+    std::cout << "  [English Key Fallback] Correctly returned native English keys without translator." << std::endl;
+
+    MainWindow mwEn;
+    mwEn.resize(1100, 750);
+    mwEn.show();
+    QApplication::processEvents();
+    QImage snapEn = mwEn.grab().toImage();
+    snapEn.save(brainDir + "language_english_ui_verified.png");
+    std::cout << "  [UI Snapshot] language_english_ui_verified.png saved." << std::endl;
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -2040,6 +2131,7 @@ int main(int argc, char* argv[]) {
     testToolBoxResizeGuiVisibility();
     testReferenceImageWindow();
     testStartupNoCanvasAndOpenFileArgument();
+    testLanguageSwitching();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

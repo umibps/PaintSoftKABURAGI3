@@ -111,7 +111,7 @@ void ReferenceImageView::CanvasWidget::mousePressEvent(QMouseEvent* event) {
         QMenu menu(this);
         menu.setStyleSheet("QMenu { font-size: 11px; }");
 
-        QAction* actPalette = menu.addAction(tr("パレットに登録する"));
+        QAction* actPalette = menu.addAction(tr("Register to Palette"));
         if (!inside || !pickedColor.isValid()) {
             actPalette->setEnabled(false);
         } else {
@@ -122,7 +122,7 @@ void ReferenceImageView::CanvasWidget::mousePressEvent(QMouseEvent* event) {
 
         menu.addSeparator();
 
-        QAction* actClose = menu.addAction(tr("画像を閉じる"));
+        QAction* actClose = menu.addAction(tr("Close Image"));
         connect(actClose, &QAction::triggered, this, [this]() {
             emit m_view->closeRequested();
         });
@@ -246,7 +246,7 @@ void ReferenceImageView::wheelEvent(QWheelEvent* event) {
 
 ReferenceImageWindow::ReferenceImageWindow(QWidget* parent)
     : QMainWindow(parent) {
-    setWindowTitle(tr("参考画像"));
+    setWindowTitle(tr("Reference Image"));
     resize(500, 450);
 
     setupUi();
@@ -255,12 +255,12 @@ ReferenceImageWindow::ReferenceImageWindow(QWidget* parent)
 
 void ReferenceImageWindow::setupUi() {
     // 1. メニューバー
-    QMenu* fileMenu = menuBar()->addMenu(tr("ファイル(&F)"));
-    QAction* actOpen = fileMenu->addAction(tr("画像を開く(&O)..."), this, &ReferenceImageWindow::openImage);
+    QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
+    QAction* actOpen = fileMenu->addAction(tr("&Open Image..."), this, &ReferenceImageWindow::openImage);
     actOpen->setShortcut(QKeySequence::Open);
 
-    QMenu* editMenu = menuBar()->addMenu(tr("編集(&E)"));
-    QAction* actPaste = editMenu->addAction(tr("貼り付け(&P)"), this, &ReferenceImageWindow::pasteImage);
+    QMenu* editMenu = menuBar()->addMenu(tr("&Edit"));
+    QAction* actPaste = editMenu->addAction(tr("&Paste"), this, &ReferenceImageWindow::pasteImage);
     actPaste->setShortcut(QKeySequence::Paste);
 
     // 2. 中央レイアウト
@@ -273,11 +273,11 @@ void ReferenceImageWindow::setupUi() {
     m_centralStack = new QStackedWidget(central);
 
     // プレースホルダー
-    m_placeholderLabel = new QLabel(tr("メニューの [ファイル] > [画像を開く] または [編集] > [貼り付け] で画像を表示します。\n\n"
-                                       "・左クリック: ピクセルの色を描画色に設定\n"
-                                       "・右クリック: パレットに登録 / 画像を閉じる\n"
-                                       "・中ドラッグ: スクロール（パン）\n"
-                                       "・ホイール: 拡大 / 縮小"), m_centralStack);
+    m_placeholderLabel = new QLabel(tr("Open an image via [File] > [Open Image] or [Edit] > [Paste].\n\n"
+                                       "・Left click: Sample pixel color and set as drawing color\n"
+                                       "・Right click: Register to palette / Close image\n"
+                                       "・Middle drag: Pan view\n"
+                                       "・Mouse wheel: Zoom in / out"), m_centralStack);
     m_placeholderLabel->setAlignment(Qt::AlignCenter);
     m_placeholderLabel->setStyleSheet("QLabel { color: #888888; font-size: 12px; }");
     m_centralStack->addWidget(m_placeholderLabel);
@@ -299,7 +299,7 @@ void ReferenceImageWindow::setupUi() {
     bottomLayout->setContentsMargins(2, 2, 2, 2);
     bottomLayout->setSpacing(6);
 
-    m_zoomScale = new SpinScale(tr("拡大率"), 10.0, 1600.0, 10.0, 0, "%", bottomBar);
+    m_zoomScale = new SpinScale(tr("Zoom"), 10.0, 1600.0, 10.0, 0, "%", bottomBar);
     m_zoomScale->setValue(100.0);
     connect(m_zoomScale, &SpinScale::valueChanged, this, &ReferenceImageWindow::onZoomScaleChanged);
     bottomLayout->addWidget(m_zoomScale);
@@ -361,8 +361,8 @@ void ReferenceImageWindow::openImageFile(const QString& path) {
 }
 
 void ReferenceImageWindow::openImage() {
-    QString filter = tr("画像ファイル (*.png *.jpg *.jpeg *.bmp *.webp *.gif *.tga);;すべてのファイル (*)");
-    QString path = QFileDialog::getOpenFileName(this, tr("画像を開く"), "", filter);
+    QString filter = tr("Image Files (*.png *.jpg *.jpeg *.bmp *.webp *.gif *.tga);;All Files (*)");
+    QString path = QFileDialog::getOpenFileName(this, tr("Open Image"), "", filter);
     if (!path.isEmpty()) {
         openImageFile(path);
     }
@@ -381,7 +381,7 @@ void ReferenceImageWindow::pasteImage() {
     }
 
     if (!img.isNull()) {
-        addImage(img, tr("貼り付け画像 %1").arg(m_pasteCounter++));
+        addImage(img, tr("Pasted Image %1").arg(m_pasteCounter++));
     }
 }
 
