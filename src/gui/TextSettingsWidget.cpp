@@ -1,0 +1,551 @@
+#include "TextSettingsWidget.hpp"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QColorDialog>
+#include <algorithm>
+
+namespace Kaburagi {
+
+TextSettingsWidget::TextSettingsWidget(QWidget* parent)
+    : QWidget(parent) {
+    setupUi();
+}
+
+void TextSettingsWidget::setupUi() {
+    auto mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+    mainLayout->setSpacing(6);
+
+    // 1. テキスト入力エリア
+    auto textGroup = new QGroupBox("テキスト入力", this);
+    auto textGroupLayout = new QVBoxLayout(textGroup);
+    textGroupLayout->setContentsMargins(4, 6, 4, 4);
+    textGroupLayout->setSpacing(4);
+
+    m_textEdit = new QPlainTextEdit(textGroup);
+    m_textEdit->setPlaceholderText("テキストを入力...");
+    m_textEdit->setMinimumHeight(60);
+    textGroupLayout->addWidget(m_textEdit);
+    mainLayout->addWidget(textGroup);
+
+    // 2. フォント・サイズ設定
+    auto fontGroup = new QGroupBox("フォント設定", this);
+    auto fontGroupLayout = new QVBoxLayout(fontGroup);
+    fontGroupLayout->setContentsMargins(4, 6, 4, 4);
+    fontGroupLayout->setSpacing(4);
+
+    m_fontCombo = new QFontComboBox(fontGroup);
+    m_fontCombo->setCurrentFont(QFont("Yu Gothic", 16));
+    fontGroupLayout->addWidget(m_fontCombo);
+
+    auto sizeStyleLayout = new QHBoxLayout();
+    sizeStyleLayout->setContentsMargins(0, 0, 0, 0);
+    sizeStyleLayout->setSpacing(4);
+
+    m_fontSizeSpin = new QSpinBox(fontGroup);
+    m_fontSizeSpin->setRange(6, 300);
+    m_fontSizeSpin->setValue(24);
+    m_fontSizeSpin->setSuffix(" pt");
+    sizeStyleLayout->addWidget(m_fontSizeSpin, 1);
+
+    m_btnBold = new QPushButton("B", fontGroup);
+    m_btnBold->setCheckable(true);
+    m_btnBold->setToolTip("太字 (Bold)");
+    m_btnBold->setFixedWidth(28);
+    m_btnBold->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+    sizeStyleLayout->addWidget(m_btnBold);
+
+    m_btnItalic = new QPushButton("I", fontGroup);
+    m_btnItalic->setCheckable(true);
+    m_btnItalic->setToolTip("斜体 / イタリック (Italic)");
+    m_btnItalic->setFixedWidth(28);
+    m_btnItalic->setStyleSheet("QPushButton:checked { font-style: italic; background: #0078d7; color: white; }");
+    sizeStyleLayout->addWidget(m_btnItalic);
+
+    fontGroupLayout->addLayout(sizeStyleLayout);
+    mainLayout->addWidget(fontGroup);
+
+    // 3. 配置・揃え (水平・垂直)
+    auto alignGroup = new QGroupBox("配置・揃え", this);
+    auto alignGroupLayout = new QVBoxLayout(alignGroup);
+    alignGroupLayout->setContentsMargins(4, 6, 4, 4);
+    alignGroupLayout->setSpacing(4);
+
+    // 水平
+    auto hAlignRow = new QHBoxLayout();
+    hAlignRow->setContentsMargins(0, 0, 0, 0);
+    hAlignRow->setSpacing(4);
+    hAlignRow->addWidget(new QLabel("水平:", alignGroup));
+
+    m_hAlignGroup = new QButtonGroup(this);
+    m_hAlignGroup->setExclusive(true);
+
+    m_btnAlignLeft = new QPushButton("左", alignGroup);
+    m_btnAlignLeft->setCheckable(true);
+    m_btnAlignLeft->setChecked(true);
+    m_hAlignGroup->addButton(m_btnAlignLeft, 0);
+    hAlignRow->addWidget(m_btnAlignLeft);
+
+    m_btnAlignCenter = new QPushButton("中", alignGroup);
+    m_btnAlignCenter->setCheckable(true);
+    m_hAlignGroup->addButton(m_btnAlignCenter, 1);
+    hAlignRow->addWidget(m_btnAlignCenter);
+
+    m_btnAlignRight = new QPushButton("右", alignGroup);
+    m_btnAlignRight->setCheckable(true);
+    m_hAlignGroup->addButton(m_btnAlignRight, 2);
+    hAlignRow->addWidget(m_btnAlignRight);
+    alignGroupLayout->addLayout(hAlignRow);
+
+    // 垂直
+    auto vAlignRow = new QHBoxLayout();
+    vAlignRow->setContentsMargins(0, 0, 0, 0);
+    vAlignRow->setSpacing(4);
+    vAlignRow->addWidget(new QLabel("垂直:", alignGroup));
+
+    m_vAlignGroup = new QButtonGroup(this);
+    m_vAlignGroup->setExclusive(true);
+
+    m_btnAlignTop = new QPushButton("上", alignGroup);
+    m_btnAlignTop->setCheckable(true);
+    m_btnAlignTop->setChecked(true);
+    m_vAlignGroup->addButton(m_btnAlignTop, 0);
+    vAlignRow->addWidget(m_btnAlignTop);
+
+    m_btnAlignVCenter = new QPushButton("中", alignGroup);
+    m_btnAlignVCenter->setCheckable(true);
+    m_vAlignGroup->addButton(m_btnAlignVCenter, 1);
+    vAlignRow->addWidget(m_btnAlignVCenter);
+
+    m_btnAlignBottom = new QPushButton("下", alignGroup);
+    m_btnAlignBottom->setCheckable(true);
+    m_vAlignGroup->addButton(m_btnAlignBottom, 2);
+    vAlignRow->addWidget(m_btnAlignBottom);
+    alignGroupLayout->addLayout(vAlignRow);
+
+    mainLayout->addWidget(alignGroup);
+
+    // 4. 吹き出し形状・デザイン設定
+    auto balloonGroup = new QGroupBox("吹き出し形状・外観", this);
+    auto balloonLayout = new QVBoxLayout(balloonGroup);
+    balloonLayout->setContentsMargins(4, 6, 4, 4);
+    balloonLayout->setSpacing(4);
+
+    // 形状選択コンボボックス
+    auto shapeRow = new QHBoxLayout();
+    shapeRow->addWidget(new QLabel("形状:", balloonGroup));
+    m_shapeCombo = new QComboBox(balloonGroup);
+    m_shapeCombo->addItem("楕円吹き出し", static_cast<int>(BalloonShape::Ellipse));
+    m_shapeCombo->addItem("角丸四角形吹き出し", static_cast<int>(BalloonShape::RoundedRect));
+    m_shapeCombo->addItem("四角形 (モノローグ)", static_cast<int>(BalloonShape::Rectangle));
+    m_shapeCombo->addItem("ウニフラッシュ (叫び)", static_cast<int>(BalloonShape::Spike));
+    m_shapeCombo->addItem("モコモコ (思考)", static_cast<int>(BalloonShape::Cloud));
+    m_shapeCombo->addItem("枠なし (文字のみ)", static_cast<int>(BalloonShape::None));
+    shapeRow->addWidget(m_shapeCombo, 1);
+    balloonLayout->addLayout(shapeRow);
+
+    // 5. 特殊形状パラメータ (Spike / Cloud)
+    m_specialShapeWidget = new QWidget(balloonGroup);
+    auto specialLayout = new QFormLayout(m_specialShapeWidget);
+    specialLayout->setContentsMargins(0, 2, 0, 2);
+    specialLayout->setSpacing(4);
+
+    m_spikeCountSpin = new QSpinBox(m_specialShapeWidget);
+    m_spikeCountSpin->setRange(4, 64);
+    m_spikeCountSpin->setValue(16);
+    specialLayout->addRow("個数/密度:", m_spikeCountSpin);
+
+    m_spikeDepthSpin = new QDoubleSpinBox(m_specialShapeWidget);
+    m_spikeDepthSpin->setRange(2.0, 150.0);
+    m_spikeDepthSpin->setValue(20.0);
+    m_spikeDepthSpin->setSuffix(" px");
+    specialLayout->addRow("深さ/大きさ:", m_spikeDepthSpin);
+
+    m_spikePhaseSpin = new QDoubleSpinBox(m_specialShapeWidget);
+    m_spikePhaseSpin->setRange(0.0, 360.0);
+    m_spikePhaseSpin->setValue(0.0);
+    m_spikePhaseSpin->setSuffix(" °");
+    specialLayout->addRow("回転オフセット:", m_spikePhaseSpin);
+    balloonLayout->addWidget(m_specialShapeWidget);
+
+    // 6. しっぽ設定
+    m_hasTailCheck = new QCheckBox("しっぽを付ける", balloonGroup);
+    m_hasTailCheck->setChecked(true);
+    balloonLayout->addWidget(m_hasTailCheck);
+
+    m_tailParamsWidget = new QWidget(balloonGroup);
+    auto tailLayout = new QFormLayout(m_tailParamsWidget);
+    tailLayout->setContentsMargins(0, 0, 0, 0);
+    tailLayout->setSpacing(4);
+
+    m_tailBaseWidthSpin = new QDoubleSpinBox(m_tailParamsWidget);
+    m_tailBaseWidthSpin->setRange(4.0, 120.0);
+    m_tailBaseWidthSpin->setValue(24.0);
+    m_tailBaseWidthSpin->setSuffix(" px");
+    tailLayout->addRow("根元の太さ:", m_tailBaseWidthSpin);
+
+    auto curveRow = new QHBoxLayout();
+    m_tailCurvatureSlider = new QSlider(Qt::Horizontal, m_tailParamsWidget);
+    m_tailCurvatureSlider->setRange(-100, 100);
+    m_tailCurvatureSlider->setValue(0);
+    m_tailCurvatureLabel = new QLabel("直線", m_tailParamsWidget);
+    m_tailCurvatureLabel->setFixedWidth(36);
+    curveRow->addWidget(m_tailCurvatureSlider, 1);
+    curveRow->addWidget(m_tailCurvatureLabel);
+    tailLayout->addRow("カーブ曲率:", curveRow);
+    balloonLayout->addWidget(m_tailParamsWidget);
+
+    // 7. スタイル (枠線・背景色)
+    auto styleLayout = new QFormLayout();
+    styleLayout->setContentsMargins(0, 4, 0, 0);
+    styleLayout->setSpacing(4);
+
+    auto frameRow = new QHBoxLayout();
+    m_frameWidthSpin = new QDoubleSpinBox(balloonGroup);
+    m_frameWidthSpin->setRange(0.0, 50.0);
+    m_frameWidthSpin->setValue(3.0);
+    m_frameWidthSpin->setSuffix(" px");
+    frameRow->addWidget(m_frameWidthSpin, 1);
+
+    m_btnFrameColor = new QPushButton("枠線色", balloonGroup);
+    m_btnFrameColor->setFixedWidth(56);
+    frameRow->addWidget(m_btnFrameColor);
+    styleLayout->addRow("枠線の太さ/色:", frameRow);
+
+    auto fillRow = new QHBoxLayout();
+    m_btnFillColor = new QPushButton("背景色", balloonGroup);
+    m_btnFillColor->setFixedWidth(56);
+    fillRow->addWidget(m_btnFillColor);
+
+    m_transparentFillCheck = new QCheckBox("背景透明", balloonGroup);
+    fillRow->addWidget(m_transparentFillCheck, 1);
+    styleLayout->addRow("背景色:", fillRow);
+
+    balloonLayout->addLayout(styleLayout);
+
+    // 8. フチ取り設定
+    m_hasOutlineCheck = new QCheckBox("フチ取りを付ける (二重枠)", balloonGroup);
+    balloonLayout->addWidget(m_hasOutlineCheck);
+
+    m_outlineParamsWidget = new QWidget(balloonGroup);
+    auto outlineLayout = new QHBoxLayout(m_outlineParamsWidget);
+    outlineLayout->setContentsMargins(0, 0, 0, 0);
+    outlineLayout->setSpacing(4);
+
+    m_outlineWidthSpin = new QDoubleSpinBox(m_outlineParamsWidget);
+    m_outlineWidthSpin->setRange(1.0, 30.0);
+    m_outlineWidthSpin->setValue(4.0);
+    m_outlineWidthSpin->setSuffix(" px");
+    outlineLayout->addWidget(new QLabel("太さ:", m_outlineParamsWidget));
+    outlineLayout->addWidget(m_outlineWidthSpin, 1);
+
+    m_btnOutlineColor = new QPushButton("フチ色", m_outlineParamsWidget);
+    m_btnOutlineColor->setFixedWidth(56);
+    outlineLayout->addWidget(m_btnOutlineColor);
+    balloonLayout->addWidget(m_outlineParamsWidget);
+
+    mainLayout->addWidget(balloonGroup);
+
+    // シグナル接続
+    auto onSettingsChanged = [this]() {
+        if (!m_updatingUi) {
+            emit settingsChanged();
+        }
+    };
+
+    connect(m_textEdit, &QPlainTextEdit::textChanged, this, [this]() {
+        if (!m_updatingUi) {
+            emit textChanged(m_textEdit->toPlainText());
+        }
+    });
+
+    connect(m_fontCombo, &QFontComboBox::currentFontChanged, this, onSettingsChanged);
+    connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_btnBold, &QPushButton::toggled, this, onSettingsChanged);
+    connect(m_btnItalic, &QPushButton::toggled, this, onSettingsChanged);
+    connect(m_hAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
+    connect(m_vAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
+
+    connect(m_shapeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, onSettingsChanged]() {
+        updateSpecialShapeVisibility();
+        onSettingsChanged();
+    });
+    connect(m_spikeCountSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_spikeDepthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_spikePhaseSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+
+    connect(m_hasTailCheck, &QCheckBox::toggled, this, [this, onSettingsChanged](bool checked) {
+        m_tailParamsWidget->setVisible(checked);
+        onSettingsChanged();
+    });
+    connect(m_tailBaseWidthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_tailCurvatureSlider, &QSlider::valueChanged, this, [this, onSettingsChanged](int val) {
+        if (val == 0) m_tailCurvatureLabel->setText("直線");
+        else m_tailCurvatureLabel->setText(QString::number(val));
+        onSettingsChanged();
+    });
+
+    connect(m_frameWidthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_btnFrameColor, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        QColor col = QColorDialog::getColor(m_frameColor, this, "枠線の色を選択");
+        if (col.isValid()) {
+            m_frameColor = col;
+            updateColorButtons();
+            onSettingsChanged();
+        }
+    });
+
+    connect(m_btnFillColor, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        QColor col = QColorDialog::getColor(m_fillColor, this, "背景色を選択");
+        if (col.isValid()) {
+            m_fillColor = col;
+            m_transparentFillCheck->setChecked(false);
+            updateColorButtons();
+            onSettingsChanged();
+        }
+    });
+    connect(m_transparentFillCheck, &QCheckBox::toggled, this, [this, onSettingsChanged](bool transparent) {
+        if (transparent) {
+            m_fillColor.setAlpha(0);
+        } else if (m_fillColor.alpha() == 0) {
+            m_fillColor = Qt::white;
+        }
+        updateColorButtons();
+        onSettingsChanged();
+    });
+
+    connect(m_hasOutlineCheck, &QCheckBox::toggled, this, [this, onSettingsChanged](bool checked) {
+        m_outlineParamsWidget->setVisible(checked);
+        onSettingsChanged();
+    });
+    connect(m_outlineWidthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_btnOutlineColor, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        QColor col = QColorDialog::getColor(m_outlineColor, this, "フチ取りの色を選択");
+        if (col.isValid()) {
+            m_outlineColor = col;
+            updateColorButtons();
+            onSettingsChanged();
+        }
+    });
+
+    updateColorButtons();
+    updateSpecialShapeVisibility();
+    m_tailParamsWidget->setVisible(m_hasTailCheck->isChecked());
+    m_outlineParamsWidget->setVisible(m_hasOutlineCheck->isChecked());
+}
+
+void TextSettingsWidget::updateColorButtons() {
+    auto makeBtnStyle = [](const QColor& c) {
+        QString textCol = (c.lightness() < 128 && c.alpha() > 100) ? "#ffffff" : "#000000";
+        if (c.alpha() == 0) {
+            return QString("QPushButton { background: #e0e0e0; color: #888888; border: 1px dashed #999; }");
+        }
+        return QString("QPushButton { background-color: %1; color: %2; border: 1px solid #777; border-radius: 2px; }")
+            .arg(c.name(QColor::HexArgb), textCol);
+    };
+
+    m_btnFrameColor->setStyleSheet(makeBtnStyle(m_frameColor));
+    m_btnFillColor->setStyleSheet(makeBtnStyle(m_transparentFillCheck->isChecked() ? Qt::transparent : m_fillColor));
+    m_btnOutlineColor->setStyleSheet(makeBtnStyle(m_outlineColor));
+}
+
+void TextSettingsWidget::updateSpecialShapeVisibility() {
+    auto shape = balloonShape();
+    bool isSpecial = (shape == BalloonShape::Spike || shape == BalloonShape::Cloud);
+    m_specialShapeWidget->setVisible(isSpecial);
+}
+
+QFont TextSettingsWidget::currentFont() const {
+    QFont font = m_fontCombo->currentFont();
+    font.setPointSize(m_fontSizeSpin->value());
+    font.setBold(m_btnBold->isChecked());
+    font.setItalic(m_btnItalic->isChecked());
+    return font;
+}
+
+int TextSettingsWidget::fontSize() const {
+    return m_fontSizeSpin->value();
+}
+
+bool TextSettingsWidget::isBold() const {
+    return m_btnBold->isChecked();
+}
+
+bool TextSettingsWidget::isItalic() const {
+    return m_btnItalic->isChecked();
+}
+
+Qt::Alignment TextSettingsWidget::horizontalAlignment() const {
+    if (m_btnAlignCenter->isChecked()) return Qt::AlignHCenter;
+    if (m_btnAlignRight->isChecked()) return Qt::AlignRight;
+    return Qt::AlignLeft;
+}
+
+Qt::Alignment TextSettingsWidget::verticalAlignment() const {
+    if (m_btnAlignVCenter->isChecked()) return Qt::AlignVCenter;
+    if (m_btnAlignBottom->isChecked()) return Qt::AlignBottom;
+    return Qt::AlignTop;
+}
+
+QString TextSettingsWidget::text() const {
+    return m_textEdit->toPlainText();
+}
+
+void TextSettingsWidget::setText(const QString& text) {
+    m_updatingUi = true;
+    m_textEdit->setPlainText(text);
+    m_updatingUi = false;
+}
+
+BalloonShape TextSettingsWidget::balloonShape() const {
+    return static_cast<BalloonShape>(m_shapeCombo->currentData().toInt());
+}
+
+bool TextSettingsWidget::hasTail() const {
+    return m_hasTailCheck->isChecked();
+}
+
+float TextSettingsWidget::tailBaseWidth() const {
+    return static_cast<float>(m_tailBaseWidthSpin->value());
+}
+
+float TextSettingsWidget::tailCurvature() const {
+    return static_cast<float>(m_tailCurvatureSlider->value());
+}
+
+int TextSettingsWidget::spikeCount() const {
+    return m_spikeCountSpin->value();
+}
+
+float TextSettingsWidget::spikeDepth() const {
+    return static_cast<float>(m_spikeDepthSpin->value());
+}
+
+float TextSettingsWidget::spikePhase() const {
+    return static_cast<float>(m_spikePhaseSpin->value());
+}
+
+float TextSettingsWidget::frameWidth() const {
+    return static_cast<float>(m_frameWidthSpin->value());
+}
+
+QColor TextSettingsWidget::frameColor() const {
+    return m_frameColor;
+}
+
+QColor TextSettingsWidget::fillColor() const {
+    if (m_transparentFillCheck->isChecked()) {
+        return Qt::transparent;
+    }
+    return m_fillColor;
+}
+
+bool TextSettingsWidget::isTransparentFill() const {
+    return m_transparentFillCheck->isChecked();
+}
+
+bool TextSettingsWidget::hasOutline() const {
+    return m_hasOutlineCheck->isChecked();
+}
+
+float TextSettingsWidget::outlineWidth() const {
+    return static_cast<float>(m_outlineWidthSpin->value());
+}
+
+QColor TextSettingsWidget::outlineColor() const {
+    return m_outlineColor;
+}
+
+void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
+    m_updatingUi = true;
+
+    // 1. テキスト & フォント
+    m_textEdit->setPlainText(item.text);
+    m_fontCombo->setCurrentFont(item.font);
+    m_fontSizeSpin->setValue(item.font.pointSize() > 0 ? item.font.pointSize() : 16);
+    m_btnBold->setChecked(item.font.bold());
+    m_btnItalic->setChecked(item.font.italic());
+
+    // 2. 配置
+    if (item.horizontalAlign == Qt::AlignHCenter) {
+        m_btnAlignCenter->setChecked(true);
+    } else if (item.horizontalAlign == Qt::AlignRight) {
+        m_btnAlignRight->setChecked(true);
+    } else {
+        m_btnAlignLeft->setChecked(true);
+    }
+
+    if (item.verticalAlign == Qt::AlignVCenter) {
+        m_btnAlignVCenter->setChecked(true);
+    } else if (item.verticalAlign == Qt::AlignBottom) {
+        m_btnAlignBottom->setChecked(true);
+    } else {
+        m_btnAlignTop->setChecked(true);
+    }
+
+    // 3. 形状
+    int shapeIdx = m_shapeCombo->findData(static_cast<int>(item.shape));
+    if (shapeIdx >= 0) m_shapeCombo->setCurrentIndex(shapeIdx);
+
+    // 4. 特殊形状
+    m_spikeCountSpin->setValue(item.spikeCount);
+    m_spikeDepthSpin->setValue(item.spikeDepth);
+    m_spikePhaseSpin->setValue(item.spikePhase);
+
+    // 5. しっぽ
+    m_hasTailCheck->setChecked(item.hasTail);
+    m_tailBaseWidthSpin->setValue(item.tailBaseWidth);
+    m_tailCurvatureSlider->setValue(static_cast<int>(item.tailCurvature));
+    if (static_cast<int>(item.tailCurvature) == 0) m_tailCurvatureLabel->setText("直線");
+    else m_tailCurvatureLabel->setText(QString::number(static_cast<int>(item.tailCurvature)));
+
+    // 6. スタイル (枠線・背景・フチ取り)
+    m_frameWidthSpin->setValue(item.frameWidth);
+    m_frameColor = item.frameColor;
+    m_fillColor = item.fillColor;
+    m_transparentFillCheck->setChecked(item.fillColor.alpha() == 0);
+
+    m_hasOutlineCheck->setChecked(item.hasOutline);
+    m_outlineWidthSpin->setValue(item.outlineWidth);
+    m_outlineColor = item.outlineColor;
+
+    updateColorButtons();
+    updateSpecialShapeVisibility();
+    m_tailParamsWidget->setVisible(item.hasTail);
+    m_outlineParamsWidget->setVisible(item.hasOutline);
+
+    m_updatingUi = false;
+}
+
+void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
+    item.text = m_textEdit->toPlainText();
+    item.font = currentFont();
+    item.horizontalAlign = horizontalAlignment();
+    item.verticalAlign = verticalAlignment();
+
+    item.shape = balloonShape();
+    item.spikeCount = spikeCount();
+    item.spikeDepth = spikeDepth();
+    item.spikePhase = spikePhase();
+
+    item.hasTail = hasTail();
+    item.tailBaseWidth = tailBaseWidth();
+    item.tailCurvature = tailCurvature();
+
+    item.frameWidth = frameWidth();
+    item.frameColor = frameColor();
+    item.fillColor = fillColor();
+
+    item.hasOutline = hasOutline();
+    item.outlineWidth = outlineWidth();
+    item.outlineColor = outlineColor();
+}
+
+void TextSettingsWidget::focusTextEdit() {
+    m_textEdit->setFocus();
+    m_textEdit->selectAll();
+}
+
+} // namespace Kaburagi

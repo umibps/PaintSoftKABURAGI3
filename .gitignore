@@ -1,0 +1,8 @@
+build/
+*.exe
+*.obj
+*.o
+*.a
+*.pdb
+scratch_*
+test_out.mp4

@@ -1,0 +1,251 @@
+#include <QApplication>
+#include <QPolygonF>
+#include <QDir>
+#include <QFile>
+#include <iostream>
+#include <cassert>
+#include <cstdio>
+#include "Document.hpp"
+#include "GroupLayer.hpp"
+#include "DocumentSerializer.hpp"
+#include "PanelSettingsWidget.hpp"
+
+using namespace Kaburagi;
+
+void testPanelFolderCreation() {
+    std::cout << "[TEST] 1. Panel Folder Creation..." << std::endl;
+    Document doc(800, 600, 72.0, true, Qt::transparent);
+
+    QPolygonF poly;
+    poly << QPointF(50, 50) << QPointF(400, 50) << QPointF(400, 300) << QPointF(50, 300);
+
+    auto panel = doc.addPanelFolder(poly, 4.0f, Qt::black, "コマ 1");
+    assert(panel != nullptr);
+    assert(panel->isPanelFolder());
+    assert(panel->panelPolygon().size() == 4);
+    assert(std::abs(panel->panelBorderWidth() - 4.0f) < 0.001f);
+    assert(panel->panelBorderColor() == Qt::black);
+    assert(panel->drawPanelBorder() == true);
+
+    // 子レイヤー（ラスターレイヤー）が自動配置されているか
+    assert(panel->children().size() >= 1);
+    auto child = panel->children()[0].lock();
+    assert(child != nullptr);
+    assert(child->parentGroup() == panel);
+
+    // findPanelFolderAt のテスト
+    auto found = doc.findPanelFolderAt(QPointF(100, 100));
+    assert(found == panel);
+
+    auto notFound = doc.findPanelFolderAt(QPointF(500, 500));
+    assert(notFound == nullptr);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testPanelClippingAndBorder() {
+    std::cout << "[TEST] 2. Panel Clipping & Border Drawing..." << std::endl;
+    Document doc(400, 400, 72.0, false, Qt::transparent);
+
+    // 枠 (100, 100) - (300, 300)
+    QPolygonF poly;
+    poly << QPointF(100, 100) << QPointF(300, 100) << QPointF(300, 300) << QPointF(100, 300);
+
+    auto panel = doc.addPanelFolder(poly, 4.0f, QColor(0, 0, 0, 255));
+    assert(panel->children().size() >= 1);
+    auto innerLayer = panel->children()[0].lock();
+    assert(innerLayer != nullptr);
+
+    // コマ枠の内側 (150, 150) と外側 (50, 50) の両方に赤色を塗る
+    innerLayer->tileManager().clear(0xFFFF0000); // ARGB: 赤
+
+    // 合成実行
+    doc.composite(QRect(0, 0, 400, 400));
+
+    // 1. コマ枠外 (50, 50) はマスクされ透明 (A=0) になっているか
+    QColor cOutside = doc.samplePixel(50, 50);
+    assert(cOutside.alpha() == 0 || (cOutside.red() == 255 && cOutside.green() == 255 && cOutside.blue() == 255)); // 白キャンバス背景なし
+
+    // 2. コマ枠内 (150, 150) は赤色 (R=255) が保持されているか
+    QColor cInside = doc.samplePixel(150, 150);
+    assert(cInside.red() > 200 && cInside.green() < 50 && cInside.blue() < 50);
+
+    // 3. 枠線位置 (100, 100) 付近に黒線 (R=0, G=0, B=0) が描画されているか
+    QColor cBorder = doc.samplePixel(100, 100);
+    assert(cBorder.red() < 50 && cBorder.green() < 50 && cBorder.blue() < 50);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testPanelSplitting() {
+    std::cout << "[TEST] 3. Panel Splitting (Horizontal, Vertical, Slanted)..." << std::endl;
+    Document doc(800, 800, 72.0, false, Qt::transparent);
+
+    // コマ (100, 100) - (500, 500)
+    QPolygonF poly;
+    poly << QPointF(100, 100) << QPointF(500, 100) << QPointF(500, 500) << QPointF(100, 500);
+    auto panel1 = doc.addPanelFolder(poly, 3.0f, Qt::black);
+
+    // 1. 水平分割 (Y=300 で上下分割, 間隔 marginY=40)
+    QLineF hCut(QPointF(50, 300), QPointF(550, 300));
+    bool splitH = doc.splitPanelFolder(panel1, hCut, 20.0f, 40.0f);
+    assert(splitH);
+
+    // 分割によりコマフォルダが2つになっているはず
+    int panelCount = 0;
+    for (const auto& l : doc.layers()) {
+        if (l->type() == LayerType::Group) {
+            auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (g && g->isPanelFolder()) panelCount++;
+        }
+    }
+    assert(panelCount == 2);
+
+    // 上のコマと下のコマの間隔が約40px空いているか
+    auto topPanel = doc.findPanelFolderAt(QPointF(300, 200));
+    auto bottomPanel = doc.findPanelFolderAt(QPointF(300, 400));
+    assert(topPanel != nullptr);
+    assert(bottomPanel != nullptr);
+    assert(topPanel != bottomPanel);
+
+    // 間隔領域 (Y=300) にはコマが存在しないこと
+    auto gapPanel = doc.findPanelFolderAt(QPointF(300, 300));
+    assert(gapPanel == nullptr);
+
+    // 2. 垂直分割 (上のコマを左右分割, X=300, 間隔 marginX=20)
+    QLineF vCut(QPointF(300, 50), QPointF(300, 300));
+    bool splitV = doc.splitPanelFolder(topPanel, vCut, 20.0f, 40.0f);
+    assert(splitV);
+
+    panelCount = 0;
+    for (const auto& l : doc.layers()) {
+        if (l->type() == LayerType::Group) {
+            auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (g && g->isPanelFolder()) panelCount++;
+        }
+    }
+    assert(panelCount == 3);
+
+    // 3. 斜め分割 (下のコマを斜めに分割)
+    QLineF slantCut(QPointF(100, 350), QPointF(500, 450));
+    bool splitSlant = doc.splitPanelFolder(bottomPanel, slantCut, 20.0f, 40.0f);
+    assert(splitSlant);
+
+    panelCount = 0;
+    for (const auto& l : doc.layers()) {
+        if (l->type() == LayerType::Group) {
+            auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (g && g->isPanelFolder()) panelCount++;
+        }
+    }
+    assert(panelCount == 4);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testPanelShapeEditing() {
+    std::cout << "[TEST] 4. Panel Shape Editing (Polygon deformation)..." << std::endl;
+    Document doc(600, 600, 72.0, false, Qt::transparent);
+
+    QPolygonF poly;
+    poly << QPointF(100, 100) << QPointF(400, 100) << QPointF(400, 400) << QPointF(100, 400);
+    auto panel = doc.addPanelFolder(poly, 3.0f, Qt::black);
+
+    // 頂点変形（右上の頂点を (500, 50) に移動して斜めゴマにする）
+    QPolygonF deformPoly = panel->panelPolygon();
+    deformPoly[1] = QPointF(500, 50);
+    panel->setPanelPolygon(deformPoly);
+
+    assert(panel->panelPolygon()[1] == QPointF(500, 50));
+
+    // 変形後の新しい領域 (450, 75) に含まれるか
+    assert(panel->panelPolygon().containsPoint(QPointF(450, 75), Qt::OddEvenFill));
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testPanelSerialization() {
+    std::cout << "[TEST] 5. Panel Serialization & Deserialization..." << std::endl;
+    Document doc(800, 600, 72.0, false, Qt::white);
+
+    QPolygonF poly;
+    poly << QPointF(60, 80) << QPointF(500, 90) << QPointF(480, 450) << QPointF(70, 430);
+
+    auto panel = doc.addPanelFolder(poly, 5.0f, QColor(20, 40, 80), "テストコマ");
+    assert(panel != nullptr);
+    panel->setDrawPanelBorder(true);
+
+    QString tempPath = QDir::tempPath() + "/test_panel_save.kab";
+    QFile::remove(tempPath);
+
+    QString errMsg;
+    bool saved = DocumentSerializer::saveToFile(&doc, tempPath, &errMsg);
+    assert(saved);
+
+    Document* loadedDoc = DocumentSerializer::loadFromFile(tempPath, nullptr, &errMsg);
+    assert(loadedDoc != nullptr);
+
+    // 復元されたコマフォルダの検証
+    std::shared_ptr<GroupLayer> loadedPanel = nullptr;
+    for (const auto& l : loadedDoc->layers()) {
+        if (l->type() == LayerType::Group) {
+            auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (g && g->isPanelFolder()) {
+                loadedPanel = g;
+                break;
+            }
+        }
+    }
+
+    assert(loadedPanel != nullptr);
+    assert(loadedPanel->isPanelFolder() == true);
+    assert(loadedPanel->panelPolygon().size() == 4);
+    assert(std::abs(loadedPanel->panelPolygon()[0].x() - 60.0) < 0.001);
+    assert(std::abs(loadedPanel->panelPolygon()[1].x() - 500.0) < 0.001);
+    assert(std::abs(loadedPanel->panelBorderWidth() - 5.0f) < 0.001f);
+    assert(loadedPanel->panelBorderColor() == QColor(20, 40, 80));
+    assert(loadedPanel->drawPanelBorder() == true);
+
+    QFile::remove(tempPath);
+    delete loadedDoc;
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testPanelSettingsWidget() {
+    std::cout << "[TEST] 6. PanelSettingsWidget UI Sync..." << std::endl;
+    PanelSettingsWidget widget;
+
+    assert(widget.drawBorder() == true);
+    assert(std::abs(widget.borderWidth() - 3.0f) < 0.001f);
+    assert(std::abs(widget.marginHorizontal() - 20.0f) < 0.001f);
+    assert(std::abs(widget.marginVertical() - 40.0f) < 0.001f);
+
+    GroupLayer panel("コマ", 400, 400);
+    panel.setPanelFolder(true);
+    panel.setPanelBorderWidth(8.5f);
+    panel.setPanelBorderColor(QColor(10, 20, 30));
+    panel.setDrawPanelBorder(false);
+
+    widget.setFromPanel(&panel);
+    assert(widget.drawBorder() == false);
+    assert(std::abs(widget.borderWidth() - 8.5f) < 0.001f);
+    assert(widget.borderColor() == QColor(10, 20, 30));
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+int main(int argc, char* argv[]) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    QApplication app(argc, argv);
+
+    std::cout << "=== RUNNING PANEL & FRAME TESTS ===" << std::endl;
+    testPanelFolderCreation();
+    testPanelClippingAndBorder();
+    testPanelSplitting();
+    testPanelShapeEditing();
+    testPanelSerialization();
+    testPanelSettingsWidget();
+
+    std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
+    return 0;
+}
