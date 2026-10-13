@@ -41,6 +41,8 @@ public:
     // 選択範囲がある場合のブレンド合成
     static void blendWithSelection(QImage& dst, const QImage& orig,
                                   const QPainterPath& selectionPath, int width, int height);
+    static void blendWithSelectionMask(QImage& dst, const QImage& orig,
+                                      const class Layer* maskLayer, int width, int height);
 };
 
 } // namespace Kaburagi

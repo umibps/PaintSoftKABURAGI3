@@ -1641,6 +1641,111 @@ void testTabAndToolboxUpdates() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testGrayscaleSelectionMask() {
+    std::cout << "[TEST] 19. Grayscale 0-255 Selection Mask Specification..." << std::endl;
+
+    auto doc = std::make_shared<Document>(100, 100);
+    auto baseL = doc->addRasterLayer("BaseLayer");
+    assert(baseL != nullptr);
+
+    // 1. アンチエイリアス選択による 0〜255 境界値の生成
+    QPainterPath circlePath;
+    circlePath.addEllipse(QRectF(20.0, 20.0, 60.0, 60.0));
+    doc->setSelection(circlePath);
+
+    assert(doc->hasSelection());
+    assert(doc->selectionStrength(50, 50) == 255); // 中心は完全選択 (255)
+    assert(doc->selectionStrength(5, 5) == 0);     // 領域外は完全非選択 (0)
+
+    // 円の境界付近（半径30px境界）を探索し、アンチエイリアス中間値 (0 < S < 255) が存在することを検証
+    bool foundIntermediate = false;
+    for (int y = 15; y <= 85; ++y) {
+        for (int x = 15; x <= 85; ++x) {
+            uint8_t s = doc->selectionStrength(x, y);
+            if (s > 0 && s < 255) {
+                foundIntermediate = true;
+                break;
+            }
+        }
+        if (foundIntermediate) break;
+    }
+    assert(foundIntermediate);
+    std::cout << "  [Antialiased Selection] Intermediate alpha values (0 < S < 255) strictly verified." << std::endl;
+
+    // 2. updateSelectionPathFromMask が 0〜255 マスク階調を破壊しないことを検証
+    doc->updateSelectionPathFromMask();
+    foundIntermediate = false;
+    for (int y = 15; y <= 85; ++y) {
+        for (int x = 15; x <= 85; ++x) {
+            uint8_t s = doc->selectionStrength(x, y);
+            if (s > 0 && s < 255) {
+                foundIntermediate = true;
+                break;
+            }
+        }
+        if (foundIntermediate) break;
+    }
+    assert(foundIntermediate);
+    std::cout << "  [Mask Preservation] Grayscale mask data is preserved without binarization." << std::endl;
+
+    // 3. グラデーション選択マスクに対する fillLayer の線形補間ブレンド検証
+    QImage gradMask(100, 100, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < 100; ++y) {
+        for (int x = 0; x < 100; ++x) {
+            // x座標に応じて 0〜255 のリニアグラデーションマスク
+            int alpha = std::clamp(static_cast<int>(x * 255 / 99), 0, 255);
+            gradMask.setPixelColor(x, y, QColor(255, 255, 255, alpha));
+        }
+    }
+    doc->setSelectionMask(gradMask);
+
+    // 下地を黒（RGB: 0, 0, 0, A: 255）で初期化
+    baseL->tileManager().clear(0xFF000000);
+
+    // 赤色（RGB: 255, 0, 0, A: 255）で fillLayer 実行
+    doc->fillLayer(doc->activeLayerIndex(), QColor(255, 0, 0, 255));
+
+    // x=0 (強度 0): 黒のまま (R=0, G=0, B=0)
+    QColor c0 = doc->samplePixel(0, 50);
+    assert(c0.red() == 0 && c0.green() == 0 && c0.blue() == 0);
+
+    // x=99 (強度 255): 赤 (R=255, G=0, B=0)
+    QColor c99 = doc->samplePixel(99, 50);
+    assert(c99.red() >= 254 && c99.green() == 0 && c99.blue() == 0);
+
+    // x=50 付近 (強度約128): 半ブレンド (R≈128, G=0, B=0)
+    QColor c50 = doc->samplePixel(50, 50);
+    assert(std::abs(c50.red() - 128) <= 4 && c50.green() == 0 && c50.blue() == 0);
+    std::cout << "  [Linear Interpolation Fill] x=0 R=" << c0.red()
+              << ", x=50 R=" << c50.red()
+              << ", x=99 R=" << c99.red() << " strictly verified." << std::endl;
+
+    // 4. FilterProcessor::blendWithSelectionMask の線形補間検証
+    QImage origImg(100, 100, QImage::Format_ARGB32_Premultiplied);
+    origImg.fill(QColor(0, 0, 255, 255)); // 青
+    QImage filtImg(100, 100, QImage::Format_ARGB32_Premultiplied);
+    filtImg.fill(QColor(0, 255, 0, 255)); // 緑
+
+    FilterProcessor::blendWithSelectionMask(filtImg, origImg, doc->selectionMaskLayer().get(), 100, 100);
+
+    // x=0 (強度0): 青 (R=0, G=0, B=255)
+    QColor fc0 = filtImg.pixelColor(0, 50);
+    assert(fc0.blue() >= 254 && fc0.green() == 0);
+
+    // x=99 (強度255): 緑 (R=0, G=255, B=0)
+    QColor fc99 = filtImg.pixelColor(99, 50);
+    assert(fc99.green() >= 254 && fc99.blue() == 0);
+
+    // x=50 (強度約128): シアン (緑と青の50%ブレンド: G≈128, B≈128)
+    QColor fc50 = filtImg.pixelColor(50, 50);
+    assert(std::abs(fc50.green() - 128) <= 4 && std::abs(fc50.blue() - 128) <= 4);
+    std::cout << "  [Filter Mask Blending] x=0 G=" << fc0.green() << " B=" << fc0.blue()
+              << ", x=50 G=" << fc50.green() << " B=" << fc50.blue()
+              << ", x=99 G=" << fc99.green() << " B=" << fc99.blue() << " strictly verified." << std::endl;
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -1663,6 +1768,7 @@ int main(int argc, char* argv[]) {
     testMonitorIccAndPreviewWindowAndModelTransform();
     testSelectionEditMode();
     testTabAndToolboxUpdates();
+    testGrayscaleSelectionMask();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

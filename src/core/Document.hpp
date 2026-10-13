@@ -86,13 +86,16 @@ public:
     void composite(const QRect& dirtyRect = QRect());
     QColor samplePixel(int x, int y) const;
 
-    // 選択範囲管理
+    // 選択範囲管理 (ピクセル単位 0〜255 グレースケールマスク)
     const QPainterPath& selection() const { return m_selectionPath; }
-    bool hasSelection() const { return !m_selectionPath.isEmpty(); }
+    bool hasSelection() const { return m_hasSelection; }
     void setSelection(const QPainterPath& path);
+    void setSelectionMask(const QImage& mask);
     void clearSelection();
-    bool isPixelSelected(int x, int y) const;
+    uint8_t selectionStrength(int x, int y) const;
+    bool isPixelSelected(int x, int y) const { return selectionStrength(x, y) > 0; }
     const QRectF& selectionBounds() const { return m_selectionBounds; }
+    void ensureSelectionMaskLayer();
 
     // 選択範囲編集モード (クイックマスク)
     bool isSelectionEditMode() const { return m_isSelectionEditMode; }
@@ -121,6 +124,7 @@ private:
     std::vector<LayerPtr> m_layers;
     int m_activeLayerIndex = 0;
     TileManager m_compositeBuffer;
+    bool m_hasSelection = false;
     QPainterPath m_selectionPath;
     QRectF m_selectionBounds;
     bool m_selectionIsRect = false;
@@ -129,7 +133,7 @@ private:
     bool m_isUndoRedoInProgress = false;
 
     bool m_isSelectionEditMode = false;
-    LayerPtr m_selectionMaskLayer;
+    mutable LayerPtr m_selectionMaskLayer;
 };
 
 } // namespace Kaburagi

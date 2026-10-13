@@ -928,9 +928,11 @@ void CanvasWidget::paintBrushSegment(const QPointF& p0, const QPointF& p1, float
                     }
                 }
 
-                // 選択範囲がある場合、選択範囲外のピクセルにはブラシ効果を適用しない
-                if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                    continue;
+                // 選択範囲がある場合、選択強度に応じてブラシ効果を適用
+                if (hasSelection) {
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    stampAlpha *= (sel / 255.0f);
                 }
 
                 int tx = px / TileMemoryPool::TILE_WIDTH;
@@ -1272,8 +1274,11 @@ void CanvasWidget::paintBlurSegment(const QPointF& p0, const QPointF& p1, float 
                 float d = std::hypot(px - x, py - y);
                 if (d > r) continue;
 
-                if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                    continue;
+                float selWeight = 1.0f;
+                if (hasSelection) {
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    selWeight = sel / 255.0f;
                 }
 
                 int tx = px / TileMemoryPool::TILE_WIDTH;
@@ -1309,7 +1314,7 @@ void CanvasWidget::paintBlurSegment(const QPointF& p0, const QPointF& p1, float 
                         stampAtten = 1.0f - (1.0f - minFade) * uGrad;
                     }
                 }
-                float blendRate = std::clamp(stampAtten * curDensity * mixRatio * 0.4f, 0.0f, 1.0f);
+                float blendRate = std::clamp(stampAtten * curDensity * mixRatio * 0.4f * selWeight, 0.0f, 1.0f);
 
                 uint32_t newA = alphaLocked ? origA : static_cast<uint32_t>(origA * (1.0f - blendRate) + targetA * blendRate + 0.5f);
                 if (newA == 0) {
@@ -1464,8 +1469,11 @@ void CanvasWidget::paintSmudgeSegment(const QPointF& p0, const QPointF& p1, floa
                 float d = std::hypot(px - x, py - y);
                 if (d > r) continue;
 
-                if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                    continue;
+                float selWeight = 1.0f;
+                if (hasSelection) {
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    selWeight = sel / 255.0f;
                 }
 
                 int tx = px / TileMemoryPool::TILE_WIDTH;
@@ -1501,7 +1509,7 @@ void CanvasWidget::paintSmudgeSegment(const QPointF& p0, const QPointF& p1, floa
                         stampAtten = 1.0f - (1.0f - minFade) * uGrad;
                     }
                 }
-                float blendRate = std::clamp(stampAtten * curDensity * rateNorm * 0.45f, 0.0f, 1.0f);
+                float blendRate = std::clamp(stampAtten * curDensity * rateNorm * 0.45f * selWeight, 0.0f, 1.0f);
 
                 uint32_t newA = alphaLocked ? origA : static_cast<uint32_t>(origA * (1.0f - blendRate) + m_smudgeA * blendRate + 0.5f);
                 if (newA == 0) {
@@ -1696,12 +1704,15 @@ void CanvasWidget::paintWatercolorSegment(const QPointF& p0, const QPointF& p1, 
                 float d = std::hypot(px - x, py - y);
                 if (d > r) continue;
 
-                if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                    continue;
+                float selWeight = 1.0f;
+                if (hasSelection) {
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    selWeight = sel / 255.0f;
                 }
 
                 // アンチエイリアス処理
-                float stampAlpha = curDensity;
+                float stampAlpha = curDensity * selWeight;
                 if (m_watercolorAntialias) {
                     float edgeDist = r - d;
                     if (edgeDist < 1.0f) {
@@ -2018,12 +2029,15 @@ void CanvasWidget::paintCompositeBrushSegment(const QPointF& p0, const QPointF& 
                 float d = std::hypot(px - x, py - y);
                 if (d > r) continue;
 
-                if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                    continue;
+                float selWeight = 1.0f;
+                if (hasSelection) {
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    selWeight = sel / 255.0f;
                 }
 
                 // アンチエイリアス処理
-                float stampAlpha = curDensity;
+                float stampAlpha = curDensity * selWeight;
                 if (m_compositeBrushAntialias) {
                     float edgeDist = r - d;
                     if (edgeDist < 1.0f) {
@@ -2482,12 +2496,11 @@ void CanvasWidget::paintImageBrushSegment(const QPointF& p0, const QPointF& p1, 
             int ly = py % TileMemoryPool::TILE_HEIGHT;
 
             for (int px = xStart; px <= xEnd; ++px) {
+                float selWeight = 1.0f;
                 if (hasSelection) {
-                    if (px < selBounds.left() || px > selBounds.right() ||
-                        py < selBounds.top() || py > selBounds.bottom() ||
-                        !m_document->selection().contains(QPointF(px + 0.5, py + 0.5))) {
-                        continue;
-                    }
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    selWeight = sel / 255.0f;
                 }
 
                 int sx = px - left;
@@ -2495,7 +2508,7 @@ void CanvasWidget::paintImageBrushSegment(const QPointF& p0, const QPointF& p1, 
                 uint32_t sa_orig = (sp >> 24) & 0xFF;
                 if (sa_orig == 0) continue;
 
-                float stampAlpha = (sa_orig / 255.0f) * stampDensity;
+                float stampAlpha = (sa_orig / 255.0f) * stampDensity * selWeight;
                 if (stampAlpha <= 0.0001f) continue;
 
                 uint32_t sr = (sp >> 16) & 0xFF;
@@ -3160,13 +3173,19 @@ void CanvasWidget::fillBucket(const QPointF& docPos) {
                         int lx = x - tLeft;
                         int localIdx = ly * TileMemoryPool::TILE_WIDTH + lx;
                         uint32_t basePixel = pixels[localIdx];
+                        float selWeight = 1.0f;
+                        if (m_document && m_document->hasSelection()) {
+                            uint8_t sel = m_document->selectionStrength(x, y);
+                            if (sel == 0) continue;
+                            selWeight = sel / 255.0f;
+                        }
                         if (alphaLocked) {
                             uint32_t origA = (basePixel >> 24) & 0xFF;
                             if (origA == 0) continue;
-                            uint32_t blended = blendPixel(basePixel, fillColor, 1.0f, m_bucketBlendMode);
+                            uint32_t blended = blendPixel(basePixel, fillColor, selWeight, m_bucketBlendMode);
                             pixels[localIdx] = (origA << 24) | (blended & 0x00FFFFFF);
                         } else {
-                            pixels[localIdx] = blendPixel(basePixel, fillColor, 1.0f, m_bucketBlendMode);
+                            pixels[localIdx] = blendPixel(basePixel, fillColor, selWeight, m_bucketBlendMode);
                         }
                     }
                 }
@@ -6839,8 +6858,11 @@ void CanvasWidget::renderGradient(const QPointF& startPos, const QPointF& endPos
             for (int py = py0; py <= py1; ++py) {
                 int ly = py - tileY0;
                 for (int px = px0; px <= px1; ++px) {
-                    if (hasSelection && !m_document->isPixelSelected(px, py)) {
-                        continue;
+                    float selWeight = 1.0f;
+                    if (hasSelection) {
+                        uint8_t sel = m_document->selectionStrength(px, py);
+                        if (sel == 0) continue;
+                        selWeight = sel / 255.0f;
                     }
 
                     int lx = px - tileX0;
@@ -6924,6 +6946,7 @@ void CanvasWidget::renderGradient(const QPointF& startPos, const QPointF& endPos
                         srcB = fgB + (bgB - fgB) * t;
                         srcA = (fgA + (bgA - fgA) * t) * m_gradientOpacity;
                     }
+                    srcA *= selWeight;
 
                     if (srcA <= 0.0001f) continue;
 
@@ -7029,22 +7052,34 @@ void CanvasWidget::deleteSelectedPixels() {
             for (int py = py0; py <= py1; ++py) {
                 int ly = py - tileY0;
                 for (int px = px0; px <= px1; ++px) {
-                    if (!m_document->isPixelSelected(px, py)) {
-                        continue;
-                    }
+                    uint8_t sel = m_document->selectionStrength(px, py);
+                    if (sel == 0) continue;
+                    float selRatio = sel / 255.0f;
 
                     int lx = px - tileX0;
                     int pixelIdx = ly * TileMemoryPool::TILE_WIDTH + lx;
 
+                    uint32_t curPix = pixels[pixelIdx];
+                    uint32_t curA = (curPix >> 24) & 0xFF;
+                    if (curA == 0) continue;
+
                     if (alphaLocked) {
                         // 透明度保護時: アルファ値を保持し背景色で消去 (GIMP準拠)
-                        uint32_t curA = (pixels[pixelIdx] >> 24) & 0xFF;
-                        if (curA > 0) {
-                            pixels[pixelIdx] = (curA << 24) | (bgR << 16) | (bgG << 8) | bgB;
-                        }
+                        uint32_t curR = (curPix >> 16) & 0xFF;
+                        uint32_t curG = (curPix >> 8) & 0xFF;
+                        uint32_t curB = curPix & 0xFF;
+                        uint32_t newR = static_cast<uint32_t>(curR * (1.0f - selRatio) + bgR * selRatio + 0.5f);
+                        uint32_t newG = static_cast<uint32_t>(curG * (1.0f - selRatio) + bgG * selRatio + 0.5f);
+                        uint32_t newB = static_cast<uint32_t>(curB * (1.0f - selRatio) + bgB * selRatio + 0.5f);
+                        pixels[pixelIdx] = (curA << 24) | (newR << 16) | (newG << 8) | newB;
                     } else {
-                        // 通常: 完全消去 (透明)
-                        pixels[pixelIdx] = 0x00000000;
+                        // 通常: 選択強度に応じてアルファ値を減衰消去
+                        uint32_t newA = static_cast<uint32_t>(curA * (1.0f - selRatio) + 0.5f);
+                        if (newA == 0) {
+                            pixels[pixelIdx] = 0x00000000;
+                        } else {
+                            pixels[pixelIdx] = (newA << 24) | (curPix & 0x00FFFFFF);
+                        }
                     }
                 }
             }
@@ -7207,10 +7242,18 @@ void CanvasWidget::startTransform() {
                         uint32_t* dstScan = reinterpret_cast<uint32_t*>(srcImg.scanLine(imgY));
 
                         for (int px = px0; px <= px1; ++px) {
-                            if (m_transformHasSelection && !m_document->isPixelSelected(px, py)) continue;
+                            uint8_t sel = m_transformHasSelection ? m_document->selectionStrength(px, py) : 255;
+                            if (sel == 0) continue;
                             int lx = px - tileX0;
                             int imgX = px - targetRect.left();
-                            dstScan[imgX] = srcBuf[ly * TileMemoryPool::TILE_WIDTH + lx];
+                            uint32_t sp = srcBuf[ly * TileMemoryPool::TILE_WIDTH + lx];
+                            if (sel < 255) {
+                                uint32_t sa = (sp >> 24) & 0xFF;
+                                sa = static_cast<uint32_t>(sa * (sel / 255.0f) + 0.5f);
+                                dstScan[imgX] = (sa << 24) | (sp & 0x00FFFFFF);
+                            } else {
+                                dstScan[imgX] = sp;
+                            }
                         }
                     }
                 }
@@ -7234,9 +7277,17 @@ void CanvasWidget::startTransform() {
                     for (int py = py0; py <= py1; ++py) {
                         int ly = py - tileY0;
                         for (int px = px0; px <= px1; ++px) {
-                            if (m_transformHasSelection && !m_document->isPixelSelected(px, py)) continue;
+                            uint8_t sel = m_transformHasSelection ? m_document->selectionStrength(px, py) : 255;
+                            if (sel == 0) continue;
                             int lx = px - tileX0;
-                            tileBuf[ly * TileMemoryPool::TILE_WIDTH + lx] = 0;
+                            if (sel < 255) {
+                                uint32_t curP = tileBuf[ly * TileMemoryPool::TILE_WIDTH + lx];
+                                uint32_t curA = (curP >> 24) & 0xFF;
+                                uint32_t newA = static_cast<uint32_t>(curA * (1.0f - (sel / 255.0f)) + 0.5f);
+                                tileBuf[ly * TileMemoryPool::TILE_WIDTH + lx] = (newA << 24) | (curP & 0x00FFFFFF);
+                            } else {
+                                tileBuf[ly * TileMemoryPool::TILE_WIDTH + lx] = 0;
+                            }
                         }
                     }
                 }

@@ -1,4 +1,5 @@
 #include "FilterProcessor.hpp"
+#include "Layer.hpp"
 #include <QPainter>
 #include <algorithm>
 #include <cmath>
@@ -612,6 +613,56 @@ void FilterProcessor::blendWithSelection(QImage& dst, const QImage& orig,
                 dstLine[x] = (outA << 24) | (outR << 16) | (outG << 8) | outB;
             }
             // m == 255 の場合は既に dstLine[x] にフィルター結果が入っているためそのまま
+        }
+    }
+}
+
+void FilterProcessor::blendWithSelectionMask(QImage& dst, const QImage& orig,
+                                            const Layer* maskLayer, int width, int height) {
+    if (!maskLayer) return;
+    int w = std::min({dst.width(), orig.width(), width});
+    int h = std::min({dst.height(), orig.height(), height});
+
+    int lastTx = -1, lastTy = -1;
+    const uint32_t* maskPixels = nullptr;
+
+    for (int y = 0; y < h; ++y) {
+        int ty = y / TileMemoryPool::TILE_HEIGHT;
+        int ly = y % TileMemoryPool::TILE_HEIGHT;
+        const uint32_t* origLine = reinterpret_cast<const uint32_t*>(orig.constScanLine(y));
+        uint32_t* dstLine = reinterpret_cast<uint32_t*>(dst.scanLine(y));
+
+        for (int x = 0; x < w; ++x) {
+            int tx = x / TileMemoryPool::TILE_WIDTH;
+            int lx = x % TileMemoryPool::TILE_WIDTH;
+
+            if (tx != lastTx || ty != lastTy) {
+                lastTx = tx;
+                lastTy = ty;
+                const Tile* t = maskLayer->tileManager().getTile(tx, ty);
+                maskPixels = (t && t->readBuffer()) ? reinterpret_cast<const uint32_t*>(t->readBuffer()) : nullptr;
+            }
+
+            uint8_t m = 0;
+            if (maskPixels) {
+                m = static_cast<uint8_t>((maskPixels[ly * TileMemoryPool::TILE_WIDTH + lx] >> 24) & 0xFF);
+            }
+
+            if (m == 0) {
+                dstLine[x] = origLine[x];
+            } else if (m < 255) {
+                float t = m / 255.0f;
+                uint32_t p0 = origLine[x];
+                uint32_t p1 = dstLine[x];
+                uint32_t a0 = (p0 >> 24) & 0xFF, r0 = (p0 >> 16) & 0xFF, g0 = (p0 >> 8) & 0xFF, b0 = p0 & 0xFF;
+                uint32_t a1 = (p1 >> 24) & 0xFF, r1 = (p1 >> 16) & 0xFF, g1 = (p1 >> 8) & 0xFF, b1 = p1 & 0xFF;
+
+                uint32_t outA = static_cast<uint32_t>(a0 * (1.0f - t) + a1 * t + 0.5f);
+                uint32_t outR = static_cast<uint32_t>(r0 * (1.0f - t) + r1 * t + 0.5f);
+                uint32_t outG = static_cast<uint32_t>(g0 * (1.0f - t) + g1 * t + 0.5f);
+                uint32_t outB = static_cast<uint32_t>(b0 * (1.0f - t) + b1 * t + 0.5f);
+                dstLine[x] = (outA << 24) | (outR << 16) | (outG << 8) | outB;
+            }
         }
     }
 }

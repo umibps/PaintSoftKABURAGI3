@@ -786,20 +786,48 @@ void Document::fillLayer(int index, const QColor& color) {
             for (int py = py0; py <= py1; ++py) {
                 int ly = py - tileY0;
                 for (int px = px0; px <= px1; ++px) {
-                    if (hasSel && !isPixelSelected(px, py)) {
-                        continue;
-                    }
+                    uint8_t sel = hasSel ? selectionStrength(px, py) : 255;
+                    if (sel == 0) continue;
 
                     int lx = px - tileX0;
                     int pixelIdx = ly * TileMemoryPool::TILE_WIDTH + lx;
 
-                    if (alphaLocked) {
-                        uint32_t curA = (pixels[pixelIdx] >> 24) & 0xFF;
-                        if (curA > 0) {
-                            pixels[pixelIdx] = (curA << 24) | (fillR << 16) | (fillG << 8) | fillB;
+                    if (sel == 255) {
+                        if (alphaLocked) {
+                            uint32_t curA = (pixels[pixelIdx] >> 24) & 0xFF;
+                            if (curA > 0) {
+                                pixels[pixelIdx] = (curA << 24) | (fillR << 16) | (fillG << 8) | fillB;
+                            }
+                        } else {
+                            pixels[pixelIdx] = solidPixel;
                         }
                     } else {
-                        pixels[pixelIdx] = solidPixel;
+                        // 0 < sel < 255: 部分選択（半透明ブレンド）
+                        float t = sel / 255.0f;
+                        uint32_t orig = pixels[pixelIdx];
+                        uint32_t origA = (orig >> 24) & 0xFF;
+                        uint32_t origR = (orig >> 16) & 0xFF;
+                        uint32_t origG = (orig >> 8) & 0xFF;
+                        uint32_t origB = orig & 0xFF;
+
+                        if (alphaLocked) {
+                            if (origA > 0) {
+                                uint32_t newR = static_cast<uint32_t>(origR * (1.0f - t) + fillR * t);
+                                uint32_t newG = static_cast<uint32_t>(origG * (1.0f - t) + fillG * t);
+                                uint32_t newB = static_cast<uint32_t>(origB * (1.0f - t) + fillB * t);
+                                pixels[pixelIdx] = (origA << 24) | (newR << 16) | (newG << 8) | newB;
+                            }
+                        } else {
+                            uint32_t targetA = (solidPixel >> 24) & 0xFF;
+                            uint32_t targetR = (solidPixel >> 16) & 0xFF;
+                            uint32_t targetG = (solidPixel >> 8) & 0xFF;
+                            uint32_t targetB = solidPixel & 0xFF;
+                            uint32_t newA = static_cast<uint32_t>(origA * (1.0f - t) + targetA * t);
+                            uint32_t newR = static_cast<uint32_t>(origR * (1.0f - t) + targetR * t);
+                            uint32_t newG = static_cast<uint32_t>(origG * (1.0f - t) + targetG * t);
+                            uint32_t newB = static_cast<uint32_t>(origB * (1.0f - t) + targetB * t);
+                            pixels[pixelIdx] = (newA << 24) | (newR << 16) | (newG << 8) | newB;
+                        }
                     }
                 }
             }
@@ -945,9 +973,18 @@ QColor Document::samplePixel(int x, int y) const {
     return QColor(r, g, b);
 }
 
+void Document::ensureSelectionMaskLayer() {
+    int expTilesX = (m_width + TileMemoryPool::TILE_WIDTH - 1) / TileMemoryPool::TILE_WIDTH;
+    int expTilesY = (m_height + TileMemoryPool::TILE_HEIGHT - 1) / TileMemoryPool::TILE_HEIGHT;
+    if (!m_selectionMaskLayer || m_selectionMaskLayer->tileManager().tilesX() != expTilesX || m_selectionMaskLayer->tileManager().tilesY() != expTilesY) {
+        m_selectionMaskLayer = std::make_shared<Layer>("__selection_mask__", m_width, m_height, LayerType::Raster);
+    }
+}
+
 void Document::setSelection(const QPainterPath& path) {
     m_selectionPath = path;
     m_selectionBounds = path.boundingRect();
+    m_hasSelection = !path.isEmpty();
 
     if (!path.isEmpty() && path.elementCount() <= 5) {
         QPainterPath rectTest;
@@ -957,36 +994,70 @@ void Document::setSelection(const QPainterPath& path) {
         m_selectionIsRect = false;
     }
 
-    if (m_isSelectionEditMode) {
-        updateSelectionMaskFromPath();
+    ensureSelectionMaskLayer();
+    m_selectionMaskLayer->tileManager().clear(0x00000000);
+
+    if (m_hasSelection) {
+        // パスからアンチエイリアス付きで0〜255のグレースケールマスク画像をレンダリング
+        QImage maskImg(m_width, m_height, QImage::Format_ARGB32_Premultiplied);
+        maskImg.fill(0);
+        QPainter p(&maskImg);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.fillPath(m_selectionPath, QColor(255, 255, 255, 255));
+        p.end();
+        m_selectionMaskLayer->tileManager().fromQImage(maskImg);
     }
 
     emit selectionChanged();
     emit documentUpdated(QRect());
 }
 
+void Document::setSelectionMask(const QImage& mask) {
+    ensureSelectionMaskLayer();
+    m_selectionMaskLayer->tileManager().clear(0x00000000);
+
+    if (!mask.isNull()) {
+        QImage argbMask = mask.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        m_selectionMaskLayer->tileManager().fromQImage(argbMask);
+        updateSelectionPathFromMask();
+    } else {
+        clearSelection();
+    }
+}
+
 void Document::clearSelection() {
-    if (m_selectionPath.isEmpty()) return;
+    if (!m_hasSelection && m_selectionPath.isEmpty()) return;
+    m_hasSelection = false;
     m_selectionPath = QPainterPath();
     m_selectionBounds = QRectF();
     m_selectionIsRect = false;
 
-    if (m_isSelectionEditMode) {
-        updateSelectionMaskFromPath();
+    if (m_selectionMaskLayer) {
+        m_selectionMaskLayer->tileManager().clear(0x00000000);
     }
 
     emit selectionChanged();
     emit documentUpdated(QRect());
 }
 
-bool Document::isPixelSelected(int x, int y) const {
-    if (m_selectionPath.isEmpty()) return true;
-    QPointF pt(x + 0.5, y + 0.5);
-    if (!m_selectionBounds.contains(pt)) {
-        return false;
+uint8_t Document::selectionStrength(int x, int y) const {
+    if (!m_hasSelection) return 255;
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) return 0;
+    if (!m_selectionBounds.contains(QPointF(x + 0.5, y + 0.5))) {
+        return 0;
     }
-    if (m_selectionIsRect) return true;
-    return m_selectionPath.contains(pt);
+    if (!m_selectionMaskLayer) return 255;
+
+    int tx = x / TileMemoryPool::TILE_WIDTH;
+    int ty = y / TileMemoryPool::TILE_HEIGHT;
+    const Tile* tile = m_selectionMaskLayer->tileManager().getTile(tx, ty);
+    if (!tile || !tile->readBuffer()) return 0;
+
+    int lx = x % TileMemoryPool::TILE_WIDTH;
+    int ly = y % TileMemoryPool::TILE_HEIGHT;
+    const uint32_t* buf = reinterpret_cast<const uint32_t*>(tile->readBuffer());
+    uint32_t px = buf[ly * TileMemoryPool::TILE_WIDTH + lx];
+    return static_cast<uint8_t>((px >> 24) & 0xFF);
 }
 
 void Document::setSelectionEditMode(bool enabled) {
@@ -1004,11 +1075,7 @@ void Document::setSelectionEditMode(bool enabled) {
 }
 
 void Document::updateSelectionMaskFromPath() {
-    int expTilesX = (m_width + TileMemoryPool::TILE_WIDTH - 1) / TileMemoryPool::TILE_WIDTH;
-    int expTilesY = (m_height + TileMemoryPool::TILE_HEIGHT - 1) / TileMemoryPool::TILE_HEIGHT;
-    if (!m_selectionMaskLayer || m_selectionMaskLayer->tileManager().tilesX() != expTilesX || m_selectionMaskLayer->tileManager().tilesY() != expTilesY) {
-        m_selectionMaskLayer = std::make_shared<Layer>("__selection_mask__", m_width, m_height, LayerType::Raster);
-    }
+    ensureSelectionMaskLayer();
     m_selectionMaskLayer->tileManager().clear(0x00000000);
 
     if (!m_selectionPath.isEmpty()) {
@@ -1162,7 +1229,13 @@ void Document::updateSelectionPathFromMask() {
         }
     }
 
-    setSelection(fullPath);
+    m_selectionPath = fullPath;
+    m_selectionBounds = fullPath.boundingRect();
+    m_hasSelection = !fullPath.isEmpty();
+    m_selectionIsRect = false;
+
+    emit selectionChanged();
+    emit documentUpdated(QRect());
 }
 
 std::shared_ptr<GroupLayer> Document::addPanelFolder(const QPolygonF& polygon, float borderWidth, const QColor& borderColor, const QString& name) {

@@ -101,10 +101,16 @@ void FilterBaseDialog::updatePreview() {
             applyFilterToImage(info.originalImage, filtered);
 
             // 選択範囲がある場合は選択範囲内のみブレンド
-            if (!m_document->selection().isEmpty()) {
-                FilterProcessor::blendWithSelection(filtered, info.originalImage,
-                                                    m_document->selection(),
-                                                    m_document->width(), m_document->height());
+            if (m_document->hasSelection()) {
+                if (m_document->selectionMaskLayer()) {
+                    FilterProcessor::blendWithSelectionMask(filtered, info.originalImage,
+                                                           m_document->selectionMaskLayer().get(),
+                                                           m_document->width(), m_document->height());
+                } else {
+                    FilterProcessor::blendWithSelection(filtered, info.originalImage,
+                                                        m_document->selection(),
+                                                        m_document->width(), m_document->height());
+                }
             }
 
             info.layer->tileManager().fromQImage(filtered);
