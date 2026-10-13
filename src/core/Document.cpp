@@ -943,6 +943,26 @@ void Document::composite(const QRect& dirtyRect) {
         }
     }
 
+    // CMYKネイティブモード時: コンポジットバッファの対象タイルをCMYKインキ減法混色色域へマッピング
+    if (m_colorMode == CanvasColorMode::CMYKNative) {
+        for (int ty = startTy; ty <= endTy; ++ty) {
+            for (int tx = startTx; tx <= endTx; ++tx) {
+                Tile* t = m_compositeBuffer.getTileForWrite(tx, ty);
+                if (t && t->writeBuffer()) {
+                    uint32_t* pix = reinterpret_cast<uint32_t*>(t->writeBuffer());
+                    for (size_t p = 0; p < TileMemoryPool::PIXELS_PER_TILE; ++p) {
+                        uint32_t px = pix[p];
+                        if ((px & 0xFF000000) != 0) {
+                            uint32_t cmyk = ColorCMYK::rgbToCmykInt(px);
+                            uint8_t a = (px >> 24) & 0xFF;
+                            pix[p] = ColorCMYK::cmykToRgbInt(cmyk, a);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     emit documentUpdated(targetRect);
 }
 
@@ -1393,6 +1413,39 @@ bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const 
     emit layerListChanged();
     emit documentUpdated(QRect(0, 0, m_width, m_height));
     return true;
+}
+
+void Document::setColorMode(CanvasColorMode mode) {
+    if (m_colorMode == mode) return;
+    m_colorMode = mode;
+
+    if (m_colorMode == CanvasColorMode::CMYKNative) {
+        // 全ラスターレイヤーのピクセルを CMYK 空間 (CMYK色域制限) にクランプ変換
+        for (auto& l : m_layers) {
+            if (l->type() == LayerType::Raster) {
+                auto& tm = l->tileManager();
+                for (int ty = 0; ty < tm.tilesY(); ++ty) {
+                    for (int tx = 0; tx < tm.tilesX(); ++tx) {
+                        Tile* t = tm.getTileForWrite(tx, ty);
+                        if (t && t->writeBuffer()) {
+                            uint32_t* pix = reinterpret_cast<uint32_t*>(t->writeBuffer());
+                            for (size_t p = 0; p < TileMemoryPool::PIXELS_PER_TILE; ++p) {
+                                if ((pix[p] & 0xFF000000) != 0) {
+                                    uint32_t cmyk = ColorCMYK::rgbToCmykInt(pix[p]);
+                                    uint8_t a = (pix[p] >> 24) & 0xFF;
+                                    pix[p] = ColorCMYK::cmykToRgbInt(cmyk, a);
+                                }
+                            }
+                        }
+                    }
+                }
+                l->invalidateContentBounds();
+            }
+        }
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
+    emit colorModeChanged(m_colorMode);
 }
 
 } // namespace Kaburagi

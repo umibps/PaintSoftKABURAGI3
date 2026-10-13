@@ -6,6 +6,7 @@
 #include "TextLayer.hpp"
 #include "GroupLayer.hpp"
 #include "ThreeDLayer.hpp"
+#include "Color.hpp"
 #include <QObject>
 #include <QUndoStack>
 #include <QPainterPath>
@@ -104,6 +105,10 @@ public:
     void updateSelectionPathFromMask();
     void updateSelectionMaskFromPath();
 
+    // カラーモード管理 (RGB, CMYKプルーフ, CMYKネイティブ)
+    CanvasColorMode colorMode() const { return m_colorMode; }
+    void setColorMode(CanvasColorMode mode);
+
     // キャンバス更新シグナル
 signals:
     void layerListChanged();
@@ -112,11 +117,13 @@ signals:
     void selectionChanged();
     void selectionEditModeChanged(bool enabled);
     void backgroundColorChanged();
+    void colorModeChanged(CanvasColorMode mode);
 
 private:
     int m_width;
     int m_height;
     double m_dpi;
+    CanvasColorMode m_colorMode = CanvasColorMode::RGB;
     QColor m_primaryBgColor = Qt::white;
     QColor m_secondaryBgColor = Qt::white;
     bool m_isSecondaryBgColorActive = false;

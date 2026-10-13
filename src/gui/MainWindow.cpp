@@ -261,7 +261,42 @@ void MainWindow::createMenuBar() {
     auto actPref = editMenu->addAction(tr("&Preferences..."), this, &MainWindow::onPreferences);
     actPref->setMenuRole(QAction::PreferencesRole);
 
-    menu->addMenu(tr("&Canvas"));
+    auto canvasMenu = menu->addMenu(tr("&Canvas"));
+    auto colorModeMenu = canvasMenu->addMenu(tr("Color &Mode"));
+    m_colorModeGroup = new QActionGroup(this);
+    m_colorModeGroup->setExclusive(true);
+
+    m_colorModeRgbAction = colorModeMenu->addAction(tr("&RGB"), this, [this]() {
+        if (m_document) {
+            m_document->setColorMode(CanvasColorMode::RGB);
+            updateColorModeActions();
+            statusBar()->showMessage(tr("Color mode switched to RGB."), 3000);
+        }
+    });
+    m_colorModeRgbAction->setCheckable(true);
+    m_colorModeRgbAction->setChecked(true);
+    m_colorModeGroup->addAction(m_colorModeRgbAction);
+
+    m_colorModeCmykProofAction = colorModeMenu->addAction(tr("CMYK &Proof"), this, [this]() {
+        if (m_document) {
+            m_document->setColorMode(CanvasColorMode::CMYKProof);
+            updateColorModeActions();
+            statusBar()->showMessage(tr("Color mode switched to CMYK Proof (Soft Proofing)."), 3000);
+        }
+    });
+    m_colorModeCmykProofAction->setCheckable(true);
+    m_colorModeGroup->addAction(m_colorModeCmykProofAction);
+
+    m_colorModeCmykNativeAction = colorModeMenu->addAction(tr("CMYK &Native"), this, [this]() {
+        if (m_document) {
+            m_document->setColorMode(CanvasColorMode::CMYKNative);
+            updateColorModeActions();
+            statusBar()->showMessage(tr("Color mode switched to CMYK Native (Subtractive Ink)."), 3000);
+        }
+    });
+    m_colorModeCmykNativeAction->setCheckable(true);
+    m_colorModeGroup->addAction(m_colorModeCmykNativeAction);
+
     auto layerMenu = menu->addMenu(tr("&Layer"));
     m_newRasterLayerAction = layerMenu->addAction(tr("New &Raster Layer"), this, &MainWindow::onNewRasterLayer);
     m_newRasterLayerAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
@@ -2611,6 +2646,7 @@ void MainWindow::setupDocument(Document* doc) {
         updateEditActions();
         updateLayerMenuActions();
         updateUndoRedoActions();
+        updateColorModeActions();
         updateWindowTitle();
         return;
     }
@@ -2684,8 +2720,14 @@ void MainWindow::setupDocument(Document* doc) {
 
     // 中央タブのタイトル更新
     if (m_tabWidget) {
-        QString docName = m_currentFilePath.isEmpty() ? "新規キャンバス.kab" : QFileInfo(m_currentFilePath).fileName();
-        QString tabTitle = QString("%1 (%2x%3)").arg(docName).arg(m_document->width()).arg(m_document->height());
+        QString docName = m_currentFilePath.isEmpty() ? tr("New Canvas.kab") : QFileInfo(m_currentFilePath).fileName();
+        QString modeStr;
+        switch (m_document->colorMode()) {
+            case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
+            case CanvasColorMode::CMYKProof: modeStr = "[CMYK Proof]"; break;
+            case CanvasColorMode::CMYKNative: modeStr = "[CMYK Native]"; break;
+        }
+        QString tabTitle = QString("%1 (%2x%3) %4").arg(docName).arg(m_document->width()).arg(m_document->height()).arg(modeStr);
         if (m_tabWidget->count() == 0 && m_canvasContainer) {
             m_tabWidget->addTab(m_canvasContainer, tabTitle);
         } else {
@@ -2695,6 +2737,40 @@ void MainWindow::setupDocument(Document* doc) {
     if (m_tabCloseBtn) {
         m_tabCloseBtn->setEnabled(true);
     }
+
+    connect(m_document, &Document::colorModeChanged, this, [this](CanvasColorMode) {
+        updateColorModeActions();
+        updateWindowTitle();
+    });
+    updateColorModeActions();
+}
+
+void MainWindow::updateColorModeActions() {
+    if (!m_colorModeGroup) return;
+    if (!m_document) {
+        m_colorModeGroup->setEnabled(false);
+        return;
+    }
+    m_colorModeGroup->setEnabled(true);
+    CanvasColorMode mode = m_document->colorMode();
+    if (m_colorModeRgbAction) {
+        m_colorModeRgbAction->blockSignals(true);
+        m_colorModeRgbAction->setChecked(mode == CanvasColorMode::RGB);
+        m_colorModeRgbAction->blockSignals(false);
+    }
+    if (m_colorModeCmykProofAction) {
+        m_colorModeCmykProofAction->blockSignals(true);
+        m_colorModeCmykProofAction->setChecked(mode == CanvasColorMode::CMYKProof);
+        m_colorModeCmykProofAction->blockSignals(false);
+    }
+    if (m_colorModeCmykNativeAction) {
+        m_colorModeCmykNativeAction->blockSignals(true);
+        m_colorModeCmykNativeAction->setChecked(mode == CanvasColorMode::CMYKNative);
+        m_colorModeCmykNativeAction->blockSignals(false);
+    }
+    if (m_canvasWidget) {
+        m_canvasWidget->update();
+    }
 }
 
 void MainWindow::updateWindowTitle() {
@@ -2703,8 +2779,18 @@ void MainWindow::updateWindowTitle() {
         setWindowModified(false);
         return;
     }
-    QString docName = m_currentFilePath.isEmpty() ? "無題" : QFileInfo(m_currentFilePath).fileName();
-    setWindowTitle(QString("%1[*] - PaintSoft KABURAGI 3.0").arg(docName));
+    QString docName = m_currentFilePath.isEmpty() ? tr("Untitled") : QFileInfo(m_currentFilePath).fileName();
+    QString modeStr;
+    switch (m_document->colorMode()) {
+        case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
+        case CanvasColorMode::CMYKProof: modeStr = "[CMYK Proof]"; break;
+        case CanvasColorMode::CMYKNative: modeStr = "[CMYK Native]"; break;
+    }
+    setWindowTitle(QString("%1 %2[*] - PaintSoft KABURAGI 3.0").arg(docName).arg(modeStr));
+    if (m_tabWidget && m_tabWidget->count() > 0) {
+        QString tabDocName = m_currentFilePath.isEmpty() ? tr("New Canvas.kab") : QFileInfo(m_currentFilePath).fileName();
+        m_tabWidget->setTabText(0, QString("%1 (%2x%3) %4").arg(tabDocName).arg(m_document->width()).arg(m_document->height()).arg(modeStr));
+    }
     if (m_document && m_document->undoStack()) {
         setWindowModified(!m_document->undoStack()->isClean());
     } else {

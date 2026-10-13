@@ -5932,20 +5932,44 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // タイルマネージャから描画
     const auto& comp = m_document->compositeBuffer();
+    bool isCmykProof = (m_document->colorMode() == CanvasColorMode::CMYKProof);
     for (int ty = 0; ty < comp.tilesY(); ++ty) {
         for (int tx = 0; tx < comp.tilesX(); ++tx) {
             const Tile* tile = comp.getTile(tx, ty);
             if (!tile || !tile->readBuffer()) continue;
 
-            QImage tileImg(tile->readBuffer(), TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT,
-                           TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32_Premultiplied);
-
             int x = tx * TileMemoryPool::TILE_WIDTH;
             int y = ty * TileMemoryPool::TILE_HEIGHT;
-            if (hasDisplayFilter) {
-                painter.drawImage(x, y, filterMgr.applyFilter(tileImg));
+
+            if (isCmykProof) {
+                // CMYKプルーフ（ソフトプルーフィング）: 元のRGBレイヤーデータは保持し、表示時のみCMYK色域へシミュレーションマッピング
+                QImage proofImg(TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT, QImage::Format_ARGB32_Premultiplied);
+                const uint32_t* src = reinterpret_cast<const uint32_t*>(tile->readBuffer());
+                uint32_t* dst = reinterpret_cast<uint32_t*>(proofImg.bits());
+                int count = TileMemoryPool::TILE_WIDTH * TileMemoryPool::TILE_HEIGHT;
+                for (int i = 0; i < count; ++i) {
+                    uint32_t px = src[i];
+                    if ((px & 0xFF000000) != 0) {
+                        uint32_t cmyk = ColorCMYK::rgbToCmykInt(px);
+                        uint8_t a = (px >> 24) & 0xFF;
+                        dst[i] = ColorCMYK::cmykToRgbInt(cmyk, a);
+                    } else {
+                        dst[i] = 0;
+                    }
+                }
+                if (hasDisplayFilter) {
+                    painter.drawImage(x, y, filterMgr.applyFilter(proofImg));
+                } else {
+                    painter.drawImage(x, y, proofImg);
+                }
             } else {
-                painter.drawImage(x, y, tileImg);
+                QImage tileImg(tile->readBuffer(), TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT,
+                               TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32_Premultiplied);
+                if (hasDisplayFilter) {
+                    painter.drawImage(x, y, filterMgr.applyFilter(tileImg));
+                } else {
+                    painter.drawImage(x, y, tileImg);
+                }
             }
         }
     }

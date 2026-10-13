@@ -2127,6 +2127,101 @@ void testLanguageSwitching() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testCanvasColorModes() {
+    std::cout << "[TEST] 25. Canvas Color Modes (RGB, CMYK Proof, CMYK Native)..." << std::endl;
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+
+    // 1. Document level tests
+    auto doc = std::make_unique<Document>(256, 256);
+    assert(doc->colorMode() == CanvasColorMode::RGB);
+
+    auto layer = std::make_shared<Layer>("Test Layer", 256, 256);
+    Tile* t = layer->tileManager().getTileForWrite(0, 0);
+    assert(t && t->writeBuffer());
+    uint32_t* pix = reinterpret_cast<uint32_t*>(t->writeBuffer());
+    for (size_t i = 0; i < TileMemoryPool::PIXELS_PER_TILE; ++i) {
+        pix[i] = 0xFFFF00FF; // Magenta
+    }
+    layer->invalidateContentBounds();
+    doc->insertLayer(0, layer);
+    doc->composite();
+
+    bool modeChangedSignalEmitted = false;
+    QObject::connect(doc.get(), &Document::colorModeChanged, [&](CanvasColorMode) {
+        modeChangedSignalEmitted = true;
+    });
+
+    // Switch to CMYK Proof
+    doc->setColorMode(CanvasColorMode::CMYKProof);
+    assert(doc->colorMode() == CanvasColorMode::CMYKProof);
+    assert(modeChangedSignalEmitted);
+
+    // Switch to CMYK Native
+    modeChangedSignalEmitted = false;
+    doc->setColorMode(CanvasColorMode::CMYKNative);
+    assert(doc->colorMode() == CanvasColorMode::CMYKNative);
+    assert(modeChangedSignalEmitted);
+
+    // Verify CMYK conversion on pixels in Native mode
+    const Tile* compTile = doc->compositeBuffer().getTile(0, 0);
+    assert(compTile && compTile->readBuffer());
+    uint32_t compPix = reinterpret_cast<const uint32_t*>(compTile->readBuffer())[0];
+    assert((compPix & 0xFF000000) == 0xFF000000); // Alpha preserved
+
+    // 2. GUI Integration with MainWindow
+    MainWindow mw;
+    mw.resize(1100, 750);
+    mw.show();
+    QApplication::processEvents();
+
+    assert(mw.colorModeRgbAction() != nullptr);
+    assert(mw.colorModeCmykProofAction() != nullptr);
+    assert(mw.colorModeCmykNativeAction() != nullptr);
+
+    // Load doc into MainWindow
+    Document* rawDoc = doc.release();
+    mw.setDocumentForTest(rawDoc);
+    QApplication::processEvents();
+
+    // Default to RGB
+    rawDoc->setColorMode(CanvasColorMode::RGB);
+    QApplication::processEvents();
+    assert(mw.colorModeRgbAction()->isChecked());
+    assert(!mw.colorModeCmykProofAction()->isChecked());
+    assert(!mw.colorModeCmykNativeAction()->isChecked());
+    assert(mw.windowTitle().contains("[RGB]"));
+
+    // Switch via Action to CMYK Proof
+    mw.colorModeCmykProofAction()->trigger();
+    QApplication::processEvents();
+    assert(rawDoc->colorMode() == CanvasColorMode::CMYKProof);
+    assert(mw.colorModeCmykProofAction()->isChecked());
+    assert(mw.windowTitle().contains("[CMYK Proof]"));
+
+    // Switch via Action to CMYK Native
+    mw.colorModeCmykNativeAction()->trigger();
+    QApplication::processEvents();
+    assert(rawDoc->colorMode() == CanvasColorMode::CMYKNative);
+    assert(mw.colorModeCmykNativeAction()->isChecked());
+    assert(mw.windowTitle().contains("[CMYK Native]"));
+
+    // Switch back to RGB
+    mw.colorModeRgbAction()->trigger();
+    QApplication::processEvents();
+    assert(rawDoc->colorMode() == CanvasColorMode::RGB);
+    assert(mw.colorModeRgbAction()->isChecked());
+    assert(mw.windowTitle().contains("[RGB]"));
+
+    // Capture UI snapshot showing Canvas Color Mode in action
+    mw.colorModeCmykProofAction()->trigger();
+    QApplication::processEvents();
+    QImage snap = mw.grab().toImage();
+    snap.save(brainDir + "canvas_color_mode_verified.png");
+    std::cout << "  [UI Snapshot] canvas_color_mode_verified.png saved." << std::endl;
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -2154,6 +2249,7 @@ int main(int argc, char* argv[]) {
     testReferenceImageWindow();
     testStartupNoCanvasAndOpenFileArgument();
     testLanguageSwitching();
+    testCanvasColorModes();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

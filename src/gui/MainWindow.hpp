@@ -233,7 +233,17 @@ private:
     QAction* m_rasterizeLayerAction = nullptr;
     QAction* m_fillLayerAction = nullptr;
 
+    // キャンバスカラモードアクション
+    QActionGroup* m_colorModeGroup = nullptr;
+    QAction* m_colorModeRgbAction = nullptr;
+    QAction* m_colorModeCmykProofAction = nullptr;
+    QAction* m_colorModeCmykNativeAction = nullptr;
+
 public:
+    void updateColorModeActions();
+    QAction* colorModeRgbAction() const { return m_colorModeRgbAction; }
+    QAction* colorModeCmykProofAction() const { return m_colorModeCmykProofAction; }
+    QAction* colorModeCmykNativeAction() const { return m_colorModeCmykNativeAction; }
     QToolButton* flipHorizontalButton() const { return m_btnFlipH; }
     QToolButton* switchBackgroundColorButton() const { return m_btnSwitchBgColor; }
     QAction* cutAction() const { return m_cutAction; }

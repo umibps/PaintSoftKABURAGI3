@@ -16,6 +16,7 @@ public:
     static constexpr size_t TILE_WIDTH = 128;
     static constexpr size_t TILE_HEIGHT = 128;
     static constexpr size_t BYTES_PER_PIXEL = 4; // RGBA8
+    static constexpr size_t PIXELS_PER_TILE = TILE_WIDTH * TILE_HEIGHT; // 16384 pixels
     static constexpr size_t TILE_BYTE_SIZE = TILE_WIDTH * TILE_HEIGHT * BYTES_PER_PIXEL; // 64 KB
 
     // シングルトンまたはインスタンス
