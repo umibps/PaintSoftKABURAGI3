@@ -2059,6 +2059,7 @@ void testLanguageSwitching() {
     QString trSelEdit = QCoreApplication::translate("Kaburagi::MainWindow", "Selection Edit");
     QString trRefImg = QCoreApplication::translate("Kaburagi::ReferenceImageWindow", "Reference Image");
     QString trPalette = QCoreApplication::translate("Kaburagi::ColorPaletteWidget", "Clear Palette");
+    QString trPalettePrompt = QCoreApplication::translate("Kaburagi::ColorPaletteWidget", "Are you sure you want to clear all colors in the palette?");
     QString trPrefLang = QCoreApplication::translate("Kaburagi::PreferencesDialog", "Language Settings");
 
     std::cout << "  [Translate &File] -> " << trFile.toStdString() << std::endl;
@@ -2066,6 +2067,7 @@ void testLanguageSwitching() {
     std::cout << "  [Translate Selection Edit] -> " << trSelEdit.toStdString() << std::endl;
     std::cout << "  [Translate Reference Image] -> " << trRefImg.toStdString() << std::endl;
     std::cout << "  [Translate Clear Palette] -> " << trPalette.toStdString() << std::endl;
+    std::cout << "  [Translate Clear Palette Prompt] -> " << trPalettePrompt.toStdString() << std::endl;
     std::cout << "  [Translate Language Settings] -> " << trPrefLang.toStdString() << std::endl;
 
     assert(trFile == "ファイル(&F)");
@@ -2073,6 +2075,7 @@ void testLanguageSwitching() {
     assert(trSelEdit == "選択範囲編集");
     assert(trRefImg == "参考画像");
     assert(trPalette == "パレットをクリア");
+    assert(trPalettePrompt == "パレットのすべての色をクリアしますか？");
     assert(trPrefLang == "言語設定");
 
     // 日本語UIスナップショット
@@ -2083,6 +2086,25 @@ void testLanguageSwitching() {
     QImage snapJa = mwJa.grab().toImage();
     snapJa.save(brainDir + "language_japanese_ui_verified.png");
     std::cout << "  [UI Snapshot] language_japanese_ui_verified.png saved." << std::endl;
+
+    // Ctrl + T による変形開始の検証
+    QString ctrlTImgPath = QDir::tempPath() + "/ctrl_t_test_image.png";
+    QImage sampleDoc(400, 300, QImage::Format_ARGB32_Premultiplied);
+    sampleDoc.fill(Qt::white);
+    sampleDoc.save(ctrlTImgPath);
+    mwJa.openFile(ctrlTImgPath);
+    QApplication::processEvents();
+
+    assert(mwJa.canvasWidget() != nullptr);
+    assert(!mwJa.canvasWidget()->isTransforming());
+    QKeyEvent ctrlTEvent(QEvent::KeyPress, Qt::Key_T, Qt::ControlModifier);
+    QCoreApplication::sendEvent(&mwJa, &ctrlTEvent);
+    QApplication::processEvents();
+
+    assert(mwJa.canvasWidget()->isTransforming());
+    assert(mwJa.toolBox()->currentTool() == ToolType::Transform);
+    std::cout << "  [Ctrl+T Transform Shortcut] Successfully triggered transform mode without shortcut conflict." << std::endl;
+    QFile::remove(ctrlTImgPath);
 
     // 4. 英語モード（トランスレーター解除）の検証
     qApp->removeTranslator(&translator);

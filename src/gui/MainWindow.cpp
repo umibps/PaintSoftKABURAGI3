@@ -360,13 +360,13 @@ void MainWindow::createMenuBar() {
 
     viewMenu->addSeparator();
 
-    // GIMPスタイル: 選択範囲の境界線表示・非表示トグル (Ctrl+T / Ctrl+H)
+    // 選択範囲の境界線表示・非表示トグル (Ctrl+H)
     auto actShowSelection = viewMenu->addAction(tr("&Show Selection Boundary"), this, [this](bool checked) {
         if (m_canvasWidget) m_canvasWidget->setShowSelection(checked);
     });
     actShowSelection->setCheckable(true);
     actShowSelection->setChecked(true);
-    actShowSelection->setShortcuts({ QKeySequence(Qt::CTRL | Qt::Key_T), QKeySequence(Qt::CTRL | Qt::Key_H) });
+    actShowSelection->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_H));
 
     viewMenu->addSeparator();
 

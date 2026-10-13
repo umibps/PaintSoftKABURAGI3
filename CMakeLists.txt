@@ -404,9 +404,9 @@ target_link_libraries(test_three_d PRIVATE
 
 
 if (WIN32)
-    # Windows特定フラグ（必要に応じて）
+    # Windows GUIアプリケーションとしてビルド（起動時のコマンドプロンプトを非表示）
     set_target_properties(PaintSoftKABURAGI PROPERTIES
-        WIN32_EXECUTABLE FALSE # デバッグ用にコンソール出力を維持
+        WIN32_EXECUTABLE TRUE
     )
 
     get_target_property(_qt_core_loc Qt6::Core LOCATION)

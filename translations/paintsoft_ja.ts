@@ -907,12 +907,12 @@
     <message>
         <location filename="../src/gui/ColorPaletteWidget.cpp" line="315" />
         <source>Append Failed</source>
-        <translation>Append Failed</translation>
+        <translation>パレット追加失敗</translation>
     </message>
     <message>
         <location filename="../src/gui/ColorPaletteWidget.cpp" line="315" />
         <source>Failed to append ACO file.</source>
-        <translation>Failed to append ACO file.</translation>
+        <translation>ACOファイルの追加読み込みに失敗しました。</translation>
     </message>
     <message>
         <location filename="../src/gui/ColorPaletteWidget.cpp" line="320" />
@@ -943,7 +943,7 @@
     <message>
         <location filename="../src/gui/ColorPaletteWidget.cpp" line="330" />
         <source>Are you sure you want to clear all colors in the palette?</source>
-        <translation>Are you sure you want to clear all colors in the palette?</translation>
+        <translation>パレットのすべての色をクリアしますか？</translation>
     </message>
 </context>
 <context>
