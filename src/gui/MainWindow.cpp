@@ -760,7 +760,21 @@ void MainWindow::setupLayout() {
     m_panelSettings = new PanelSettingsWidget(this);
     m_threeDSettings = new ThreeDSettingsWidget(this);
 
-    m_toolSettingsStack = new QStackedWidget(this);
+    class DynamicStackedWidget : public QStackedWidget {
+    public:
+        using QStackedWidget::QStackedWidget;
+        QSize sizeHint() const override {
+            if (currentWidget()) return currentWidget()->sizeHint();
+            return QSize(160, 200);
+        }
+        QSize minimumSizeHint() const override {
+            if (currentWidget()) return currentWidget()->minimumSizeHint();
+            return QSize(80, 80);
+        }
+    };
+
+    m_toolSettingsStack = new DynamicStackedWidget(this);
+    connect(m_toolSettingsStack, &QStackedWidget::currentChanged, m_toolSettingsStack, &QWidget::updateGeometry);
     m_toolSettingsStack->addWidget(m_brushSettings);                  // index 0: ブラシ設定
     m_toolSettingsStack->addWidget(m_rectSelectSettings);             // index 1: 矩形選択設定
     m_toolSettingsStack->addWidget(m_ellipseSelectSettings);          // 楕円選択設定
@@ -789,10 +803,11 @@ void MainWindow::setupLayout() {
     m_toolSettingsStack->addWidget(m_panelSettings);                   // index 22: コマ設定
     m_toolSettingsStack->addWidget(m_threeDSettings);                  // index 23: 3Dモデル設定
 
+    m_toolSettingsStack->setMinimumWidth(0);
     auto settingsScrollArea = new QScrollArea(m_toolSplitter);
     settingsScrollArea->setWidgetResizable(true);
     settingsScrollArea->setFrameShape(QFrame::NoFrame);
-    settingsScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    settingsScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     settingsScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     settingsScrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
     settingsScrollArea->setWidget(m_toolSettingsStack);

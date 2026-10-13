@@ -12,12 +12,17 @@ GradientSettingsWidget::GradientSettingsWidget(QWidget* parent)
     mainLayout->setContentsMargins(2, 2, 2, 2);
     mainLayout->setSpacing(6);
 
+    setMinimumWidth(0);
+
     // 0. 合成モード
     auto modeLayout = new QHBoxLayout();
     auto modeLabel = new QLabel("合成モード:", this);
     modeLabel->setStyleSheet("font-size: 11px;");
     m_blendCombo = new QComboBox(this);
-    m_blendCombo->setStyleSheet("font-size: 11px;");
+    m_blendCombo->setStyleSheet("QComboBox { font-size: 11px; }");
+    m_blendCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_blendCombo->setMinimumContentsLength(4);
+    m_blendCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     for (const auto& info : getAllBlendModes()) {
         if (info.mode == BlendMode::PassThrough) continue;
         m_blendCombo->addItem(QString("%1 (%2)").arg(info.nameJa, info.nameEn), static_cast<int>(info.mode));
@@ -39,6 +44,9 @@ GradientSettingsWidget::GradientSettingsWidget(QWidget* parent)
     colorModeLayout->setContentsMargins(4, 4, 4, 4);
 
     m_colorModeCombo = new QComboBox(colorModeBox);
+    m_colorModeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_colorModeCombo->setMinimumContentsLength(4);
+    m_colorModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_colorModeCombo->addItem("描画色 → 背景色", static_cast<int>(GradientColorMode::FgToBg));
     m_colorModeCombo->addItem("描画色 → 透明", static_cast<int>(GradientColorMode::FgToTransparent));
     m_colorModeCombo->setStyleSheet("QComboBox { font-size: 11px; height: 22px; }");
@@ -56,6 +64,9 @@ GradientSettingsWidget::GradientSettingsWidget(QWidget* parent)
     shapeLayout->setContentsMargins(4, 4, 4, 4);
 
     m_shapeCombo = new QComboBox(shapeBox);
+    m_shapeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_shapeCombo->setMinimumContentsLength(4);
+    m_shapeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_shapeCombo->addItem("線形 (Linear)", static_cast<int>(GradientShape::Linear));
     m_shapeCombo->addItem("放射状 (Radial)", static_cast<int>(GradientShape::Radial));
     m_shapeCombo->addItem("双線形 (Bi-linear)", static_cast<int>(GradientShape::BiLinear));
@@ -93,6 +104,9 @@ GradientSettingsWidget::GradientSettingsWidget(QWidget* parent)
     repeatLayout->setContentsMargins(4, 4, 4, 4);
 
     m_repeatCombo = new QComboBox(repeatBox);
+    m_repeatCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_repeatCombo->setMinimumContentsLength(4);
+    m_repeatCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_repeatCombo->addItem("なし (None)", static_cast<int>(GradientRepeatMode::None));
     m_repeatCombo->addItem("ノコギリ波 (Sawtooth)", static_cast<int>(GradientRepeatMode::Sawtooth));
     m_repeatCombo->addItem("三角波 (Triangular)", static_cast<int>(GradientRepeatMode::Triangular));

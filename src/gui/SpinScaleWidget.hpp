@@ -41,7 +41,7 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     QSize sizeHint() const override { return QSize(160, 24); }
-    QSize minimumSizeHint() const override { return QSize(100, 22); }
+    QSize minimumSizeHint() const override { return QSize(60, 22); }
 
 private slots:
     void onLineEditFinished();

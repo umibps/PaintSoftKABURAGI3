@@ -38,8 +38,9 @@ BlurSettingsWidget::BlurSettingsWidget(QWidget* parent)
         emit densityChanged(static_cast<float>(val / 100.0));
     });
 
+    setMinimumWidth(0);
+
     // 筆圧影響項目 (サイズ / 濃度)
-    auto pressLayout = new QHBoxLayout();
     m_pressureSizeCheck = new QCheckBox("筆圧サイズ", this);
     m_pressureSizeCheck->setChecked(true);
     m_pressureSizeCheck->setStyleSheet("QCheckBox { font-size: 11px; }");
@@ -50,9 +51,8 @@ BlurSettingsWidget::BlurSettingsWidget(QWidget* parent)
     m_pressureDensityCheck->setStyleSheet("QCheckBox { font-size: 11px; }");
     m_pressureDensityCheck->setToolTip("ペンタブの筆圧に応じてぼかしの濃淡・適用強度を変化させる");
 
-    pressLayout->addWidget(m_pressureSizeCheck);
-    pressLayout->addWidget(m_pressureDensityCheck);
-    mainLayout->addLayout(pressLayout);
+    mainLayout->addWidget(m_pressureSizeCheck);
+    mainLayout->addWidget(m_pressureDensityCheck);
 
     connect(m_pressureSizeCheck, &QCheckBox::toggled, this, [this](bool checked) {
         m_minSizeScale->setEnabled(checked);

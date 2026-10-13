@@ -13,12 +13,17 @@ BrushSettingsWidget::BrushSettingsWidget(QWidget* parent)
     mainLayout->setContentsMargins(2, 2, 2, 2);
     mainLayout->setSpacing(6);
 
+    setMinimumWidth(0);
+
     // 0. 合成モード
     auto modeLayout = new QHBoxLayout();
     auto modeLabel = new QLabel("合成モード:", this);
     modeLabel->setStyleSheet("font-size: 11px;");
     m_blendCombo = new QComboBox(this);
-    m_blendCombo->setStyleSheet("font-size: 11px;");
+    m_blendCombo->setStyleSheet("QComboBox { font-size: 11px; }");
+    m_blendCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_blendCombo->setMinimumContentsLength(4);
+    m_blendCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     for (const auto& info : getAllBlendModes()) {
         if (info.mode == BlendMode::PassThrough) continue;
         m_blendCombo->addItem(QString("%1 (%2)").arg(info.nameJa, info.nameEn), static_cast<int>(info.mode));
@@ -98,7 +103,6 @@ BrushSettingsWidget::BrushSettingsWidget(QWidget* parent)
     });
 
     // 筆圧影響項目 (サイズ / 濃度)
-    auto pressLayout = new QHBoxLayout();
     m_pressureSizeCheck = new QCheckBox("筆圧サイズ", this);
     m_pressureSizeCheck->setChecked(true); // デフォルトでサイズに反映
     m_pressureSizeCheck->setStyleSheet("QCheckBox { font-size: 11px; }");
@@ -109,9 +113,8 @@ BrushSettingsWidget::BrushSettingsWidget(QWidget* parent)
     m_pressureDensityCheck->setStyleSheet("QCheckBox { font-size: 11px; }");
     m_pressureDensityCheck->setToolTip("ペンタブの筆圧に応じてインクの濃淡を変化させる");
 
-    pressLayout->addWidget(m_pressureSizeCheck);
-    pressLayout->addWidget(m_pressureDensityCheck);
-    mainLayout->addLayout(pressLayout);
+    mainLayout->addWidget(m_pressureSizeCheck);
+    mainLayout->addWidget(m_pressureDensityCheck);
 
     connect(m_pressureSizeCheck, &QCheckBox::toggled, this, [this](bool checked) {
         m_minSizeScale->setEnabled(checked);

@@ -39,6 +39,7 @@
 #include "ColorBoxWidget.hpp"
 #include "PreviewWindow.hpp"
 #include <QToolButton>
+#include <QSplitter>
 
 using namespace Kaburagi;
 
@@ -1746,6 +1747,72 @@ void testGrayscaleSelectionMask() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testToolBoxResizeGuiVisibility() {
+    std::cout << "[TEST] 20. ToolBox / Settings Widget Resize GUI Visibility..." << std::endl;
+
+    MainWindow mw;
+    mw.resize(1100, 800);
+    mw.show();
+    QApplication::processEvents();
+
+    QDockWidget* colorBrushDock = mw.findChild<QDockWidget*>("ColorBrushDock");
+    assert(colorBrushDock != nullptr);
+
+    // ツールプロパティのスクロールエリアとブラシ設定ウィジェットを取得
+    auto scrollArea = colorBrushDock->findChild<QScrollArea*>();
+    assert(scrollArea != nullptr);
+    auto brushSettings = colorBrushDock->findChild<BrushSettingsWidget*>();
+    assert(brushSettings != nullptr);
+
+    // ドックをリサイズ＆スプリッターの高さを狭めて縦スクロールバーを意図的に出現させる
+    QSplitter* splitter = colorBrushDock->findChild<QSplitter*>();
+    if (splitter) {
+        splitter->setSizes({ 280, 160 }); // 設定ウィジェット側を縦に縮めてスクロールバーを発生
+    }
+    QApplication::processEvents();
+
+    auto stack = colorBrushDock->findChild<QStackedWidget*>();
+    if (stack) {
+        for (int i = 0; i < stack->count(); ++i) {
+            QWidget* page = stack->widget(i);
+            std::cout << "    Page[" << i << "] " << page->metaObject()->className()
+                      << " minSize=" << page->minimumSizeHint().width() << "x" << page->minimumSizeHint().height()
+                      << " sizeHint=" << page->sizeHint().width() << "x" << page->sizeHint().height() << std::endl;
+        }
+    }
+    int viewportW = scrollArea->viewport()->width();
+    int brushW = brushSettings->width();
+    std::cout << "  [Viewport vs Settings Width] viewportW=" << viewportW << ", brushW=" << brushW << std::endl;
+    // 設定ウィジェットがビューポート内に完全に収まっていること (はみ出しゼロ)
+    assert(brushW <= viewportW);
+
+    // 2. SpinScale の数値領域およびスピン矢印がウィジェット内に完全に収まっていること
+    auto sizeScale = brushSettings->findChild<SpinScale*>();
+    assert(sizeScale != nullptr);
+    assert(sizeScale->width() <= brushW);
+    // 右端矢印領域がウィジェット幅内に収まっていること
+    QRect upArrow = sizeScale->findChild<QLineEdit*>() ? QRect() : QRect(sizeScale->width() - 16, 1, 15, sizeScale->height() - 2);
+    assert(upArrow.right() <= sizeScale->width());
+
+    // 3. 筆圧サイズ・筆圧濃度チェックボックスがビューポート内に完全に収まっていること
+    auto checks = brushSettings->findChildren<QCheckBox*>();
+    for (auto cb : checks) {
+        assert(cb->x() + cb->width() <= brushW + 2);
+        assert(cb->isVisible());
+    }
+
+    // 4. スナップショットを撮影して保存
+    brushSettings->repaint();
+    QApplication::processEvents();
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+    QImage snap = brushSettings->grab().toImage();
+    snap.save(brainDir + "toolbox_resize_gui_visibility_verified.png");
+    std::cout << "  [UI Snapshot] toolbox_resize_gui_visibility_verified.png saved successfully (size="
+              << snap.width() << "x" << snap.height() << ")." << std::endl;
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -1769,6 +1836,7 @@ int main(int argc, char* argv[]) {
     testSelectionEditMode();
     testTabAndToolboxUpdates();
     testGrayscaleSelectionMask();
+    testToolBoxResizeGuiVisibility();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

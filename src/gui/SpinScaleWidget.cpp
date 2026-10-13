@@ -255,9 +255,19 @@ void SpinScale::paintEvent(QPaintEvent* /*event*/) {
         f.setBold(true);
         painter.setFont(f);
 
-        QRect labelRect(6, 0, w * 0.45, h);
-        QRect valRect(w * 0.45, 0, w - (w * 0.45) - 20, h);
         QString valStr = QString::number(m_value, 'f', m_decimals) + m_suffix;
+        QFontMetrics fm(f);
+        int valW = fm.horizontalAdvance(valStr);
+
+        // 数値は常に右端のスピン矢印（w - 16）のすぐ左に確実に配置 (消えないように最優先)
+        int rightMargin = 18;
+        int valRight = w - rightMargin;
+        int valLeft = std::max(6, valRight - valW - 2);
+        QRect valRect(valLeft, 0, valRight - valLeft, h);
+
+        // ラベルは左端（x=6）から、数値の直前までを描画領域とする
+        int labelRight = std::max(6, valLeft - 4);
+        QRect labelRect(6, 0, labelRight - 6, h);
 
         // --- パス 1: プログレスバー上（明るい背景）→ 反転した濃色文字 ---
         if (barW > 0) {

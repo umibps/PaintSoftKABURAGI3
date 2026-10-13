@@ -8,12 +8,17 @@ BucketSettingsWidget::BucketSettingsWidget(QWidget* parent)
     mainLayout->setContentsMargins(4, 4, 4, 4);
     mainLayout->setSpacing(6);
 
+    setMinimumWidth(0);
+
     // 0. 合成モード
     auto modeLayout = new QHBoxLayout();
     auto modeLabel = new QLabel("合成モード:", this);
     modeLabel->setStyleSheet("font-size: 11px;");
     m_blendCombo = new QComboBox(this);
-    m_blendCombo->setStyleSheet("font-size: 11px;");
+    m_blendCombo->setStyleSheet("QComboBox { font-size: 11px; }");
+    m_blendCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_blendCombo->setMinimumContentsLength(4);
+    m_blendCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     for (const auto& info : getAllBlendModes()) {
         if (info.mode == BlendMode::PassThrough) continue;
         m_blendCombo->addItem(QString("%1 (%2)").arg(info.nameJa, info.nameEn), static_cast<int>(info.mode));
