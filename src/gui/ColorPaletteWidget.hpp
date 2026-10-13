@@ -24,6 +24,7 @@ public:
 
     QColor colorAt(int index) const;
     void setColorAt(int index, const QColor& color);
+    void addColor(const QColor& color);
 
     void setCurrentColor(const QColor& color) { m_currentColor = color; }
     QColor currentColor() const { return m_currentColor; }

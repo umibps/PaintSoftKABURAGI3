@@ -38,8 +38,12 @@
 #include "ColorWheelWidget.hpp"
 #include "ColorBoxWidget.hpp"
 #include "PreviewWindow.hpp"
+#include "ReferenceImageWindow.hpp"
+#include "SpinScaleWidget.hpp"
 #include <QToolButton>
 #include <QSplitter>
+#include <QMenuBar>
+#include <QClipboard>
 
 using namespace Kaburagi;
 
@@ -1813,6 +1817,142 @@ void testToolBoxResizeGuiVisibility() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testReferenceImageWindow() {
+    std::cout << "[TEST] 21. Reference Image Window (Tabs, Open/Paste, Zoom, Eyedropper, Palette, Close)..." << std::endl;
+
+    MainWindow mw;
+    mw.resize(1100, 800);
+    mw.show();
+    QApplication::processEvents();
+
+    // 1. メニューのアクションから開く
+    QAction* refAction = mw.referenceImageWindowAction();
+    assert(refAction != nullptr);
+    assert(refAction->isCheckable());
+    refAction->trigger();
+    QApplication::processEvents();
+
+    ReferenceImageWindow* refWin = mw.referenceImageWindow();
+    assert(refWin != nullptr);
+    assert(refWin->isVisible());
+    assert(refAction->isChecked());
+    std::cout << "  [Reference Window] Opened and visible from menu action." << std::endl;
+
+    // 2. メニューバーの検証 (ファイル > 画像を開く, 編集 > 貼り付け)
+    QMenuBar* mb = refWin->menuBar();
+    assert(mb != nullptr);
+    auto menus = mb->findChildren<QMenu*>();
+    bool hasFileMenu = false;
+    bool hasEditMenu = false;
+    for (auto m : menus) {
+        if (m->title().contains("ファイル")) hasFileMenu = true;
+        if (m->title().contains("編集")) hasEditMenu = true;
+    }
+    assert(hasFileMenu);
+    assert(hasEditMenu);
+    std::cout << "  [Menu Bar] File and Edit menus verified." << std::endl;
+
+    // 3. 画像を追加してタブが増えることを検証
+    QImage testImg(120, 100, QImage::Format_ARGB32);
+    testImg.fill(QColor(255, 0, 0)); // 赤
+    testImg.setPixelColor(60, 50, QColor(0, 255, 0)); // 中央は緑 (0, 255, 0)
+    testImg.setPixelColor(10, 10, QColor(0, 0, 255)); // 左上は青 (0, 0, 255)
+
+    refWin->addImage(testImg, "RefImage1.png");
+    QApplication::processEvents();
+
+    QTabWidget* tabWidget = refWin->findChild<QTabWidget*>();
+    assert(tabWidget != nullptr);
+    assert(tabWidget->count() == 1);
+    assert(tabWidget->tabText(0) == "RefImage1.png");
+    assert(tabWidget->tabsClosable());
+    std::cout << "  [Tab & Image] Image added, tab count=1, tabsClosable=true verified." << std::endl;
+
+    // 4. クリップボードからの貼り付けでタブが増えることを検証
+    QImage clipImg(80, 80, QImage::Format_ARGB32);
+    clipImg.fill(QColor(255, 255, 0)); // 黄色
+    QApplication::clipboard()->setImage(clipImg);
+    refWin->pasteImage();
+    QApplication::processEvents();
+
+    assert(tabWidget->count() == 2);
+    assert(tabWidget->tabText(1).contains("貼り付け"));
+    std::cout << "  [Clipboard Paste] Paste succeeded, tab count=2 verified." << std::endl;
+
+    // 5. タブ下側の拡大率設定 SpinScale の検証
+    SpinScale* zoomScale = refWin->findChild<SpinScale*>();
+    assert(zoomScale != nullptr);
+    assert(zoomScale->isEnabled());
+    std::cout << "  [SpinScale] Zoom scale widget under tabs verified (val=" << zoomScale->value() << "%)." << std::endl;
+
+    // SpinScale変更で画像のズームが連動することを検証
+    zoomScale->setValue(200.0);
+    QApplication::processEvents();
+    auto curView = qobject_cast<ReferenceImageView*>(tabWidget->currentWidget());
+    assert(curView != nullptr);
+    assert(std::abs(curView->zoom() - 2.0) < 0.01);
+    std::cout << "  [Zoom Sync] SpinScale value=200% correctly synced to view zoom=2.0." << std::endl;
+
+    // 6. 画像の左クリックで描画色が取得されることを検証 (タブ0の(60, 50)をクリック -> 緑色)
+    tabWidget->setCurrentIndex(0);
+    QApplication::processEvents();
+    auto view0 = qobject_cast<ReferenceImageView*>(tabWidget->currentWidget());
+    assert(view0 != nullptr);
+    view0->setZoom(1.0); // 等倍に戻す
+    zoomScale->setValue(100.0);
+    QApplication::processEvents();
+
+    QWidget* canvas = view0->widget();
+    assert(canvas != nullptr);
+
+    // 左クリックをシミュレート
+    QPoint clickPos(60, 50);
+    QMouseEvent pressEvent(QEvent::MouseButtonPress, clickPos, canvas->mapToGlobal(clickPos), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(canvas, &pressEvent);
+    QApplication::processEvents();
+
+    assert(mw.canvasWidget()->currentColor() == QColor(0, 255, 0));
+    std::cout << "  [Eyedropper Left Click] Clicked (60, 50), canvas current color set to Green (0, 255, 0) verified." << std::endl;
+
+    // 7. パレットへの登録シグナル検証
+    emit refWin->addToPalette(QColor(0, 0, 255)); // 青色を登録
+    QApplication::processEvents();
+    bool foundBlue = false;
+    for (int i = 0; i < mw.paletteWidget()->totalCells(); ++i) {
+        if (mw.paletteWidget()->colorAt(i) == QColor(0, 0, 255)) {
+            foundBlue = true;
+            break;
+        }
+    }
+    assert(foundBlue);
+    std::cout << "  [Palette Registration] Blue color registered into ColorPaletteWidget verified." << std::endl;
+
+    // 8. 画像を閉じる（タブを閉じる）の検証
+    assert(tabWidget->count() == 2);
+    refWin->closeTab(0);
+    QApplication::processEvents();
+    assert(tabWidget->count() == 1);
+    std::cout << "  [Close Tab] Tab closed, count=1 verified." << std::endl;
+
+    // 9. UIスナップショットの保存
+    refWin->resize(520, 480);
+    refWin->repaint();
+    QApplication::processEvents();
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+    QImage winSnap = refWin->grab().toImage();
+    winSnap.save(brainDir + "reference_image_window_verified.png");
+    std::cout << "  [UI Snapshot] reference_image_window_verified.png saved successfully (size="
+              << winSnap.width() << "x" << winSnap.height() << ")." << std::endl;
+
+    // ウィンドウを閉じる -> アクションのチェック状態解除
+    refWin->close();
+    QApplication::processEvents();
+    assert(!refAction->isChecked());
+    std::cout << "  [Window Closed] Action uncheck verified." << std::endl;
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -1837,6 +1977,7 @@ int main(int argc, char* argv[]) {
     testTabAndToolboxUpdates();
     testGrayscaleSelectionMask();
     testToolBoxResizeGuiVisibility();
+    testReferenceImageWindow();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

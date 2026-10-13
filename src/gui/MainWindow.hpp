@@ -54,6 +54,7 @@ namespace Kaburagi {
 
 class AiAssistantDockWidget;
 class PreviewWindow;
+class ReferenceImageWindow;
 class CanvasContainer;
 
 class MainWindow : public QMainWindow {
@@ -128,7 +129,9 @@ public slots:
     void onAiApplyAsNewLayer(const QImage& image);
     void onAiApplyOverwriteSelection(const QImage& image);
     void onTogglePreviewWindow(bool checked);
+    void onToggleReferenceImageWindow(bool checked);
     void onToggleSelectionEdit(bool checked);
+    void setDrawingColor(const QColor& color);
 
 private:
     bool maybeSave();
@@ -258,6 +261,8 @@ public:
     QAction* filterIccAction() const { return m_filterIccAction; }
     QAction* previewWindowAction() const { return m_previewWindowAction; }
     PreviewWindow* previewWindow() const { return m_previewWindow; }
+    QAction* referenceImageWindowAction() const { return m_referenceImageWindowAction; }
+    ReferenceImageWindow* referenceImageWindow() const { return m_referenceImageWindow; }
     Document* document() const { return m_document; }
     CanvasWidget* canvasWidget() const { return m_canvasWidget; }
     QTabWidget* tabWidget() const { return m_tabWidget; }
@@ -286,6 +291,8 @@ private:
 
     QAction* m_previewWindowAction = nullptr;
     PreviewWindow* m_previewWindow = nullptr;
+    QAction* m_referenceImageWindowAction = nullptr;
+    ReferenceImageWindow* m_referenceImageWindow = nullptr;
     QToolButton* m_btnToggleSelectionEdit = nullptr;
 
     bool m_isRestoringSettings = true;

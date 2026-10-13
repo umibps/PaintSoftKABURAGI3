@@ -162,6 +162,22 @@ void ColorPaletteWidget::setColorAt(int index, const QColor& color) {
     }
 }
 
+void ColorPaletteWidget::addColor(const QColor& color) {
+    if (!color.isValid()) return;
+    for (size_t i = 0; i < m_colors.size(); ++i) {
+        if (!m_colors[i].isValid()) {
+            setColorAt(static_cast<int>(i), color);
+            return;
+        }
+    }
+    m_rows++;
+    m_colors.resize(m_rows * COLS, QColor());
+    setColorAt(static_cast<int>(m_colors.size() - COLS), color);
+    updateScrollRange();
+    saveSettings();
+    update();
+}
+
 void ColorPaletteWidget::clearPalette() {
     std::fill(m_colors.begin(), m_colors.end(), QColor());
     saveSettings();

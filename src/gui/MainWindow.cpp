@@ -37,6 +37,7 @@
 #include "FilterDialogs.hpp"
 #include "DisplayFilterManager.hpp"
 #include "PreviewWindow.hpp"
+#include "ReferenceImageWindow.hpp"
 
 namespace Kaburagi {
 
@@ -425,10 +426,13 @@ void MainWindow::createMenuBar() {
     viewMenu->addSeparator();
     m_previewWindowAction = viewMenu->addAction(tr("プレビューウィンドウ(&P)..."), this, &MainWindow::onTogglePreviewWindow);
     m_previewWindowAction->setCheckable(true);
+    m_referenceImageWindowAction = viewMenu->addAction(tr("参考画像ウィンドウ(&R)..."), this, &MainWindow::onToggleReferenceImageWindow);
+    m_referenceImageWindowAction->setCheckable(true);
 
     // ウィンドウ(&W) メニュー (ドッキング・フローティング切替)
     auto windowMenu = menu->addMenu("ウィンドウ(&W)");
     windowMenu->addAction(m_previewWindowAction);
+    windowMenu->addAction(m_referenceImageWindowAction);
     windowMenu->addSeparator();
 
     auto navMenu = windowMenu->addMenu("ナビゲーション＆レイヤー");
@@ -3903,6 +3907,48 @@ void MainWindow::onTogglePreviewWindow(bool checked) {
     } else {
         m_previewWindow->hide();
     }
+}
+
+void MainWindow::onToggleReferenceImageWindow(bool checked) {
+    if (!m_referenceImageWindow) {
+        m_referenceImageWindow = new ReferenceImageWindow(this);
+        connect(m_referenceImageWindow, &ReferenceImageWindow::windowClosed, this, [this]() {
+            if (m_referenceImageWindowAction) {
+                m_referenceImageWindowAction->setChecked(false);
+            }
+        });
+        connect(m_referenceImageWindow, &ReferenceImageWindow::colorPicked, this, &MainWindow::setDrawingColor);
+        connect(m_referenceImageWindow, &ReferenceImageWindow::addToPalette, this, [this](const QColor& color) {
+            if (m_paletteWidget) {
+                m_paletteWidget->addColor(color);
+            }
+        });
+    }
+
+    if (checked) {
+        m_referenceImageWindow->show();
+        m_referenceImageWindow->raise();
+        m_referenceImageWindow->activateWindow();
+    } else {
+        m_referenceImageWindow->hide();
+    }
+}
+
+void MainWindow::setDrawingColor(const QColor& color) {
+    if (!color.isValid()) return;
+    if (m_toolBox && m_toolBox->colorBox()) {
+        m_toolBox->colorBox()->setCurrentActiveColor(color);
+    }
+    if (m_colorWheel) {
+        m_colorWheel->setColor(color);
+    }
+    if (m_canvasWidget) {
+        m_canvasWidget->setCurrentColor(color);
+    }
+    if (m_paletteWidget) {
+        m_paletteWidget->setCurrentColor(color);
+    }
+    saveSettings();
 }
 
 void MainWindow::onToggleSelectionEdit(bool checked) {

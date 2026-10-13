@@ -90,6 +90,8 @@ set(GUI_SOURCES
     src/gui/MainWindow.cpp
     src/gui/PreviewWindow.hpp
     src/gui/PreviewWindow.cpp
+    src/gui/ReferenceImageWindow.hpp
+    src/gui/ReferenceImageWindow.cpp
     src/gui/FilterDialogs.hpp
     src/gui/FilterDialogs.cpp
     src/gui/CanvasWidget.hpp
