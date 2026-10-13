@@ -233,6 +233,16 @@ private:
     QAction* m_rasterizeLayerAction = nullptr;
     QAction* m_fillLayerAction = nullptr;
 
+    // キャンバス変形アクション
+    QAction* m_changeCanvasSizeAction = nullptr;
+    QAction* m_scaleCanvasAction = nullptr;
+    QMenu* m_rotateCanvasMenu = nullptr;
+    QAction* m_rotate90CWAction = nullptr;
+    QAction* m_rotate90CCWAction = nullptr;
+    QAction* m_rotate180Action = nullptr;
+    QAction* m_flipCanvasHAction = nullptr;
+    QAction* m_flipCanvasVAction = nullptr;
+
     // キャンバスカラモードアクション
     QActionGroup* m_colorModeGroup = nullptr;
     QAction* m_colorModeRgbAction = nullptr;
@@ -240,6 +250,16 @@ private:
     QAction* m_colorModeCmykNativeAction = nullptr;
 
 public:
+    void updateCanvasMenuActions();
+    void onChangeCanvasSize();
+    void onScaleCanvas();
+    QAction* changeCanvasSizeAction() const { return m_changeCanvasSizeAction; }
+    QAction* scaleCanvasAction() const { return m_scaleCanvasAction; }
+    QAction* rotate90CWAction() const { return m_rotate90CWAction; }
+    QAction* rotate90CCWAction() const { return m_rotate90CCWAction; }
+    QAction* rotate180Action() const { return m_rotate180Action; }
+    QAction* flipCanvasHAction() const { return m_flipCanvasHAction; }
+    QAction* flipCanvasVAction() const { return m_flipCanvasVAction; }
     void updateColorModeActions();
     QAction* colorModeRgbAction() const { return m_colorModeRgbAction; }
     QAction* colorModeCmykProofAction() const { return m_colorModeCmykProofAction; }

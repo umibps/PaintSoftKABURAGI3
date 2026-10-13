@@ -2222,6 +2222,181 @@ void testCanvasColorModes() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testCanvasTransformOperations() {
+    std::cout << "[TEST] 26. Canvas Transforms (Resize, Scale, Rotate, Flip)..." << std::endl;
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+
+    // 1. Change Canvas Size
+    {
+        auto doc = std::make_unique<Document>(200, 100);
+        auto layer = std::make_shared<Layer>("Layer 1", 200, 100);
+        layer->tileManager().setPixel(50, 40, 0xFFFF0000); // Red pixel
+        doc->insertLayer(0, layer);
+        doc->composite();
+
+        assert(doc->width() == 200);
+        assert(doc->height() == 100);
+        assert(layer->tileManager().getPixel(50, 40) == 0xFFFF0000);
+
+        // Resize with offset (50, 50) -> new size 300x200
+        doc->changeCanvasSize(300, 200, 50, 50);
+        assert(doc->width() == 300);
+        assert(doc->height() == 200);
+        assert(layer->tileManager().getPixel(100, 90) == 0xFFFF0000);
+
+        // Undo
+        doc->undoStack()->undo();
+        assert(doc->width() == 200);
+        assert(doc->height() == 100);
+        assert(layer->tileManager().getPixel(50, 40) == 0xFFFF0000);
+
+        // Redo
+        doc->undoStack()->redo();
+        assert(doc->width() == 300);
+        assert(doc->height() == 200);
+        assert(layer->tileManager().getPixel(100, 90) == 0xFFFF0000);
+        std::cout << "  [Canvas Size] Resize with offset and Undo/Redo strictly verified." << std::endl;
+    }
+
+    // 2. Scale / Resize Canvas
+    {
+        auto doc = std::make_unique<Document>(200, 100);
+        auto layer = std::make_shared<Layer>("Layer 1", 200, 100);
+        // Fill half
+        for (int y = 0; y < 100; ++y) {
+            for (int x = 0; x < 100; ++x) {
+                layer->tileManager().setPixel(x, y, 0xFF00FF00); // Green
+            }
+        }
+        doc->insertLayer(0, layer);
+        doc->composite();
+
+        // Scale to 100x50 (50% reduction)
+        doc->scaleCanvas(100, 50, Qt::FastTransformation);
+        assert(doc->width() == 100);
+        assert(doc->height() == 50);
+        assert(layer->tileManager().getPixel(25, 25) == 0xFF00FF00);
+
+        // Undo
+        doc->undoStack()->undo();
+        assert(doc->width() == 200);
+        assert(doc->height() == 100);
+
+        // Redo
+        doc->undoStack()->redo();
+        assert(doc->width() == 100);
+        assert(doc->height() == 50);
+        std::cout << "  [Canvas Scale] Scale resolution and Undo/Redo strictly verified." << std::endl;
+    }
+
+    // 3. Rotate 90 CW, 90 CCW, 180, Flip H, Flip V
+    {
+        auto doc = std::make_unique<Document>(100, 60);
+        auto layer = std::make_shared<Layer>("Layer 1", 100, 60);
+        layer->tileManager().setPixel(10, 20, 0xFF0000FF); // Blue
+        doc->insertLayer(0, layer);
+        doc->composite();
+
+        // Rotate 90 CW: (10, 20) -> (60 - 1 - 20, 10) = (39, 10), dimensions 60x100
+        doc->rotateCanvas90CW();
+        assert(doc->width() == 60);
+        assert(doc->height() == 100);
+        assert(layer->tileManager().getPixel(39, 10) == 0xFF0000FF);
+
+        // Undo
+        doc->undoStack()->undo();
+        assert(doc->width() == 100);
+        assert(doc->height() == 60);
+        assert(layer->tileManager().getPixel(10, 20) == 0xFF0000FF);
+
+        // Rotate 90 CCW: (10, 20) -> (20, 100 - 1 - 10) = (20, 89), dimensions 60x100
+        doc->rotateCanvas90CCW();
+        assert(doc->width() == 60);
+        assert(doc->height() == 100);
+        assert(layer->tileManager().getPixel(20, 89) == 0xFF0000FF);
+        doc->undoStack()->undo();
+
+        // Rotate 180: (10, 20) -> (100 - 1 - 10, 60 - 1 - 20) = (89, 39)
+        doc->rotateCanvas180();
+        assert(doc->width() == 100);
+        assert(doc->height() == 60);
+        assert(layer->tileManager().getPixel(89, 39) == 0xFF0000FF);
+        doc->undoStack()->undo();
+
+        // Flip H: (10, 20) -> (100 - 1 - 10, 20) = (89, 20)
+        doc->flipCanvasHorizontal();
+        assert(doc->width() == 100);
+        assert(doc->height() == 60);
+        assert(layer->tileManager().getPixel(89, 20) == 0xFF0000FF);
+        doc->undoStack()->undo();
+
+        // Flip V: (10, 20) -> (10, 60 - 1 - 20) = (10, 39)
+        doc->flipCanvasVertical();
+        assert(doc->width() == 100);
+        assert(doc->height() == 60);
+        assert(layer->tileManager().getPixel(10, 39) == 0xFF0000FF);
+        doc->undoStack()->undo();
+        std::cout << "  [Canvas Rotation & Flip] 90 CW/CCW, 180, Flip H/V strictly verified." << std::endl;
+    }
+
+    // 4. GUI & Menu Actions Integration
+    {
+        MainWindow mw;
+        mw.resize(1100, 750);
+        mw.show();
+        QApplication::processEvents();
+
+        assert(mw.changeCanvasSizeAction() != nullptr);
+        assert(mw.scaleCanvasAction() != nullptr);
+        assert(mw.rotate90CWAction() != nullptr);
+        assert(mw.rotate90CCWAction() != nullptr);
+        assert(mw.rotate180Action() != nullptr);
+        assert(mw.flipCanvasHAction() != nullptr);
+        assert(mw.flipCanvasVAction() != nullptr);
+
+        // Disabled when no doc
+        assert(!mw.changeCanvasSizeAction()->isEnabled());
+        assert(!mw.scaleCanvasAction()->isEnabled());
+        assert(!mw.rotate90CWAction()->isEnabled());
+
+        auto doc = new Document(320, 240);
+        auto layer = std::make_shared<Layer>("Layer 1", 320, 240);
+        for (int y = 50; y < 150; ++y) {
+            for (int x = 50; x < 150; ++x) {
+                layer->tileManager().setPixel(x, y, 0xFFFF8800); // Orange box
+            }
+        }
+        doc->insertLayer(0, layer);
+        doc->composite();
+        mw.setDocumentForTest(doc);
+        QApplication::processEvents();
+
+        // Enabled when doc is loaded
+        assert(mw.changeCanvasSizeAction()->isEnabled());
+        assert(mw.scaleCanvasAction()->isEnabled());
+        assert(mw.rotate90CWAction()->isEnabled());
+        assert(mw.windowTitle().contains("320x240") || mw.windowTitle().contains("PaintSoft"));
+
+        // Trigger Rotate 90 CW
+        mw.rotate90CWAction()->trigger();
+        QApplication::processEvents();
+        assert(doc->width() == 240);
+        assert(doc->height() == 320);
+
+        // Trigger Flip Horizontal
+        mw.flipCanvasHAction()->trigger();
+        QApplication::processEvents();
+
+        // Capture UI snapshot
+        QImage snap = mw.grab().toImage();
+        snap.save(brainDir + "canvas_transform_verified.png");
+        std::cout << "  [UI Snapshot] canvas_transform_verified.png saved." << std::endl;
+        std::cout << "  [GUI Integration] All Canvas menu actions verified." << std::endl;
+    }
+
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -2250,6 +2425,7 @@ int main(int argc, char* argv[]) {
     testStartupNoCanvasAndOpenFileArgument();
     testLanguageSwitching();
     testCanvasColorModes();
+    testCanvasTransformOperations();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

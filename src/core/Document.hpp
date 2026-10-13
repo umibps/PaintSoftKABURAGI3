@@ -7,6 +7,7 @@
 #include "GroupLayer.hpp"
 #include "ThreeDLayer.hpp"
 #include "Color.hpp"
+#include "UndoCommands.hpp"
 #include <QObject>
 #include <QUndoStack>
 #include <QPainterPath>
@@ -109,6 +110,27 @@ public:
     CanvasColorMode colorMode() const { return m_colorMode; }
     void setColorMode(CanvasColorMode mode);
 
+    // キャンバス変形 (サイズ変更 / 拡大縮小 / 回転 / 反転)
+    enum class CanvasTransformType {
+        Rotate90CW,
+        Rotate90CCW,
+        Rotate180,
+        FlipHorizontal,
+        FlipVertical
+    };
+
+    std::vector<CanvasLayerSnapshot> snapshotAllLayers() const;
+    void applyCanvasTransform(int w, int h, const std::vector<CanvasLayerSnapshot>& snapshots, const QPainterPath& sel);
+
+    void changeCanvasSize(int newWidth, int newHeight, int offsetX, int offsetY);
+    void scaleCanvas(int newWidth, int newHeight, Qt::TransformationMode mode = Qt::SmoothTransformation);
+    void transformCanvas(CanvasTransformType type);
+    void rotateCanvas90CW() { transformCanvas(CanvasTransformType::Rotate90CW); }
+    void rotateCanvas90CCW() { transformCanvas(CanvasTransformType::Rotate90CCW); }
+    void rotateCanvas180() { transformCanvas(CanvasTransformType::Rotate180); }
+    void flipCanvasHorizontal() { transformCanvas(CanvasTransformType::FlipHorizontal); }
+    void flipCanvasVertical() { transformCanvas(CanvasTransformType::FlipVertical); }
+
     // キャンバス更新シグナル
 signals:
     void layerListChanged();
@@ -118,6 +140,7 @@ signals:
     void selectionEditModeChanged(bool enabled);
     void backgroundColorChanged();
     void colorModeChanged(CanvasColorMode mode);
+    void canvasResized(int width, int height);
 
 private:
     int m_width;

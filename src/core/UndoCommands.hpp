@@ -373,4 +373,42 @@ private:
     bool m_firstRun = true;
 };
 
+struct CanvasLayerSnapshot {
+    TileManager tiles;
+    std::vector<VectorStroke> vectorStrokes;
+    std::vector<TextBalloonItem> textItems;
+    QPolygonF panelPolygon;
+};
+
+/**
+ * @brief キャンバス変形 (サイズ変更 / 拡大縮小 / 回転 / 反転) の元に戻す/やり直しコマンド
+ */
+class CanvasTransformCommand : public QUndoCommand {
+public:
+    CanvasTransformCommand(Document* doc,
+                           int oldW, int oldH,
+                           int newW, int newH,
+                           std::vector<CanvasLayerSnapshot> oldSnapshots,
+                           std::vector<CanvasLayerSnapshot> newSnapshots,
+                           const QPainterPath& oldSel,
+                           const QPainterPath& newSel,
+                           const QString& text = "キャンバス変形",
+                           QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    int m_oldW;
+    int m_oldH;
+    int m_newW;
+    int m_newH;
+    std::vector<CanvasLayerSnapshot> m_oldSnapshots;
+    std::vector<CanvasLayerSnapshot> m_newSnapshots;
+    QPainterPath m_oldSel;
+    QPainterPath m_newSel;
+    bool m_firstRun = true;
+};
+
 } // namespace Kaburagi

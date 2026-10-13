@@ -673,4 +673,37 @@ void MultiLayerFilterCommand::redo() {
     m_doc->composite();
 }
 
+CanvasTransformCommand::CanvasTransformCommand(Document* doc,
+                                               int oldW, int oldH,
+                                               int newW, int newH,
+                                               std::vector<CanvasLayerSnapshot> oldSnapshots,
+                                               std::vector<CanvasLayerSnapshot> newSnapshots,
+                                               const QPainterPath& oldSel,
+                                               const QPainterPath& newSel,
+                                               const QString& text,
+                                               QUndoCommand* parent)
+    : QUndoCommand(text, parent)
+    , m_doc(doc)
+    , m_oldW(oldW), m_oldH(oldH)
+    , m_newW(newW), m_newH(newH)
+    , m_oldSnapshots(std::move(oldSnapshots))
+    , m_newSnapshots(std::move(newSnapshots))
+    , m_oldSel(oldSel), m_newSel(newSel)
+{
+}
+
+void CanvasTransformCommand::undo() {
+    if (!m_doc) return;
+    m_doc->applyCanvasTransform(m_oldW, m_oldH, m_oldSnapshots, m_oldSel);
+}
+
+void CanvasTransformCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc) return;
+    m_doc->applyCanvasTransform(m_newW, m_newH, m_newSnapshots, m_newSel);
+}
+
 } // namespace Kaburagi

@@ -94,6 +94,8 @@ set(GUI_SOURCES
     src/gui/ReferenceImageWindow.cpp
     src/gui/FilterDialogs.hpp
     src/gui/FilterDialogs.cpp
+    src/gui/CanvasDialogs.hpp
+    src/gui/CanvasDialogs.cpp
     src/gui/CanvasWidget.hpp
     src/gui/CanvasWidget.cpp
     src/gui/CanvasContainer.hpp

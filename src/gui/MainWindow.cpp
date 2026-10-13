@@ -38,6 +38,7 @@
 #include "DisplayFilterManager.hpp"
 #include "PreviewWindow.hpp"
 #include "ReferenceImageWindow.hpp"
+#include "CanvasDialogs.hpp"
 
 namespace Kaburagi {
 
@@ -262,6 +263,47 @@ void MainWindow::createMenuBar() {
     actPref->setMenuRole(QAction::PreferencesRole);
 
     auto canvasMenu = menu->addMenu(tr("&Canvas"));
+
+    m_changeCanvasSizeAction = canvasMenu->addAction(tr("Change &Canvas Size..."), this, &MainWindow::onChangeCanvasSize);
+    m_scaleCanvasAction = canvasMenu->addAction(tr("&Scale/Resize Canvas..."), this, &MainWindow::onScaleCanvas);
+
+    canvasMenu->addSeparator();
+
+    m_rotateCanvasMenu = canvasMenu->addMenu(tr("&Rotate Canvas"));
+    m_rotate90CWAction = m_rotateCanvasMenu->addAction(tr("Rotate &90° Clockwise"), this, [this]() {
+        if (m_document) {
+            m_document->rotateCanvas90CW();
+            statusBar()->showMessage(tr("Canvas rotated 90° clockwise."), 3000);
+        }
+    });
+    m_rotate90CCWAction = m_rotateCanvasMenu->addAction(tr("Rotate 90° Counter-&Clockwise"), this, [this]() {
+        if (m_document) {
+            m_document->rotateCanvas90CCW();
+            statusBar()->showMessage(tr("Canvas rotated 90° counter-clockwise."), 3000);
+        }
+    });
+    m_rotate180Action = m_rotateCanvasMenu->addAction(tr("Rotate &180°"), this, [this]() {
+        if (m_document) {
+            m_document->rotateCanvas180();
+            statusBar()->showMessage(tr("Canvas rotated 180°."), 3000);
+        }
+    });
+    m_rotateCanvasMenu->addSeparator();
+    m_flipCanvasHAction = m_rotateCanvasMenu->addAction(tr("Flip &Horizontally"), this, [this]() {
+        if (m_document) {
+            m_document->flipCanvasHorizontal();
+            statusBar()->showMessage(tr("Canvas flipped horizontally."), 3000);
+        }
+    });
+    m_flipCanvasVAction = m_rotateCanvasMenu->addAction(tr("Flip &Vertically"), this, [this]() {
+        if (m_document) {
+            m_document->flipCanvasVertical();
+            statusBar()->showMessage(tr("Canvas flipped vertically."), 3000);
+        }
+    });
+
+    canvasMenu->addSeparator();
+
     auto colorModeMenu = canvasMenu->addMenu(tr("Color &Mode"));
     m_colorModeGroup = new QActionGroup(this);
     m_colorModeGroup->setExclusive(true);
@@ -296,6 +338,9 @@ void MainWindow::createMenuBar() {
     });
     m_colorModeCmykNativeAction->setCheckable(true);
     m_colorModeGroup->addAction(m_colorModeCmykNativeAction);
+
+    connect(canvasMenu, &QMenu::aboutToShow, this, &MainWindow::updateCanvasMenuActions);
+    updateCanvasMenuActions();
 
     auto layerMenu = menu->addMenu(tr("&Layer"));
     m_newRasterLayerAction = layerMenu->addAction(tr("New &Raster Layer"), this, &MainWindow::onNewRasterLayer);
@@ -2647,6 +2692,7 @@ void MainWindow::setupDocument(Document* doc) {
         updateLayerMenuActions();
         updateUndoRedoActions();
         updateColorModeActions();
+        updateCanvasMenuActions();
         updateWindowTitle();
         return;
     }
@@ -2743,6 +2789,46 @@ void MainWindow::setupDocument(Document* doc) {
         updateWindowTitle();
     });
     updateColorModeActions();
+
+    connect(m_document, &Document::canvasResized, this, [this](int, int) {
+        updateWindowTitle();
+        if (m_canvasWidget) m_canvasWidget->update();
+        if (m_navigator) m_navigator->setDocument(m_document);
+        if (m_previewWindow) m_previewWindow->setDocument(m_document);
+    });
+    updateCanvasMenuActions();
+}
+
+void MainWindow::onChangeCanvasSize() {
+    if (!m_document) return;
+    ChangeCanvasSizeDialog dlg(m_document->width(), m_document->height(), this);
+    if (dlg.exec() == QDialog::Accepted) {
+        int offX = 0, offY = 0;
+        dlg.getOffsets(offX, offY);
+        m_document->changeCanvasSize(dlg.newWidth(), dlg.newHeight(), offX, offY);
+        statusBar()->showMessage(tr("Canvas size changed to %1 x %2 px.").arg(m_document->width()).arg(m_document->height()), 3000);
+    }
+}
+
+void MainWindow::onScaleCanvas() {
+    if (!m_document) return;
+    ScaleCanvasDialog dlg(m_document->width(), m_document->height(), this);
+    if (dlg.exec() == QDialog::Accepted) {
+        m_document->scaleCanvas(dlg.newWidth(), dlg.newHeight(), dlg.interpolationMode());
+        statusBar()->showMessage(tr("Canvas scaled to %1 x %2 px.").arg(m_document->width()).arg(m_document->height()), 3000);
+    }
+}
+
+void MainWindow::updateCanvasMenuActions() {
+    bool hasDoc = (m_document != nullptr);
+    if (m_changeCanvasSizeAction) m_changeCanvasSizeAction->setEnabled(hasDoc);
+    if (m_scaleCanvasAction) m_scaleCanvasAction->setEnabled(hasDoc);
+    if (m_rotateCanvasMenu) m_rotateCanvasMenu->setEnabled(hasDoc);
+    if (m_rotate90CWAction) m_rotate90CWAction->setEnabled(hasDoc);
+    if (m_rotate90CCWAction) m_rotate90CCWAction->setEnabled(hasDoc);
+    if (m_rotate180Action) m_rotate180Action->setEnabled(hasDoc);
+    if (m_flipCanvasHAction) m_flipCanvasHAction->setEnabled(hasDoc);
+    if (m_flipCanvasVAction) m_flipCanvasVAction->setEnabled(hasDoc);
 }
 
 void MainWindow::updateColorModeActions() {

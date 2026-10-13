@@ -1448,4 +1448,452 @@ void Document::setColorMode(CanvasColorMode mode) {
     emit colorModeChanged(m_colorMode);
 }
 
+std::vector<CanvasLayerSnapshot> Document::snapshotAllLayers() const {
+    std::vector<CanvasLayerSnapshot> snapshots;
+    snapshots.reserve(m_layers.size());
+    for (const auto& l : m_layers) {
+        CanvasLayerSnapshot s;
+        s.tiles = l->tileManager().clone();
+        if (l->type() == LayerType::Vector) {
+            auto vec = std::dynamic_pointer_cast<VectorLayer>(l);
+            if (vec) s.vectorStrokes = vec->strokes();
+        } else if (l->type() == LayerType::Text) {
+            auto text = std::dynamic_pointer_cast<TextLayer>(l);
+            if (text) s.textItems = text->items();
+        } else if (l->type() == LayerType::Group) {
+            auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (grp) s.panelPolygon = grp->panelPolygon();
+        }
+        snapshots.push_back(std::move(s));
+    }
+    return snapshots;
+}
+
+void Document::applyCanvasTransform(int w, int h, const std::vector<CanvasLayerSnapshot>& snapshots, const QPainterPath& sel) {
+    m_width = w;
+    m_height = h;
+    for (size_t i = 0; i < m_layers.size() && i < snapshots.size(); ++i) {
+        auto& l = m_layers[i];
+        l->tileManager() = snapshots[i].tiles.clone();
+        if (l->type() == LayerType::Vector) {
+            auto vec = std::dynamic_pointer_cast<VectorLayer>(l);
+            if (vec) {
+                vec->setStrokes(snapshots[i].vectorStrokes);
+                vec->rasterizeAll();
+            }
+        } else if (l->type() == LayerType::Text) {
+            auto text = std::dynamic_pointer_cast<TextLayer>(l);
+            if (text) {
+                text->items() = snapshots[i].textItems;
+                text->rasterizeAll();
+            }
+        } else if (l->type() == LayerType::Group) {
+            auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (grp) {
+                grp->setPanelPolygon(snapshots[i].panelPolygon);
+            }
+        }
+        l->invalidateContentBounds();
+    }
+    m_compositeBuffer = TileManager(m_width, m_height);
+    m_selectionPath = sel;
+    m_hasSelection = !sel.isEmpty();
+    m_selectionBounds = m_hasSelection ? sel.boundingRect() : QRectF();
+    updateSelectionMaskFromPath();
+
+    composite(QRect(0, 0, m_width, m_height));
+    emit canvasResized(m_width, m_height);
+    emit layerListChanged();
+    emit documentUpdated(QRect(0, 0, m_width, m_height));
+}
+
+void Document::changeCanvasSize(int newWidth, int newHeight, int offsetX, int offsetY) {
+    if (newWidth <= 0 || newHeight <= 0) return;
+    if (newWidth == m_width && newHeight == m_height && offsetX == 0 && offsetY == 0) return;
+
+    int oldW = m_width;
+    int oldH = m_height;
+    QPainterPath oldSel = m_selectionPath;
+    auto oldSnapshots = snapshotAllLayers();
+
+    QColor bgColor = m_isSecondaryBgColorActive ? m_secondaryBgColor : m_primaryBgColor;
+    auto bg = backgroundLayer();
+
+    for (size_t i = 0; i < m_layers.size(); ++i) {
+        auto& l = m_layers[i];
+        if (l->type() == LayerType::Raster || l->type() == LayerType::ThreeD) {
+            TileManager newTm(newWidth, newHeight);
+            if (l == bg) {
+                QImage oldImg = l->tileManager().toQImage();
+                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32_Premultiplied);
+                newImg.fill(bgColor);
+                QPainter p(&newImg);
+                p.drawImage(offsetX, offsetY, oldImg);
+                p.end();
+                newTm.fromQImage(newImg);
+            } else {
+                QImage oldImg = l->tileManager().toQImage();
+                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32_Premultiplied);
+                newImg.fill(0);
+                QPainter p(&newImg);
+                p.drawImage(offsetX, offsetY, oldImg);
+                p.end();
+                newTm.fromQImage(newImg);
+            }
+            l->tileManager() = std::move(newTm);
+            l->invalidateContentBounds();
+        } else if (l->type() == LayerType::Vector) {
+            auto vec = std::dynamic_pointer_cast<VectorLayer>(l);
+            if (vec) {
+                TileManager newTm(newWidth, newHeight);
+                vec->tileManager() = std::move(newTm);
+                for (auto& stroke : vec->strokes()) {
+                    for (auto& pt : stroke.points) {
+                        pt.x += offsetX;
+                        pt.y += offsetY;
+                    }
+                }
+                vec->rasterizeAll();
+                vec->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Text) {
+            auto text = std::dynamic_pointer_cast<TextLayer>(l);
+            if (text) {
+                TileManager newTm(newWidth, newHeight);
+                text->tileManager() = std::move(newTm);
+                for (auto& item : text->items()) {
+                    item.rect.translate(offsetX, offsetY);
+                    if (item.hasTail) {
+                        item.tailTip += QPointF(offsetX, offsetY);
+                    }
+                }
+                text->rasterizeAll();
+                text->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Group) {
+            auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (grp) {
+                TileManager newTm(newWidth, newHeight);
+                grp->tileManager() = std::move(newTm);
+                if (grp->isPanelFolder() && !grp->panelPolygon().isEmpty()) {
+                    QPolygonF poly = grp->panelPolygon();
+                    poly.translate(offsetX, offsetY);
+                    grp->setPanelPolygon(poly);
+                }
+                grp->invalidateContentBounds();
+            }
+        }
+    }
+
+    m_width = newWidth;
+    m_height = newHeight;
+    m_compositeBuffer = TileManager(m_width, m_height);
+
+    if (m_hasSelection) {
+        m_selectionPath.translate(offsetX, offsetY);
+        m_selectionBounds = m_selectionPath.boundingRect();
+        updateSelectionMaskFromPath();
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
+
+    auto newSnapshots = snapshotAllLayers();
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        m_undoStack->push(new CanvasTransformCommand(this, oldW, oldH, m_width, m_height,
+                                                    oldSnapshots, newSnapshots,
+                                                    oldSel, m_selectionPath,
+                                                    tr("Change Canvas Size")));
+    }
+
+    emit canvasResized(m_width, m_height);
+    emit layerListChanged();
+    emit documentUpdated(QRect(0, 0, m_width, m_height));
+}
+
+void Document::scaleCanvas(int newWidth, int newHeight, Qt::TransformationMode mode) {
+    if (newWidth <= 0 || newHeight <= 0) return;
+    if (newWidth == m_width && newHeight == m_height) return;
+
+    int oldW = m_width;
+    int oldH = m_height;
+    QPainterPath oldSel = m_selectionPath;
+    auto oldSnapshots = snapshotAllLayers();
+
+    float sx = static_cast<float>(newWidth) / oldW;
+    float sy = static_cast<float>(newHeight) / oldH;
+
+    for (size_t i = 0; i < m_layers.size(); ++i) {
+        auto& l = m_layers[i];
+        if (l->type() == LayerType::Raster || l->type() == LayerType::ThreeD) {
+            QImage oldImg = l->tileManager().toQImage();
+            QImage scaledImg = oldImg.scaled(newWidth, newHeight, Qt::IgnoreAspectRatio, mode);
+            TileManager newTm(newWidth, newHeight);
+            newTm.fromQImage(scaledImg);
+            l->tileManager() = std::move(newTm);
+            l->invalidateContentBounds();
+        } else if (l->type() == LayerType::Vector) {
+            auto vec = std::dynamic_pointer_cast<VectorLayer>(l);
+            if (vec) {
+                TileManager newTm(newWidth, newHeight);
+                vec->tileManager() = std::move(newTm);
+                for (auto& stroke : vec->strokes()) {
+                    for (auto& pt : stroke.points) {
+                        pt.x *= sx;
+                        pt.y *= sy;
+                    }
+                    stroke.baseWidth *= (sx + sy) * 0.5f;
+                }
+                vec->rasterizeAll();
+                vec->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Text) {
+            auto text = std::dynamic_pointer_cast<TextLayer>(l);
+            if (text) {
+                TileManager newTm(newWidth, newHeight);
+                text->tileManager() = std::move(newTm);
+                for (auto& item : text->items()) {
+                    item.rect = QRectF(item.rect.x() * sx, item.rect.y() * sy,
+                                       item.rect.width() * sx, item.rect.height() * sy);
+                    if (item.hasTail) {
+                        item.tailTip = QPointF(item.tailTip.x() * sx, item.tailTip.y() * sy);
+                        item.tailBaseWidth *= (sx + sy) * 0.5f;
+                    }
+                    item.frameWidth *= (sx + sy) * 0.5f;
+                    item.outlineWidth *= (sx + sy) * 0.5f;
+                    qreal ptSize = item.font.pointSizeF();
+                    if (ptSize > 0) {
+                        item.font.setPointSizeF(std::max(1.0, ptSize * ((sx + sy) * 0.5)));
+                    }
+                }
+                text->rasterizeAll();
+                text->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Group) {
+            auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (grp) {
+                TileManager newTm(newWidth, newHeight);
+                grp->tileManager() = std::move(newTm);
+                if (grp->isPanelFolder() && !grp->panelPolygon().isEmpty()) {
+                    QPolygonF poly;
+                    for (const auto& pt : grp->panelPolygon()) {
+                        poly << QPointF(pt.x() * sx, pt.y() * sy);
+                    }
+                    grp->setPanelPolygon(poly);
+                }
+                grp->invalidateContentBounds();
+            }
+        }
+    }
+
+    m_width = newWidth;
+    m_height = newHeight;
+    m_compositeBuffer = TileManager(m_width, m_height);
+
+    if (m_hasSelection) {
+        QTransform t;
+        t.scale(sx, sy);
+        m_selectionPath = t.map(m_selectionPath);
+        m_selectionBounds = m_selectionPath.boundingRect();
+        updateSelectionMaskFromPath();
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
+
+    auto newSnapshots = snapshotAllLayers();
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        m_undoStack->push(new CanvasTransformCommand(this, oldW, oldH, m_width, m_height,
+                                                    oldSnapshots, newSnapshots,
+                                                    oldSel, m_selectionPath,
+                                                    tr("Scale/Resize Canvas")));
+    }
+
+    emit canvasResized(m_width, m_height);
+    emit layerListChanged();
+    emit documentUpdated(QRect(0, 0, m_width, m_height));
+}
+
+void Document::transformCanvas(CanvasTransformType type) {
+    int oldW = m_width;
+    int oldH = m_height;
+    int newW = oldW;
+    int newH = oldH;
+    if (type == CanvasTransformType::Rotate90CW || type == CanvasTransformType::Rotate90CCW) {
+        newW = oldH;
+        newH = oldW;
+    }
+
+    QPainterPath oldSel = m_selectionPath;
+    auto oldSnapshots = snapshotAllLayers();
+
+    auto transformImage = [&](const QImage& src) -> QImage {
+        switch (type) {
+            case CanvasTransformType::Rotate90CW: {
+                int w = src.width();
+                int h = src.height();
+                QImage dst(h, w, QImage::Format_ARGB32_Premultiplied);
+                for (int y = 0; y < h; ++y) {
+                    const uint32_t* srcLine = reinterpret_cast<const uint32_t*>(src.constScanLine(y));
+                    for (int x = 0; x < w; ++x) {
+                        int dx = h - 1 - y;
+                        int dy = x;
+                        *reinterpret_cast<uint32_t*>(dst.scanLine(dy) + dx * 4) = srcLine[x];
+                    }
+                }
+                return dst;
+            }
+            case CanvasTransformType::Rotate90CCW: {
+                int w = src.width();
+                int h = src.height();
+                QImage dst(h, w, QImage::Format_ARGB32_Premultiplied);
+                for (int y = 0; y < h; ++y) {
+                    const uint32_t* srcLine = reinterpret_cast<const uint32_t*>(src.constScanLine(y));
+                    for (int x = 0; x < w; ++x) {
+                        int dx = y;
+                        int dy = w - 1 - x;
+                        *reinterpret_cast<uint32_t*>(dst.scanLine(dy) + dx * 4) = srcLine[x];
+                    }
+                }
+                return dst;
+            }
+            case CanvasTransformType::Rotate180:
+                return src.mirrored(true, true);
+            case CanvasTransformType::FlipHorizontal:
+                return src.mirrored(true, false);
+            case CanvasTransformType::FlipVertical:
+                return src.mirrored(false, true);
+        }
+        return src;
+    };
+
+    auto mapPoint = [&](const QPointF& pt) -> QPointF {
+        switch (type) {
+            case CanvasTransformType::Rotate90CW:
+                return QPointF(oldH - 1 - pt.y(), pt.x());
+            case CanvasTransformType::Rotate90CCW:
+                return QPointF(pt.y(), oldW - 1 - pt.x());
+            case CanvasTransformType::Rotate180:
+                return QPointF(oldW - 1 - pt.x(), oldH - 1 - pt.y());
+            case CanvasTransformType::FlipHorizontal:
+                return QPointF(oldW - 1 - pt.x(), pt.y());
+            case CanvasTransformType::FlipVertical:
+                return QPointF(pt.x(), oldH - 1 - pt.y());
+        }
+        return pt;
+    };
+
+    for (size_t i = 0; i < m_layers.size(); ++i) {
+        auto& l = m_layers[i];
+        if (l->type() == LayerType::Raster || l->type() == LayerType::ThreeD) {
+            QImage oldImg = l->tileManager().toQImage();
+            QImage transImg = transformImage(oldImg);
+            TileManager newTm(newW, newH);
+            newTm.fromQImage(transImg);
+            l->tileManager() = std::move(newTm);
+            l->invalidateContentBounds();
+        } else if (l->type() == LayerType::Vector) {
+            auto vec = std::dynamic_pointer_cast<VectorLayer>(l);
+            if (vec) {
+                TileManager newTm(newW, newH);
+                vec->tileManager() = std::move(newTm);
+                for (auto& stroke : vec->strokes()) {
+                    for (auto& pt : stroke.points) {
+                        QPointF np = mapPoint(QPointF(pt.x, pt.y));
+                        pt.x = np.x();
+                        pt.y = np.y();
+                    }
+                }
+                vec->rasterizeAll();
+                vec->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Text) {
+            auto text = std::dynamic_pointer_cast<TextLayer>(l);
+            if (text) {
+                TileManager newTm(newW, newH);
+                text->tileManager() = std::move(newTm);
+                for (auto& item : text->items()) {
+                    QPointF p1 = mapPoint(item.rect.topLeft());
+                    QPointF p2 = mapPoint(item.rect.bottomRight());
+                    item.rect = QRectF(std::min(p1.x(), p2.x()), std::min(p1.y(), p2.y()),
+                                       std::abs(p2.x() - p1.x()), std::abs(p2.y() - p1.y()));
+                    if (item.hasTail) {
+                        item.tailTip = mapPoint(item.tailTip);
+                    }
+                }
+                text->rasterizeAll();
+                text->invalidateContentBounds();
+            }
+        } else if (l->type() == LayerType::Group) {
+            auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+            if (grp) {
+                TileManager newTm(newW, newH);
+                grp->tileManager() = std::move(newTm);
+                if (grp->isPanelFolder() && !grp->panelPolygon().isEmpty()) {
+                    QPolygonF poly;
+                    for (const auto& pt : grp->panelPolygon()) {
+                        poly << mapPoint(pt);
+                    }
+                    grp->setPanelPolygon(poly);
+                }
+                grp->invalidateContentBounds();
+            }
+        }
+    }
+
+    m_width = newW;
+    m_height = newH;
+    m_compositeBuffer = TileManager(m_width, m_height);
+
+    if (m_hasSelection) {
+        QTransform pathT;
+        switch (type) {
+            case CanvasTransformType::Rotate90CW:
+                pathT.translate(oldH - 1, 0);
+                pathT.rotate(90);
+                break;
+            case CanvasTransformType::Rotate90CCW:
+                pathT.translate(0, oldW - 1);
+                pathT.rotate(-90);
+                break;
+            case CanvasTransformType::Rotate180:
+                pathT.translate(oldW - 1, oldH - 1);
+                pathT.rotate(180);
+                break;
+            case CanvasTransformType::FlipHorizontal:
+                pathT.translate(oldW - 1, 0);
+                pathT.scale(-1, 1);
+                break;
+            case CanvasTransformType::FlipVertical:
+                pathT.translate(0, oldH - 1);
+                pathT.scale(1, -1);
+                break;
+        }
+        m_selectionPath = pathT.map(m_selectionPath);
+        m_selectionBounds = m_selectionPath.boundingRect();
+        updateSelectionMaskFromPath();
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
+
+    QString actionText;
+    switch (type) {
+        case CanvasTransformType::Rotate90CW: actionText = tr("Rotate 90° Clockwise"); break;
+        case CanvasTransformType::Rotate90CCW: actionText = tr("Rotate 90° Counter-Clockwise"); break;
+        case CanvasTransformType::Rotate180: actionText = tr("Rotate 180°"); break;
+        case CanvasTransformType::FlipHorizontal: actionText = tr("Flip Horizontally"); break;
+        case CanvasTransformType::FlipVertical: actionText = tr("Flip Vertically"); break;
+    }
+
+    auto newSnapshots = snapshotAllLayers();
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        m_undoStack->push(new CanvasTransformCommand(this, oldW, oldH, m_width, m_height,
+                                                    oldSnapshots, newSnapshots,
+                                                    oldSel, m_selectionPath,
+                                                    actionText));
+    }
+
+    emit canvasResized(m_width, m_height);
+    emit layerListChanged();
+    emit documentUpdated(QRect(0, 0, m_width, m_height));
+}
+
 } // namespace Kaburagi
