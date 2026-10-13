@@ -1618,6 +1618,16 @@ void testTabAndToolboxUpdates() {
     assert(tabWidget->tabPosition() == QTabWidget::South);
     std::cout << "  [Canvas Tab] Tab position is South (bottom) strictly verified." << std::endl;
 
+    // 起動時は何もキャンバスが開かれていない状態（count == 0）
+    assert(tabWidget->count() == 0);
+    assert(mw.document() == nullptr);
+
+    // キャンバスを作成・セットしてタブが増えることを検証
+    mw.setDocumentForTest(new Document(1600, 1200, 350.0, true, Qt::white));
+    QApplication::processEvents();
+    assert(tabWidget->count() == 1);
+    assert(mw.document() != nullptr);
+
     // 2. 各タブの閉じるボタン（tabsClosable）および右側CornerWidgetの閉じるボタンを検証
     assert(tabWidget->tabsClosable());
     QWidget* cornerWidget = tabWidget->cornerWidget(Qt::BottomRightCorner);
@@ -1953,6 +1963,57 @@ void testReferenceImageWindow() {
     std::cout << "  -> PASSED" << std::endl;
 }
 
+void testStartupNoCanvasAndOpenFileArgument() {
+    std::cout << "[TEST] 22. Startup Without Canvas & Open File as Canvas..." << std::endl;
+
+    // 1. 起動時には何もキャンバスが開かれていない状態であることの検証
+    MainWindow mw;
+    mw.resize(1100, 800);
+    mw.show();
+    QApplication::processEvents();
+
+    assert(mw.document() == nullptr);
+    assert(mw.tabWidget()->count() == 0);
+    std::cout << "  [Startup State] Started with no document and 0 tabs strictly verified." << std::endl;
+
+    // 起動時（キャンバスなし）のUIスナップショット保存
+    QString brainDir = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/";
+    QImage snapEmpty = mw.grab().toImage();
+    snapEmpty.save(brainDir + "startup_no_canvas_verified.png");
+    std::cout << "  [UI Snapshot] startup_no_canvas_verified.png saved successfully." << std::endl;
+
+    // 2. テスト用画像ファイルを作成して起動時引数オープン（openFile）の動作を検証
+    QString testImgPath = QDir::tempPath() + "/startup_test_image.png";
+    QImage sampleImg(640, 480, QImage::Format_ARGB32);
+    sampleImg.fill(QColor(100, 180, 255));
+    {
+        QPainter p(&sampleImg);
+        p.setPen(Qt::white);
+        p.setFont(QFont("Arial", 24, QFont::Bold));
+        p.drawText(sampleImg.rect(), Qt::AlignCenter, "Startup Argument Canvas");
+    }
+    sampleImg.save(testImgPath);
+
+    mw.openFile(testImgPath);
+    QApplication::processEvents();
+
+    assert(mw.document() != nullptr);
+    assert(mw.tabWidget()->count() == 1);
+    assert(mw.document()->width() == 640);
+    assert(mw.document()->height() == 480);
+    std::cout << "  [File Open as Canvas] File '" << testImgPath.toStdString() << "' opened as canvas (640x480, tabs=1) strictly verified." << std::endl;
+
+    // ファイル読み込み後のUIスナップショット保存
+    mw.repaint();
+    QApplication::processEvents();
+    QImage snapOpened = mw.grab().toImage();
+    snapOpened.save(brainDir + "startup_file_opened_verified.png");
+    std::cout << "  [UI Snapshot] startup_file_opened_verified.png saved successfully." << std::endl;
+
+    QFile::remove(testImgPath);
+    std::cout << "  -> PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     std::cout << "=== Running ThreeD Layer Unit Tests ===" << std::endl;
@@ -1978,6 +2039,7 @@ int main(int argc, char* argv[]) {
     testGrayscaleSelectionMask();
     testToolBoxResizeGuiVisibility();
     testReferenceImageWindow();
+    testStartupNoCanvasAndOpenFileArgument();
     std::cout << "=== ALL ThreeD & Filter TESTS PASSED ===" << std::endl;
     return 0;
 }

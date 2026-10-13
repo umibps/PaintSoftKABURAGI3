@@ -2,6 +2,7 @@
 #include <QTranslator>
 #include <QLibraryInfo>
 #include <QDir>
+#include <QFile>
 #include "MainWindow.hpp"
 #include <iostream>
 
@@ -78,6 +79,17 @@ int main(int argc, char* argv[]) {
     app.setStyleSheet(qss);
 
     Kaburagi::MainWindow window;
+
+    // コマンドライン引数でファイルパスが渡された場合、そのファイルをキャンバスとして開く
+    const QStringList args = app.arguments();
+    for (int i = 1; i < args.size(); ++i) {
+        const QString& arg = args.at(i);
+        if (!arg.startsWith('-') && QFile::exists(arg)) {
+            window.openFile(arg);
+            break;
+        }
+    }
+
     window.show();
 
     std::cout << "[PaintSoft KABURAGI] Started successfully." << std::endl;

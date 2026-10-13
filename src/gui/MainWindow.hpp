@@ -79,7 +79,6 @@ private slots:
     bool onSaveCanvas();
     bool onSaveAsCanvas();
     void onOpenCanvas();
-    void openFile(const QString& filePath);
     void onPreferences();
     void onAutoBackupTimer();
     void onColorChanged(const QColor& color);
@@ -94,6 +93,7 @@ private slots:
     void resetDockLayout();
 
 public slots:
+    void openFile(const QString& filePath);
     void onCut();
     void onCopy();
     void onCopyVisible();

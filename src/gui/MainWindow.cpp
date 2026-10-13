@@ -128,14 +128,14 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle("PaintSoft KABURAGI 3.0 (SAI Style)");
     resize(1280, 850);
 
-    // デフォルトドキュメント作成 (1600x1200, 350dpi)
-    m_document = new Document(1600, 1200, 350.0, this);
+    // 起動時は何もキャンバスが開かれていない状態にする
+    m_document = nullptr;
 
     setupLayout();
     createMenuBar();
     createQuickToolBar();
     createStatusBar();
-    setupDocument(m_document);
+    setupDocument(nullptr);
     loadSettings();
 
     // ユーザーリクエスト: 矩形選択ツールを選択状態にする
@@ -864,7 +864,7 @@ void MainWindow::setupLayout() {
     });
 
     m_canvasContainer = new CanvasContainer(m_canvasWidget, this);
-    m_tabWidget->addTab(m_canvasContainer, "新規キャンバス.sai (1600x1200)");
+    // 起動時はキャンバスを開かないため、タブは追加しない
 
     setCentralWidget(m_tabWidget);
 
