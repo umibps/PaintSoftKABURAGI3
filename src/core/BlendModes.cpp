@@ -103,9 +103,10 @@ static inline uint32_t blendPixelNormalFast(uint32_t dst, uint32_t src, uint32_t
 
     if (da == 255) {
         // 下地が不透明（大半のキャンバス描画領域）
-        uint32_t r = dr + (((sr - dr) * sa + 128) >> 8);
-        uint32_t g = dg + (((sg - dg) * sa + 128) >> 8);
-        uint32_t b = db + (((sb - db) * sa + 128) >> 8);
+        uint32_t invSa = 255 - sa;
+        uint32_t r = div255(sr * sa + dr * invSa);
+        uint32_t g = div255(sg * sa + dg * invSa);
+        uint32_t b = div255(sb * sa + db * invSa);
         return (255 << 24) | (r << 16) | (g << 8) | b;
     }
 
@@ -184,9 +185,10 @@ uint32_t blendPixelClipped(uint32_t dst, uint32_t src, float opacity, BlendMode 
     uint32_t bb = blendChannelInt(db, sb, mode);
 
     uint32_t clipSa = div255(effSa * da);
-    uint32_t outR = dr + (((br - dr) * clipSa + 128) >> 8);
-    uint32_t outG = dg + (((bg - dg) * clipSa + 128) >> 8);
-    uint32_t outB = db + (((bb - db) * clipSa + 128) >> 8);
+    uint32_t invClipSa = 255 - clipSa;
+    uint32_t outR = (br * clipSa + dr * invClipSa + 128) >> 8;
+    uint32_t outG = (bg * clipSa + dg * invClipSa + 128) >> 8;
+    uint32_t outB = (bb * clipSa + db * invClipSa + 128) >> 8;
 
     return (da << 24) | (outR << 16) | (outG << 8) | outB;
 }
@@ -214,13 +216,22 @@ static inline void blend4_SSE2_OpaqueDst(uint32_t* dst, const uint32_t* src, __m
     sa_hi = _mm_shufflehi_epi16(sa_hi, _MM_SHUFFLE(3, 3, 3, 3));
     sa_hi = _mm_srli_epi16(_mm_mullo_epi16(sa_hi, op256_vec), 8);
 
-    // out = d + ((s - d) * sa + 128) >> 8
-    __m128i diff_lo = _mm_sub_epi16(s_lo, d_lo);
-    __m128i diff_hi = _mm_sub_epi16(s_hi, d_hi);
+    __m128i c255 = _mm_set1_epi16(255);
+    __m128i invSa_lo = _mm_sub_epi16(c255, sa_lo);
+    __m128i invSa_hi = _mm_sub_epi16(c255, sa_hi);
 
-    __m128i c128 = _mm_set1_epi16(128);
-    __m128i res_lo = _mm_add_epi16(d_lo, _mm_srai_epi16(_mm_add_epi16(_mm_mullo_epi16(diff_lo, sa_lo), c128), 8));
-    __m128i res_hi = _mm_add_epi16(d_hi, _mm_srai_epi16(_mm_add_epi16(_mm_mullo_epi16(diff_hi, sa_hi), c128), 8));
+    // out = div255(s * sa + d * (255 - sa))
+    // div255(v) = (v + 1 + (v >> 8)) >> 8
+    __m128i term1_lo = _mm_mullo_epi16(s_lo, sa_lo);
+    __m128i term2_lo = _mm_mullo_epi16(d_lo, invSa_lo);
+    __m128i sum_lo = _mm_add_epi16(term1_lo, term2_lo);
+    __m128i c1 = _mm_set1_epi16(1);
+    __m128i res_lo = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(sum_lo, c1), _mm_srli_epi16(sum_lo, 8)), 8);
+
+    __m128i term1_hi = _mm_mullo_epi16(s_hi, sa_hi);
+    __m128i term2_hi = _mm_mullo_epi16(d_hi, invSa_hi);
+    __m128i sum_hi = _mm_add_epi16(term1_hi, term2_hi);
+    __m128i res_hi = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(sum_hi, c1), _mm_srli_epi16(sum_hi, 8)), 8);
 
     __m128i alphaMask = _mm_set1_epi32(0xFF000000);
     __m128i packed = _mm_packus_epi16(res_lo, res_hi);
@@ -255,6 +266,12 @@ void blendTile(uint32_t* dst, const uint32_t* src, float opacity, BlendMode mode
             uint32_t s0 = src[i], s1 = src[i+1], s2 = src[i+2], s3 = src[i+3];
             // 4 つとも完全透明ならスキップ
             if (((s0 | s1 | s2 | s3) & 0xFF000000) == 0) {
+                continue;
+            }
+
+            // 4 つとも完全不透明かつレイヤー不透明度100%なら直接コピー（最高速）
+            if (op256 >= 256 && (s0 & s1 & s2 & s3 & 0xFF000000) == 0xFF000000) {
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&src[i])));
                 continue;
             }
 
@@ -329,9 +346,10 @@ void blendTileWithClipMask(
         uint32_t bb = blendChannelInt(db, sb, mode);
 
         if (da == 255) {
-            uint32_t r = dr + (((br - dr) * totalSa + 128) >> 8);
-            uint32_t g = dg + (((bg - dg) * totalSa + 128) >> 8);
-            uint32_t b = db + (((bb - db) * totalSa + 128) >> 8);
+            uint32_t invTotalSa = 255 - totalSa;
+            uint32_t r = (br * totalSa + dr * invTotalSa + 128) >> 8;
+            uint32_t g = (bg * totalSa + dg * invTotalSa + 128) >> 8;
+            uint32_t b = (bb * totalSa + db * invTotalSa + 128) >> 8;
             dst[i] = (255 << 24) | (r << 16) | (g << 8) | b;
         } else {
             uint32_t invSa = 255 - totalSa;

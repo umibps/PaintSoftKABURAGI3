@@ -7,4 +7,7 @@ build/
 scratch_*
 test_out.mp4
 dist/
+*Token*
+*.token
+*.key
 
