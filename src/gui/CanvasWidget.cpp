@@ -3197,13 +3197,15 @@ void CanvasWidget::fillBucket(const QPointF& docPos) {
                             if (sel == 0) continue;
                             selWeight = sel / 255.0f;
                         }
+                        float effOpacity = m_bucketDensity * selWeight;
+                        if (effOpacity <= 0.0f) continue;
                         if (alphaLocked) {
                             uint32_t origA = (basePixel >> 24) & 0xFF;
                             if (origA == 0) continue;
-                            uint32_t blended = blendPixel(basePixel, fillColor, selWeight, m_bucketBlendMode);
+                            uint32_t blended = blendPixel(basePixel, fillColor, effOpacity, m_bucketBlendMode);
                             pixels[localIdx] = (origA << 24) | (blended & 0x00FFFFFF);
                         } else {
-                            pixels[localIdx] = blendPixel(basePixel, fillColor, selWeight, m_bucketBlendMode);
+                            pixels[localIdx] = blendPixel(basePixel, fillColor, effOpacity, m_bucketBlendMode);
                         }
                     }
                 }

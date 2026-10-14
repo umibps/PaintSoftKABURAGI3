@@ -33,6 +33,16 @@ BucketSettingsWidget::BucketSettingsWidget(QWidget* parent)
         }
     });
 
+    // 0b. 濃度 (1〜100%)
+    m_densityScale = new SpinScale("濃度", 1.0, 100.0, 1.0, 1, "%", this);
+    m_densityScale->setValue(100.0);
+    mainLayout->addWidget(m_densityScale);
+
+    connect(m_densityScale, &SpinScale::valueChanged, this, [this](double val) {
+        m_density = static_cast<float>(val / 100.0);
+        emit densityChanged(m_density);
+    });
+
     auto line0 = new QFrame(this);
     line0->setFrameShape(QFrame::HLine);
     line0->setFrameShadow(QFrame::Sunken);
@@ -132,6 +142,13 @@ void BucketSettingsWidget::setNarrowAreaFill(bool enable) {
 void BucketSettingsWidget::setTolerance(int tol) {
     m_tolerance = std::clamp(tol, 0, 100);
     if (m_toleranceScale) m_toleranceScale->setValue(m_tolerance);
+}
+
+void BucketSettingsWidget::setDensity(float density) {
+    m_density = std::clamp(density, 0.01f, 1.0f);
+    if (m_densityScale) {
+        m_densityScale->setValue(m_density * 100.0);
+    }
 }
 
 BlendMode BucketSettingsWidget::blendMode() const {

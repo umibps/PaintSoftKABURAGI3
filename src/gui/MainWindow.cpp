@@ -1136,6 +1136,7 @@ void MainWindow::setupLayout() {
 
     // バケツ設定とキャンバスの連動
     connect(m_bucketSettings, &BucketSettingsWidget::blendModeChanged, m_canvasWidget, &CanvasWidget::setBucketBlendMode);
+    connect(m_bucketSettings, &BucketSettingsWidget::densityChanged, m_canvasWidget, &CanvasWidget::setBucketDensity);
     connect(m_bucketSettings, &BucketSettingsWidget::referenceModeChanged, m_canvasWidget, &CanvasWidget::setBucketReference);
     connect(m_bucketSettings, &BucketSettingsWidget::expandPixelsChanged, m_canvasWidget, &CanvasWidget::setBucketExpandPixels);
     connect(m_bucketSettings, &BucketSettingsWidget::narrowAreaFillChanged, m_canvasWidget, &CanvasWidget::setBucketNarrowAreaFill);
@@ -1143,6 +1144,7 @@ void MainWindow::setupLayout() {
 
     // バケツ設定変更時の設定永続化
     connect(m_bucketSettings, &BucketSettingsWidget::blendModeChanged, this, [this](BlendMode) { saveSettings(); });
+    connect(m_bucketSettings, &BucketSettingsWidget::densityChanged, this, [this](float) { saveSettings(); });
     connect(m_bucketSettings, &BucketSettingsWidget::referenceModeChanged, this, [this](BucketReference) { saveSettings(); });
     connect(m_bucketSettings, &BucketSettingsWidget::expandPixelsChanged, this, [this](int) { saveSettings(); });
     connect(m_bucketSettings, &BucketSettingsWidget::narrowAreaFillChanged, this, [this](bool) { saveSettings(); });
@@ -1858,6 +1860,7 @@ void MainWindow::saveSettings() {
     settings.beginGroup("BucketTool");
     if (m_bucketSettings) {
         settings.setValue("blendMode", static_cast<int>(m_bucketSettings->blendMode()));
+        settings.setValue("density", m_bucketSettings->density());
         settings.setValue("reference", static_cast<int>(m_bucketSettings->referenceMode()));
         settings.setValue("expandPixels", m_bucketSettings->expandPixels());
         settings.setValue("narrowAreaFill", m_bucketSettings->isNarrowAreaFill());
@@ -2365,6 +2368,9 @@ void MainWindow::loadSettings() {
     if (m_bucketSettings) {
         BlendMode bmode = static_cast<BlendMode>(settings.value("blendMode", static_cast<int>(BlendMode::Normal)).toInt());
         m_bucketSettings->setBlendMode(bmode);
+        if (settings.contains("density")) {
+            m_bucketSettings->setDensity(settings.value("density").toFloat());
+        }
         if (settings.contains("reference")) {
             m_bucketSettings->setReferenceMode(static_cast<BucketReference>(settings.value("reference").toInt()));
         }
@@ -2379,6 +2385,7 @@ void MainWindow::loadSettings() {
         }
         if (m_canvasWidget) {
             m_canvasWidget->setBucketBlendMode(m_bucketSettings->blendMode());
+            m_canvasWidget->setBucketDensity(m_bucketSettings->density());
             m_canvasWidget->setBucketReference(m_bucketSettings->referenceMode());
             m_canvasWidget->setBucketExpandPixels(m_bucketSettings->expandPixels());
             m_canvasWidget->setBucketNarrowAreaFill(m_bucketSettings->isNarrowAreaFill());
@@ -3653,6 +3660,7 @@ void MainWindow::onToolChanged(ToolType tool) {
 
     if (tool == ToolType::Bucket && m_bucketSettings && m_canvasWidget) {
         m_canvasWidget->setBucketBlendMode(m_bucketSettings->blendMode());
+        m_canvasWidget->setBucketDensity(m_bucketSettings->density());
     } else if (tool == ToolType::Watercolor && m_watercolorSettings && m_canvasWidget) {
         m_canvasWidget->setWatercolorBlendMode(m_watercolorSettings->blendMode());
         m_canvasWidget->setWatercolorScatter(m_watercolorSettings->isScatter());

@@ -40,8 +40,12 @@ public:
     int tolerance() const { return m_tolerance; }
     void setTolerance(int tol);
 
+    float density() const { return m_density; }
+    void setDensity(float density);
+
 signals:
     void blendModeChanged(BlendMode mode);
+    void densityChanged(float density);
     void referenceModeChanged(BucketReference mode);
     void expandPixelsChanged(int pixels);
     void narrowAreaFillChanged(bool enable);
@@ -51,8 +55,10 @@ private:
     BucketReference m_refMode = BucketReference::Canvas;
     int m_expandPixels = 1;
     int m_tolerance = 30;
+    float m_density = 1.0f;
 
     QComboBox* m_blendCombo = nullptr;
+    SpinScale* m_densityScale = nullptr;
     QButtonGroup* m_refGroup = nullptr;
     QRadioButton* m_radioActiveLayer = nullptr;
     QRadioButton* m_radioCanvas = nullptr;

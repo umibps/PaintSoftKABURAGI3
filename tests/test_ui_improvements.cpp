@@ -110,6 +110,65 @@ int main(int argc, char* argv[]) {
         std::cout << "  -> PASSED!" << std::endl;
     }
 
+    // 4. Bucket Tool Density
+    {
+        std::cout << "[TEST] 4. Checking Bucket Tool Density..." << std::endl;
+
+        // 4a. BucketSettingsWidget
+        BucketSettingsWidget bucketWidget;
+        float emittedDensity = 0.0f;
+        QObject::connect(&bucketWidget, &BucketSettingsWidget::densityChanged, [&](float d) {
+            emittedDensity = d;
+        });
+
+        bucketWidget.setDensity(0.5f);
+        assert(std::abs(bucketWidget.density() - 0.5f) < 0.01f);
+
+        // 4b. Fill bucket with 50% density
+        Document doc(50, 50);
+        auto layer = doc.addRasterLayer("FillLayer");
+        doc.composite();
+
+        CanvasWidget canvas;
+        canvas.setDocument(&doc);
+        canvas.setCurrentTool(ToolType::Bucket);
+        canvas.setCurrentColor(QColor(0, 0, 0, 255)); // opaque black
+        canvas.setBucketDensity(0.5f);
+        canvas.setBucketReference(BucketReference::ActiveLayer);
+        canvas.setBucketTolerance(10);
+        canvas.setBucketExpandPixels(0);
+
+        canvas.fillBucket(QPointF(25, 25));
+
+        // Sample filled pixel
+        QColor filledColor = doc.samplePixel(25, 25);
+        // Alpha should be ~128 (approx 50% of 255)
+        std::cout << "  [INFO] Filled color with 50% density: RGBA("
+                  << filledColor.red() << ", "
+                  << filledColor.green() << ", "
+                  << filledColor.blue() << ", "
+                  << filledColor.alpha() << ")" << std::endl;
+        assert(filledColor.alpha() >= 120 && filledColor.alpha() <= 135);
+
+        // 4c. Fill bucket with 100% density
+        auto layer2 = doc.addRasterLayer("FillLayer2");
+        doc.setActiveLayerIndex(doc.activeLayerIndex());
+        doc.composite();
+
+        canvas.setBucketDensity(1.0f);
+        canvas.fillBucket(QPointF(25, 25));
+
+        QColor filledColor100 = doc.samplePixel(25, 25);
+        std::cout << "  [INFO] Filled color with 100% density: RGBA("
+                  << filledColor100.red() << ", "
+                  << filledColor100.green() << ", "
+                  << filledColor100.blue() << ", "
+                  << filledColor100.alpha() << ")" << std::endl;
+        assert(filledColor100.alpha() == 255);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
     std::cout << "[ALL UI IMPROVEMENTS TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }

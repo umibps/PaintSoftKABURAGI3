@@ -149,6 +149,8 @@ public:
     // バケツツール設定
     void setBucketBlendMode(BlendMode mode) { m_bucketBlendMode = mode; }
     BlendMode bucketBlendMode() const { return m_bucketBlendMode; }
+    void setBucketDensity(float density) { m_bucketDensity = std::clamp(density, 0.0f, 1.0f); }
+    float bucketDensity() const { return m_bucketDensity; }
     void setBucketReference(BucketReference ref) { m_bucketReference = ref; }
     BucketReference bucketReference() const { return m_bucketReference; }
     void setBucketExpandPixels(int px) { m_bucketExpandPixels = px; }
@@ -750,6 +752,7 @@ private:
 
     // バケツツール状態
     BlendMode m_bucketBlendMode = BlendMode::Normal;
+    float m_bucketDensity = 1.0f;
     BucketReference m_bucketReference = BucketReference::Canvas;
     int m_bucketExpandPixels = 1;
     bool m_bucketNarrowAreaFill = true;
