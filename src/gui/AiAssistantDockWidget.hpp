@@ -23,6 +23,15 @@ namespace Kaburagi {
 class Document;
 class CanvasWidget;
 class Layer;
+class MainWindow;
+
+enum class AiImageSource {
+    Canvas = 0,          // キャンバス (全体)
+    ActiveLayer = 1,     // キャンバス (アクティブレイヤー)
+    Clipboard = 2,       // クリップボード
+    ReferenceWindow = 3, // 参考画像ウィンドウ
+    File = 4             // ファイル
+};
 
 /**
  * @brief AI画像生成アシスタント用ドックウィジェット
@@ -36,6 +45,7 @@ public:
 
     void setDocument(Document* doc);
     void setCanvasWidget(CanvasWidget* canvas);
+    void setMainWindow(MainWindow* mainWindow) { m_mainWindow = mainWindow; }
 
     AiService* aiService() const { return m_aiService; }
 
@@ -47,6 +57,9 @@ public:
     void loadSettings();
     void resetToDefaults();
     void loadParametersFromLayer(const std::shared_ptr<Layer>& layer);
+    QImage getImageFromSource(int sourceIndex, const QString& filePath, QString* outError = nullptr);
+    QImage getControlNetImage(QString* outError = nullptr);
+    QImage getIpAdapterImage(QString* outError = nullptr);
 
 signals:
     void applyAsNewLayer(const QImage& image, const QJsonObject& aiParams);
@@ -69,6 +82,10 @@ private slots:
     void onApplyOverwriteClicked();
     void onThumbnailSelected(int row);
     void onPromptAssistClicked();
+    void onBrowseControlNetFile();
+    void onBrowseIpAdapterFile();
+    void onControlNetSourceChanged(int index);
+    void onIpAdapterSourceChanged(int index);
 
     // AiService slots
     void onModelsFetched(const QStringList& models);
@@ -84,12 +101,12 @@ private:
     bool ensureRequirementsReady();
     QImage getInitImageForCurrentMode();
     QImage getMaskImageForCurrentMode();
-    QImage getControlNetImage();
 
 private:
     AiService* m_aiService = nullptr;
     Document* m_document = nullptr;
     CanvasWidget* m_canvasWidget = nullptr;
+    MainWindow* m_mainWindow = nullptr;
 
     // UI Widgets
     QRadioButton* m_radioComfyUi = nullptr;
@@ -114,6 +131,20 @@ private:
     QComboBox* m_comboControlNetType = nullptr;
     QDoubleSpinBox* m_spinControlNetWeight = nullptr;
     QComboBox* m_comboControlNetSource = nullptr;
+    QWidget* m_widgetControlNetFile = nullptr;
+    QPushButton* m_btnBrowseControlNetFile = nullptr;
+    QLabel* m_lblControlNetFile = nullptr;
+    QString m_controlNetFilePath;
+
+    // IP-Adapter
+    QCheckBox* m_chkIpAdapter = nullptr;
+    QComboBox* m_comboIpAdapterType = nullptr;
+    QDoubleSpinBox* m_spinIpAdapterWeight = nullptr;
+    QComboBox* m_comboIpAdapterSource = nullptr;
+    QWidget* m_widgetIpAdapterFile = nullptr;
+    QPushButton* m_btnBrowseIpAdapterFile = nullptr;
+    QLabel* m_lblIpAdapterFile = nullptr;
+    QString m_ipAdapterFilePath;
 
     // Resolution & Upscale
     QComboBox* m_comboResolution = nullptr;

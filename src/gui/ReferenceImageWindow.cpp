@@ -328,6 +328,11 @@ int ReferenceImageWindow::tabCount() const {
     return m_tabWidget ? m_tabWidget->count() : 0;
 }
 
+QImage ReferenceImageWindow::currentImage() const {
+    auto view = currentView();
+    return view ? view->image() : QImage();
+}
+
 void ReferenceImageWindow::addImage(const QImage& image, const QString& title) {
     if (image.isNull()) return;
 

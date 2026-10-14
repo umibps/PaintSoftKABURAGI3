@@ -6,6 +6,10 @@
 #include "PreferencesDialog.hpp"
 #include "AiComponentDownloader.hpp"
 #include "LlmPromptDialog.hpp"
+#include "MainWindow.hpp"
+#include "ReferenceImageWindow.hpp"
+#include <QClipboard>
+#include <QApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QVBoxLayout>
@@ -185,6 +189,7 @@ void AiAssistantDockWidget::setupUi() {
     auto grpCN = new QGroupBox(tr("ControlNet 設定"), mainContainer);
     auto layCN = new QVBoxLayout(grpCN);
     m_chkControlNet = new QCheckBox(tr("ControlNet を有効化"), grpCN);
+    m_chkControlNet->setToolTip(tr("線画やポーズ、参照画像を拘束条件として指定して生成します"));
     layCN->addWidget(m_chkControlNet);
 
     auto formCN = new QFormLayout();
@@ -194,6 +199,7 @@ void AiAssistantDockWidget::setupUi() {
     m_comboControlNetType->addItem(tr("OpenPose (人体ポーズ)"), static_cast<int>(ControlNetType::Openpose));
     m_comboControlNetType->addItem(tr("Scribble (落書きアタリ)"), static_cast<int>(ControlNetType::Scribble));
     m_comboControlNetType->addItem(tr("Canny (輪郭エッジ)"), static_cast<int>(ControlNetType::Canny));
+    m_comboControlNetType->addItem(tr("reference_only (リファレンス拘束)"), static_cast<int>(ControlNetType::ReferenceOnly));
 
     m_spinControlNetWeight = new QDoubleSpinBox(grpCN);
     m_spinControlNetWeight->setRange(0.1, 2.0);
@@ -201,14 +207,78 @@ void AiAssistantDockWidget::setupUi() {
     m_spinControlNetWeight->setValue(1.0);
 
     m_comboControlNetSource = new QComboBox(grpCN);
-    m_comboControlNetSource->addItem(tr("アクティブレイヤー"), 0);
-    m_comboControlNetSource->addItem(tr("キャンバス全体"), 1);
+    m_comboControlNetSource->addItem(tr("キャンバス (全体)"), static_cast<int>(AiImageSource::Canvas));
+    m_comboControlNetSource->addItem(tr("キャンバス (アクティブレイヤー)"), static_cast<int>(AiImageSource::ActiveLayer));
+    m_comboControlNetSource->addItem(tr("クリップボード"), static_cast<int>(AiImageSource::Clipboard));
+    m_comboControlNetSource->addItem(tr("参考画像ウィンドウ"), static_cast<int>(AiImageSource::ReferenceWindow));
+    m_comboControlNetSource->addItem(tr("ファイル"), static_cast<int>(AiImageSource::File));
+
+    m_widgetControlNetFile = new QWidget(grpCN);
+    auto layCnFile = new QHBoxLayout(m_widgetControlNetFile);
+    layCnFile->setContentsMargins(0, 0, 0, 0);
+    m_lblControlNetFile = new QLabel(tr("(未選択)"), m_widgetControlNetFile);
+    m_lblControlNetFile->setStyleSheet("color: #666; font-size: 11px;");
+    m_btnBrowseControlNetFile = new QPushButton(tr("参照..."), m_widgetControlNetFile);
+    layCnFile->addWidget(m_lblControlNetFile, 1);
+    layCnFile->addWidget(m_btnBrowseControlNetFile);
+    m_widgetControlNetFile->setVisible(false);
+
+    connect(m_comboControlNetSource, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AiAssistantDockWidget::onControlNetSourceChanged);
+    connect(m_btnBrowseControlNetFile, &QPushButton::clicked, this, &AiAssistantDockWidget::onBrowseControlNetFile);
 
     formCN->addRow(tr("タイプ:"), m_comboControlNetType);
     formCN->addRow(tr("重み:"), m_spinControlNetWeight);
     formCN->addRow(tr("入力元:"), m_comboControlNetSource);
+    formCN->addRow(tr("画像ファイル:"), m_widgetControlNetFile);
     layCN->addLayout(formCN);
     mainLayout->addWidget(grpCN);
+
+    // 5. IP-Adapter 設定
+    auto grpIP = new QGroupBox(tr("IP-Adapter 設定"), mainContainer);
+    auto layIP = new QVBoxLayout(grpIP);
+    m_chkIpAdapter = new QCheckBox(tr("IP-Adapter を有効化"), grpIP);
+    m_chkIpAdapter->setToolTip(tr("参照画像のスタイル・画風・キャラクター特徴を転写して生成します (WebUI / Forge 対応)"));
+    layIP->addWidget(m_chkIpAdapter);
+
+    auto formIP = new QFormLayout();
+    m_comboIpAdapterType = new QComboBox(grpIP);
+    m_comboIpAdapterType->addItem(tr("標準 (IP-Adapter SD1.5)"), "ip-adapter_clip_sd15");
+    m_comboIpAdapterType->addItem(tr("Plus (高精度 SD1.5)"), "ip-adapter_plus_sd15");
+    m_comboIpAdapterType->addItem(tr("Face (顔特徴特化 SD1.5)"), "ip-adapter_face_sd15");
+    m_comboIpAdapterType->addItem(tr("SDXL (IP-Adapter SDXL)"), "ip-adapter_clip_sdxl");
+    m_comboIpAdapterType->addItem(tr("汎用 (ip-adapter)"), "ip-adapter");
+
+    m_spinIpAdapterWeight = new QDoubleSpinBox(grpIP);
+    m_spinIpAdapterWeight->setRange(0.05, 2.0);
+    m_spinIpAdapterWeight->setSingleStep(0.05);
+    m_spinIpAdapterWeight->setValue(0.80);
+
+    m_comboIpAdapterSource = new QComboBox(grpIP);
+    m_comboIpAdapterSource->addItem(tr("キャンバス (全体)"), static_cast<int>(AiImageSource::Canvas));
+    m_comboIpAdapterSource->addItem(tr("キャンバス (アクティブレイヤー)"), static_cast<int>(AiImageSource::ActiveLayer));
+    m_comboIpAdapterSource->addItem(tr("クリップボード"), static_cast<int>(AiImageSource::Clipboard));
+    m_comboIpAdapterSource->addItem(tr("参考画像ウィンドウ"), static_cast<int>(AiImageSource::ReferenceWindow));
+    m_comboIpAdapterSource->addItem(tr("ファイル"), static_cast<int>(AiImageSource::File));
+
+    m_widgetIpAdapterFile = new QWidget(grpIP);
+    auto layIpFile = new QHBoxLayout(m_widgetIpAdapterFile);
+    layIpFile->setContentsMargins(0, 0, 0, 0);
+    m_lblIpAdapterFile = new QLabel(tr("(未選択)"), m_widgetIpAdapterFile);
+    m_lblIpAdapterFile->setStyleSheet("color: #666; font-size: 11px;");
+    m_btnBrowseIpAdapterFile = new QPushButton(tr("参照..."), m_widgetIpAdapterFile);
+    layIpFile->addWidget(m_lblIpAdapterFile, 1);
+    layIpFile->addWidget(m_btnBrowseIpAdapterFile);
+    m_widgetIpAdapterFile->setVisible(false);
+
+    connect(m_comboIpAdapterSource, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AiAssistantDockWidget::onIpAdapterSourceChanged);
+    connect(m_btnBrowseIpAdapterFile, &QPushButton::clicked, this, &AiAssistantDockWidget::onBrowseIpAdapterFile);
+
+    formIP->addRow(tr("タイプ:"), m_comboIpAdapterType);
+    formIP->addRow(tr("重み:"), m_spinIpAdapterWeight);
+    formIP->addRow(tr("入力元:"), m_comboIpAdapterSource);
+    formIP->addRow(tr("画像ファイル:"), m_widgetIpAdapterFile);
+    layIP->addLayout(formIP);
+    mainLayout->addWidget(grpIP);
 
     // 5. 解像度 & アップスケール設定
     auto grpRes = new QGroupBox(tr("解像度 & アップスケール"), mainContainer);
@@ -382,6 +452,7 @@ void AiAssistantDockWidget::onBackendChanged() {
         }
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(true);
+        if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(true);
     } else if (m_radioWebUi->isChecked()) {
         m_editServerUrl->setEnabled(true);
         if (shouldResetUrl(m_editServerUrl->text(), 7860)) {
@@ -389,16 +460,19 @@ void AiAssistantDockWidget::onBackendChanged() {
         }
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(true);
+        if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(true);
     } else if (m_radioEmbedded->isChecked()) {
         m_editServerUrl->setEnabled(false);
         m_editServerUrl->setText(tr("(サーバー不要 - 直接推論)"));
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(false);
+        if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(false);
     } else if (m_radioCloud->isChecked()) {
         m_editServerUrl->setEnabled(false);
         m_editServerUrl->setText("https://api.openai.com");
         m_editApiKey->setEnabled(true);
         m_chkControlNet->setEnabled(false);
+        if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(false);
     }
 
     onFetchModelsClicked();
@@ -769,7 +843,8 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
 
     // 3. ControlNet 有効時のモデル不足チェック
     if (m_chkControlNet && m_chkControlNet->isChecked() && m_chkControlNet->isEnabled()) {
-        if (!AiComponentDownloader::isComponentInstalled(ComponentType::ControlNetLineart)) {
+        ControlNetType cnType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
+        if (cnType != ControlNetType::ReferenceOnly && !AiComponentDownloader::isComponentInstalled(ComponentType::ControlNetLineart)) {
             QStringList cnModels = scanLocalControlNetModels();
             if (cnModels.isEmpty()) {
                 auto info = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetLineart);
@@ -928,10 +1003,41 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.initImage = getInitImageForCurrentMode();
     params.maskImage = getMaskImageForCurrentMode();
 
-    params.enableControlNet = m_chkControlNet->isChecked() && (params.backend == ApiBackend::LocalWebUI);
-    params.controlNetType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
-    params.controlNetWeight = static_cast<float>(m_spinControlNetWeight->value());
-    params.controlNetImage = getControlNetImage();
+    if (m_chkControlNet && m_chkControlNet->isChecked()) {
+        QString cnError;
+        QImage cnImg = getControlNetImage(&cnError);
+        if (cnImg.isNull()) {
+            QMessageBox::warning(this, tr("ControlNet エラー"), cnError);
+            m_lblStatus->setText(tr("⚠️ ControlNet: %1").arg(cnError));
+            m_btnGenerate->setEnabled(true);
+            m_btnCancel->setEnabled(false);
+            return;
+        }
+        params.enableControlNet = true;
+        params.controlNetType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
+        params.controlNetWeight = static_cast<float>(m_spinControlNetWeight->value());
+        params.controlNetImage = cnImg;
+    } else {
+        params.enableControlNet = false;
+    }
+
+    if (m_chkIpAdapter && m_chkIpAdapter->isChecked()) {
+        QString ipError;
+        QImage ipImg = getIpAdapterImage(&ipError);
+        if (ipImg.isNull()) {
+            QMessageBox::warning(this, tr("IP-Adapter エラー"), ipError);
+            m_lblStatus->setText(tr("⚠️ IP-Adapter: %1").arg(ipError));
+            m_btnGenerate->setEnabled(true);
+            m_btnCancel->setEnabled(false);
+            return;
+        }
+        params.enableIpAdapter = true;
+        params.ipAdapterType = m_comboIpAdapterType->currentData().toString();
+        params.ipAdapterWeight = static_cast<float>(m_spinIpAdapterWeight->value());
+        params.ipAdapterImage = ipImg;
+    } else {
+        params.enableIpAdapter = false;
+    }
 
     // 生成パラメータを記憶（レイヤー適用用）
     m_lastGeneratedParams = params;
@@ -990,15 +1096,134 @@ QImage AiAssistantDockWidget::getMaskImageForCurrentMode() {
     return mask;
 }
 
-QImage AiAssistantDockWidget::getControlNetImage() {
-    if (!m_document) return QImage();
-
-    int src = m_comboControlNetSource->currentData().toInt();
-    if (src == 0) { // アクティブレイヤー
-        auto activeLayer = m_document->activeLayer();
-        if (activeLayer) return activeLayer->tileManager().toQImage();
+void AiAssistantDockWidget::onBrowseControlNetFile() {
+    QString startDir = m_controlNetFilePath.isEmpty() ? QString() : QFileInfo(m_controlNetFilePath).absolutePath();
+    QString file = QFileDialog::getOpenFileName(
+        this,
+        tr("ControlNet 参照画像を選択"),
+        startDir,
+        tr("画像ファイル (*.png *.jpg *.jpeg *.bmp *.webp);;すべてのファイル (*.*)")
+    );
+    if (!file.isEmpty()) {
+        m_controlNetFilePath = file;
+        if (m_lblControlNetFile) {
+            m_lblControlNetFile->setText(QFileInfo(file).fileName());
+            m_lblControlNetFile->setToolTip(file);
+        }
     }
-    return m_document->compositeBuffer().toQImage();
+}
+
+void AiAssistantDockWidget::onBrowseIpAdapterFile() {
+    QString startDir = m_ipAdapterFilePath.isEmpty() ? QString() : QFileInfo(m_ipAdapterFilePath).absolutePath();
+    QString file = QFileDialog::getOpenFileName(
+        this,
+        tr("IP-Adapter 参照画像を選択"),
+        startDir,
+        tr("画像ファイル (*.png *.jpg *.jpeg *.bmp *.webp);;すべてのファイル (*.*)")
+    );
+    if (!file.isEmpty()) {
+        m_ipAdapterFilePath = file;
+        if (m_lblIpAdapterFile) {
+            m_lblIpAdapterFile->setText(QFileInfo(file).fileName());
+            m_lblIpAdapterFile->setToolTip(file);
+        }
+    }
+}
+
+void AiAssistantDockWidget::onControlNetSourceChanged(int index) {
+    Q_UNUSED(index);
+    bool isFile = (m_comboControlNetSource && m_comboControlNetSource->currentData().toInt() == static_cast<int>(AiImageSource::File));
+    if (m_widgetControlNetFile) {
+        m_widgetControlNetFile->setVisible(isFile);
+    }
+    if (isFile && m_controlNetFilePath.isEmpty()) {
+        onBrowseControlNetFile();
+    }
+}
+
+void AiAssistantDockWidget::onIpAdapterSourceChanged(int index) {
+    Q_UNUSED(index);
+    bool isFile = (m_comboIpAdapterSource && m_comboIpAdapterSource->currentData().toInt() == static_cast<int>(AiImageSource::File));
+    if (m_widgetIpAdapterFile) {
+        m_widgetIpAdapterFile->setVisible(isFile);
+    }
+    if (isFile && m_ipAdapterFilePath.isEmpty()) {
+        onBrowseIpAdapterFile();
+    }
+}
+
+QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString& filePath, QString* outError) {
+    switch (static_cast<AiImageSource>(sourceIndex)) {
+    case AiImageSource::Canvas: {
+        if (!m_document) {
+            if (outError) *outError = tr("キャンバスが開かれていません。");
+            return QImage();
+        }
+        return m_document->compositeBuffer().toQImage();
+    }
+    case AiImageSource::ActiveLayer: {
+        if (!m_document) {
+            if (outError) *outError = tr("キャンバスが開かれていません。");
+            return QImage();
+        }
+        auto activeLayer = m_document->activeLayer();
+        if (activeLayer) {
+            QImage img = activeLayer->tileManager().toQImage();
+            if (!img.isNull()) return img;
+        }
+        return m_document->compositeBuffer().toQImage();
+    }
+    case AiImageSource::Clipboard: {
+        QClipboard* cb = QApplication::clipboard();
+        if (cb) {
+            QImage img = cb->image();
+            if (!img.isNull()) return img;
+            QPixmap pix = cb->pixmap();
+            if (!pix.isNull()) return pix.toImage();
+        }
+        if (outError) *outError = tr("クリップボードに画像が見つかりません。画像をコピーしてください。");
+        return QImage();
+    }
+    case AiImageSource::ReferenceWindow: {
+        ReferenceImageWindow* refWin = nullptr;
+        if (m_mainWindow) {
+            refWin = m_mainWindow->referenceImageWindow();
+        } else {
+            MainWindow* mw = qobject_cast<MainWindow*>(parent());
+            if (!mw) mw = qobject_cast<MainWindow*>(window());
+            if (mw) refWin = mw->referenceImageWindow();
+        }
+        if (refWin) {
+            QImage refImg = refWin->currentImage();
+            if (!refImg.isNull()) return refImg;
+        }
+        if (outError) *outError = tr("参考画像ウィンドウに画像が開かれていません。「表示」→「参考画像ウィンドウ」で画像を開いてください。");
+        return QImage();
+    }
+    case AiImageSource::File: {
+        if (filePath.isEmpty() || !QFile::exists(filePath)) {
+            if (outError) *outError = tr("画像ファイルが指定されていないか、存在しません。「参照...」からファイルを選択してください。");
+            return QImage();
+        }
+        QImage fileImg(filePath);
+        if (fileImg.isNull()) {
+            if (outError) *outError = tr("画像ファイルを読み込めませんでした: %1").arg(filePath);
+            return QImage();
+        }
+        return fileImg;
+    }
+    }
+    return QImage();
+}
+
+QImage AiAssistantDockWidget::getControlNetImage(QString* outError) {
+    int src = m_comboControlNetSource ? m_comboControlNetSource->currentData().toInt() : static_cast<int>(AiImageSource::Canvas);
+    return getImageFromSource(src, m_controlNetFilePath, outError);
+}
+
+QImage AiAssistantDockWidget::getIpAdapterImage(QString* outError) {
+    int src = m_comboIpAdapterSource ? m_comboIpAdapterSource->currentData().toInt() : static_cast<int>(AiImageSource::Canvas);
+    return getImageFromSource(src, m_ipAdapterFilePath, outError);
 }
 
 void AiAssistantDockWidget::onModelsFetched(const QStringList& models) {
@@ -1148,7 +1373,14 @@ void AiAssistantDockWidget::saveSettings() {
     if (m_chkControlNet) settings.setValue("enableControlNet", m_chkControlNet->isChecked());
     if (m_comboControlNetType) settings.setValue("controlNetType", m_comboControlNetType->currentData().toInt());
     if (m_spinControlNetWeight) settings.setValue("controlNetWeight", m_spinControlNetWeight->value());
-    if (m_comboControlNetSource) settings.setValue("controlNetSource", m_comboControlNetSource->currentIndex());
+    if (m_comboControlNetSource) settings.setValue("controlNetSource", m_comboControlNetSource->currentData().toInt());
+    settings.setValue("controlNetFilePath", m_controlNetFilePath);
+
+    if (m_chkIpAdapter) settings.setValue("enableIpAdapter", m_chkIpAdapter->isChecked());
+    if (m_comboIpAdapterType) settings.setValue("ipAdapterType", m_comboIpAdapterType->currentData().toString());
+    if (m_spinIpAdapterWeight) settings.setValue("ipAdapterWeight", m_spinIpAdapterWeight->value());
+    if (m_comboIpAdapterSource) settings.setValue("ipAdapterSource", m_comboIpAdapterSource->currentData().toInt());
+    settings.setValue("ipAdapterFilePath", m_ipAdapterFilePath);
 
     // ※ 注意: プロンプトとネガティブプロンプトはユーザーの指定により記憶から除外
     settings.endGroup();
@@ -1221,7 +1453,46 @@ void AiAssistantDockWidget::loadSettings() {
         m_spinControlNetWeight->setValue(settings.value("controlNetWeight").toDouble());
     }
     if (m_comboControlNetSource && settings.contains("controlNetSource")) {
-        m_comboControlNetSource->setCurrentIndex(settings.value("controlNetSource").toInt());
+        int srcVal = settings.value("controlNetSource").toInt();
+        int idx = m_comboControlNetSource->findData(srcVal);
+        if (idx >= 0) m_comboControlNetSource->setCurrentIndex(idx);
+    }
+    if (settings.contains("controlNetFilePath")) {
+        m_controlNetFilePath = settings.value("controlNetFilePath").toString();
+        if (m_lblControlNetFile && !m_controlNetFilePath.isEmpty()) {
+            m_lblControlNetFile->setText(QFileInfo(m_controlNetFilePath).fileName());
+            m_lblControlNetFile->setToolTip(m_controlNetFilePath);
+        }
+    }
+    if (m_comboControlNetSource && m_widgetControlNetFile) {
+        m_widgetControlNetFile->setVisible(m_comboControlNetSource->currentData().toInt() == static_cast<int>(AiImageSource::File));
+    }
+
+    if (m_chkIpAdapter && settings.contains("enableIpAdapter")) {
+        m_chkIpAdapter->setChecked(settings.value("enableIpAdapter").toBool());
+    }
+    if (m_comboIpAdapterType && settings.contains("ipAdapterType")) {
+        QString ipType = settings.value("ipAdapterType").toString();
+        int idx = m_comboIpAdapterType->findData(ipType);
+        if (idx >= 0) m_comboIpAdapterType->setCurrentIndex(idx);
+    }
+    if (m_spinIpAdapterWeight && settings.contains("ipAdapterWeight")) {
+        m_spinIpAdapterWeight->setValue(settings.value("ipAdapterWeight").toDouble());
+    }
+    if (m_comboIpAdapterSource && settings.contains("ipAdapterSource")) {
+        int srcVal = settings.value("ipAdapterSource").toInt();
+        int idx = m_comboIpAdapterSource->findData(srcVal);
+        if (idx >= 0) m_comboIpAdapterSource->setCurrentIndex(idx);
+    }
+    if (settings.contains("ipAdapterFilePath")) {
+        m_ipAdapterFilePath = settings.value("ipAdapterFilePath").toString();
+        if (m_lblIpAdapterFile && !m_ipAdapterFilePath.isEmpty()) {
+            m_lblIpAdapterFile->setText(QFileInfo(m_ipAdapterFilePath).fileName());
+            m_lblIpAdapterFile->setToolTip(m_ipAdapterFilePath);
+        }
+    }
+    if (m_comboIpAdapterSource && m_widgetIpAdapterFile) {
+        m_widgetIpAdapterFile->setVisible(m_comboIpAdapterSource->currentData().toInt() == static_cast<int>(AiImageSource::File));
     }
 
     settings.endGroup();
@@ -1274,6 +1545,14 @@ void AiAssistantDockWidget::loadParametersFromLayer(const std::shared_ptr<Layer>
         if (cnIdx >= 0) m_comboControlNetType->setCurrentIndex(cnIdx);
     }
     if (m_spinControlNetWeight) m_spinControlNetWeight->setValue(params.controlNetWeight);
+
+    // IP-Adapter
+    if (m_chkIpAdapter) m_chkIpAdapter->setChecked(params.enableIpAdapter);
+    if (m_comboIpAdapterType) {
+        int ipIdx = m_comboIpAdapterType->findData(params.ipAdapterType);
+        if (ipIdx >= 0) m_comboIpAdapterType->setCurrentIndex(ipIdx);
+    }
+    if (m_spinIpAdapterWeight) m_spinIpAdapterWeight->setValue(params.ipAdapterWeight);
 
     // デバイス & アップスケール
     if (m_comboDevice && !params.computeDevice.isEmpty()) {
@@ -1328,10 +1607,22 @@ void AiAssistantDockWidget::resetToDefaults() {
     if (m_spinSeed) m_spinSeed->setValue(-1);
 
     // ControlNet
-    if (m_chkControlNet) m_chkControlNet->setChecked(true);
+    if (m_chkControlNet) m_chkControlNet->setChecked(false);
     if (m_comboControlNetType) m_comboControlNetType->setCurrentIndex(0);
     if (m_spinControlNetWeight) m_spinControlNetWeight->setValue(1.0);
     if (m_comboControlNetSource) m_comboControlNetSource->setCurrentIndex(0);
+    m_controlNetFilePath.clear();
+    if (m_lblControlNetFile) m_lblControlNetFile->setText(tr("(未選択)"));
+    if (m_widgetControlNetFile) m_widgetControlNetFile->setVisible(false);
+
+    // IP-Adapter
+    if (m_chkIpAdapter) m_chkIpAdapter->setChecked(false);
+    if (m_comboIpAdapterType) m_comboIpAdapterType->setCurrentIndex(0);
+    if (m_spinIpAdapterWeight) m_spinIpAdapterWeight->setValue(0.8);
+    if (m_comboIpAdapterSource) m_comboIpAdapterSource->setCurrentIndex(0);
+    m_ipAdapterFilePath.clear();
+    if (m_lblIpAdapterFile) m_lblIpAdapterFile->setText(tr("(未選択)"));
+    if (m_widgetIpAdapterFile) m_widgetIpAdapterFile->setVisible(false);
 
     saveSettings();
 

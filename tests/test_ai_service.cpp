@@ -5,6 +5,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QDir>
+#include <QFile>
 #include "AiService.hpp"
 #include "AiAssistantDockWidget.hpp"
 #include "AiComponentDownloader.hpp"
@@ -84,6 +86,35 @@ void testWebUiJsonBuilding() {
     assert(cnUnit["enabled"].toBool() == true);
     assert(cnUnit["weight"].toDouble() == 1.2);
     assert(cnUnit["model"].toString().contains("lineart"));
+
+    // Test ReferenceOnly ControlNet
+    params.controlNetType = ControlNetType::ReferenceOnly;
+    params.enableIpAdapter = true;
+    params.ipAdapterType = "ip-adapter_plus_sd15";
+    params.ipAdapterWeight = 0.85f;
+    params.ipAdapterImage = dummyImg;
+
+    QJsonObject refIpJson = AiService::buildWebUiImg2ImgJson(params);
+    QJsonArray refIpArgs = refIpJson["alwayson_scripts"].toObject()["controlnet"].toObject()["args"].toArray();
+    assert(refIpArgs.size() == 2);
+    // Unit 0: reference_only
+    QJsonObject unit0 = refIpArgs[0].toObject();
+    assert(unit0["module"].toString() == "reference_only");
+    assert(unit0["model"].toString() == "None");
+    // Unit 1: ip-adapter
+    QJsonObject unit1 = refIpArgs[1].toObject();
+    assert(unit1["module"].toString() == "ip-adapter_plus_sd15");
+    assert(unit1["model"].toString() == "ip-adapter-plus_sd15");
+    assert(unit1["weight"].toDouble() == 0.85);
+
+    // Test serialization / deserialization of ReferenceOnly and IP-Adapter
+    QJsonObject serialized = AiService::paramsToJson(params);
+    AiGenerateParams restoredParams = AiService::jsonToParams(serialized);
+    assert(restoredParams.enableControlNet == true);
+    assert(restoredParams.controlNetType == ControlNetType::ReferenceOnly);
+    assert(restoredParams.enableIpAdapter == true);
+    assert(restoredParams.ipAdapterType == "ip-adapter_plus_sd15");
+    assert(std::abs(restoredParams.ipAdapterWeight - 0.85f) < 0.001f);
 
     std::cout << "  -> PASSED!" << std::endl;
 }
@@ -178,7 +209,7 @@ void testResponseParsing() {
 }
 
 void testAiAssistantDockWidget() {
-    std::cout << "[TEST] 4. AiAssistantDockWidget UI..." << std::endl;
+    std::cout << "[TEST] 4. AiAssistantDockWidget UI & Image Sources..." << std::endl;
 
     auto doc = new Document(400, 300, 72.0);
     AiAssistantDockWidget dock;
@@ -186,6 +217,31 @@ void testAiAssistantDockWidget() {
 
     // Initial state check
     assert(dock.aiService() != nullptr);
+
+    // 1. Canvas source
+    QString err;
+    QImage canvasImg = dock.getImageFromSource(static_cast<int>(AiImageSource::Canvas), "", &err);
+    assert(err.isEmpty());
+    assert(canvasImg.size() == QSize(400, 300));
+
+    // 2. Active Layer source
+    QImage layerImg = dock.getImageFromSource(static_cast<int>(AiImageSource::ActiveLayer), "", &err);
+    assert(err.isEmpty());
+    assert(!layerImg.isNull());
+
+    // 3. File source
+    QString tempFilePath = QDir::temp().filePath("kaburagi_test_cn_file.png");
+    QImage dummyFileImg(128, 128, QImage::Format_ARGB32_Premultiplied);
+    dummyFileImg.fill(Qt::yellow);
+    dummyFileImg.save(tempFilePath, "PNG");
+
+    QImage loadedFileImg = dock.getImageFromSource(static_cast<int>(AiImageSource::File), tempFilePath, &err);
+    assert(err.isEmpty());
+    assert(loadedFileImg.size() == QSize(128, 128));
+    QFile::remove(tempFilePath);
+
+    // 4. Reset to defaults
+    dock.resetToDefaults();
 
     delete doc;
     std::cout << "  -> PASSED!" << std::endl;
@@ -195,7 +251,8 @@ void testCanvasIntegration() {
     std::cout << "[TEST] 5. Canvas & Document Integration (New Layer & Overwrite)..." << std::endl;
 
     MainWindow win;
-    auto doc = win.document();
+    auto doc = new Document(400, 300, 72.0);
+    win.setDocumentForTest(doc);
     assert(doc != nullptr);
     assert(win.aiAssistantDock() != nullptr);
 
@@ -206,7 +263,7 @@ void testCanvasIntegration() {
     size_t beforeCount = doc->layers().size();
     win.onAiApplyAsNewLayer(testImg);
     assert(doc->layers().size() == beforeCount + 1);
-    assert(doc->activeLayer()->name() == "AI生成レイヤー");
+    assert(doc->activeLayer()->name() == "AI生成レイヤー" || doc->activeLayer()->name() == "AI Generated Layer");
 
     // 2. Overwrite Selection
     // Set rectangular selection

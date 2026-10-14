@@ -96,12 +96,12 @@ QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
     json["sampler_name"] = params.sampler.isEmpty() ? "Euler a" : params.sampler;
     json["tiling"] = (params.mode == AiMode::SeamlessTexture) || params.tiling;
 
-    if (params.enableControlNet && !params.controlNetImage.isNull()) {
-        QJsonObject alwaysOn;
-        QJsonObject cnObj;
-        QJsonArray argsArr;
-        QJsonObject unit;
+    QJsonObject alwaysOn;
+    QJsonObject cnObj;
+    QJsonArray argsArr;
 
+    if (params.enableControlNet && !params.controlNetImage.isNull()) {
+        QJsonObject unit;
         unit["enabled"] = true;
         unit["weight"] = params.controlNetWeight;
         unit["image"] = imageToBase64Png(params.controlNetImage);
@@ -127,9 +127,34 @@ QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
             unit["module"] = "canny";
             unit["model"] = "control_v11p_sd15_canny";
             break;
+        case ControlNetType::ReferenceOnly:
+            unit["module"] = "reference_only";
+            unit["model"] = "None";
+            break;
         }
 
         argsArr.append(unit);
+    }
+
+    if (params.enableIpAdapter && !params.ipAdapterImage.isNull()) {
+        QJsonObject ipUnit;
+        ipUnit["enabled"] = true;
+        ipUnit["weight"] = params.ipAdapterWeight;
+        ipUnit["image"] = imageToBase64Png(params.ipAdapterImage);
+        QString mod = params.ipAdapterType.trimmed();
+        if (mod.isEmpty()) mod = "ip-adapter_clip_sd15";
+        ipUnit["module"] = mod;
+
+        QString model = "ip-adapter_sd15";
+        if (mod.contains("plus", Qt::CaseInsensitive)) model = "ip-adapter-plus_sd15";
+        else if (mod.contains("face", Qt::CaseInsensitive)) model = "ip-adapter_face_sd15";
+        else if (mod.contains("sdxl", Qt::CaseInsensitive)) model = "ip-adapter_sdxl";
+        ipUnit["model"] = model;
+
+        argsArr.append(ipUnit);
+    }
+
+    if (!argsArr.isEmpty()) {
         cnObj["args"] = argsArr;
         alwaysOn["controlnet"] = cnObj;
         json["alwayson_scripts"] = alwaysOn;
@@ -388,6 +413,10 @@ QJsonObject AiService::paramsToJson(const AiGenerateParams& params) {
     json["controlNetType"] = static_cast<int>(params.controlNetType);
     json["controlNetWeight"] = static_cast<double>(params.controlNetWeight);
 
+    json["enableIpAdapter"] = params.enableIpAdapter;
+    json["ipAdapterType"] = params.ipAdapterType;
+    json["ipAdapterWeight"] = static_cast<double>(params.ipAdapterWeight);
+
     json["computeDevice"] = params.computeDevice;
     json["upscaleMethod"] = params.upscaleMethod;
 
@@ -418,6 +447,10 @@ AiGenerateParams AiService::jsonToParams(const QJsonObject& json) {
     if (json.contains("enableControlNet")) params.enableControlNet = json["enableControlNet"].toBool(false);
     if (json.contains("controlNetType")) params.controlNetType = static_cast<ControlNetType>(json["controlNetType"].toInt(0));
     if (json.contains("controlNetWeight")) params.controlNetWeight = static_cast<float>(json["controlNetWeight"].toDouble(1.0));
+
+    if (json.contains("enableIpAdapter")) params.enableIpAdapter = json["enableIpAdapter"].toBool(false);
+    if (json.contains("ipAdapterType")) params.ipAdapterType = json["ipAdapterType"].toString("ip-adapter_clip_sd15");
+    if (json.contains("ipAdapterWeight")) params.ipAdapterWeight = static_cast<float>(json["ipAdapterWeight"].toDouble(0.8));
 
     if (json.contains("computeDevice")) params.computeDevice = json["computeDevice"].toString("cuda");
     if (json.contains("upscaleMethod")) params.upscaleMethod = json["upscaleMethod"].toString("bicubic");

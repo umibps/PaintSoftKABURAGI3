@@ -34,11 +34,12 @@ enum class AiMode {
 };
 
 enum class ControlNetType {
-    Lineart = 0, // 線画
-    Depth = 1,   // 深度マップ
-    Openpose = 2,// 人体ポーズ
-    Scribble = 3,// ラフ・落書き
-    Canny = 4    // エッジ輪郭
+    Lineart = 0,       // 線画
+    Depth = 1,         // 深度マップ
+    Openpose = 2,      // 人体ポーズ
+    Scribble = 3,      // ラフ・落書き
+    Canny = 4,         // エッジ輪郭
+    ReferenceOnly = 5  // リファレンス (reference_only)
 };
 
 struct AiGenerateParams {
@@ -68,6 +69,11 @@ struct AiGenerateParams {
     ControlNetType controlNetType = ControlNetType::Lineart;
     float controlNetWeight = 1.0f;
     QImage controlNetImage;
+
+    bool enableIpAdapter = false;
+    QString ipAdapterType = "ip-adapter_clip_sd15";
+    float ipAdapterWeight = 0.8f;
+    QImage ipAdapterImage;
 
     bool autoLaunchServer = true;
     QString comfyUiLaunchPath;

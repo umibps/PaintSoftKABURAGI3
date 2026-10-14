@@ -63,6 +63,7 @@ public:
     void openImageFile(const QString& path);
     void addImage(const QImage& image, const QString& title);
     int tabCount() const;
+    QImage currentImage() const;
 
 signals:
     void colorPicked(const QColor& color);

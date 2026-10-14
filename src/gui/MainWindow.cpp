@@ -1587,6 +1587,7 @@ void MainWindow::setupLayout() {
     m_aiAssistantDock->setObjectName("AiAssistantDock");
     m_aiAssistantDock->setDocument(m_document);
     m_aiAssistantDock->setCanvasWidget(m_canvasWidget);
+    m_aiAssistantDock->setMainWindow(this);
     addDockWidget(Qt::RightDockWidgetArea, m_aiAssistantDock);
     connect(m_aiAssistantDock, &AiAssistantDockWidget::applyAsNewLayer, this, &MainWindow::onAiApplyAsNewLayer);
     connect(m_aiAssistantDock, &AiAssistantDockWidget::applyOverwriteSelection, this, &MainWindow::onAiApplyOverwriteSelection);
