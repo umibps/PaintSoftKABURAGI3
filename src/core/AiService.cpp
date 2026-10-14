@@ -17,6 +17,7 @@
 #include <QWebSocket>
 #include <QUuid>
 #include <QRegularExpression>
+#include <queue>
 
 namespace Kaburagi {
 
@@ -82,6 +83,169 @@ QImage AiService::upscaleImage(const QImage& source, const QSize& targetSize, co
     }
 }
 
+QImage AiService::removeBackground(const QImage& source, int tolerance) {
+    if (source.isNull()) return source;
+
+    QImage img = source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    int width = img.width();
+    int height = img.height();
+    if (width <= 0 || height <= 0) return img;
+
+    // 4隅の色を取得
+    QRgb cTL = img.pixel(0, 0);
+    QRgb cTR = img.pixel(width - 1, 0);
+    QRgb cBL = img.pixel(0, height - 1);
+    QRgb cBR = img.pixel(width - 1, height - 1);
+
+    auto colorDist = [](QRgb a, QRgb b) -> int {
+        int dr = qRed(a) - qRed(b);
+        int dg = qGreen(a) - qGreen(b);
+        int db = qBlue(a) - qBlue(b);
+        return static_cast<int>(std::sqrt(dr * dr + dg * dg + db * db));
+    };
+
+    // 最も頻出、または平均的な背景色を決定
+    QList<QRgb> corners = { cTL, cTR, cBL, cBR };
+    QRgb targetBg = cTL;
+    int minTotalDist = 999999;
+    for (QRgb c : corners) {
+        int dSum = 0;
+        for (QRgb other : corners) dSum += colorDist(c, other);
+        if (dSum < minTotalDist) {
+            minTotalDist = dSum;
+            targetBg = c;
+        }
+    }
+
+    int tol = std::max(10, tolerance);
+
+    // Flood Fill 用の訪問フラグ配列
+    QVector<uint8_t> visited(width * height, 0);
+    std::queue<QPoint> q;
+
+    auto pushIfBg = [&](int x, int y) {
+        if (x < 0 || x >= width || y < 0 || y >= height) return;
+        int idx = y * width + x;
+        if (visited[idx]) return;
+        QRgb p = img.pixel(x, y);
+        if (colorDist(p, targetBg) <= tol) {
+            visited[idx] = 1;
+            q.push(QPoint(x, y));
+        }
+    };
+
+    // 外周（上下左右の境界線）から開始
+    for (int x = 0; x < width; ++x) {
+        pushIfBg(x, 0);
+        pushIfBg(x, height - 1);
+    }
+    for (int y = 0; y < height; ++y) {
+        pushIfBg(0, y);
+        pushIfBg(width - 1, y);
+    }
+
+    // 4近傍で Flood Fill
+    const int dx[] = { 1, -1, 0, 0 };
+    const int dy[] = { 0, 0, 1, -1 };
+
+    while (!q.empty()) {
+        QPoint pt = q.front();
+        q.pop();
+
+        for (int i = 0; i < 4; ++i) {
+            int nx = pt.x() + dx[i];
+            int ny = pt.y() + dy[i];
+            pushIfBg(nx, ny);
+        }
+    }
+
+    // 境界のフェザリングおよびアルファ適用
+    QImage result(width, height, QImage::Format_ARGB32);
+    for (int y = 0; y < height; ++y) {
+        const QRgb* srcLine = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        QRgb* dstLine = reinterpret_cast<QRgb*>(result.scanLine(y));
+        for (int x = 0; x < width; ++x) {
+            int idx = y * width + x;
+            if (visited[idx]) {
+                // 完全な背景領域 -> 透明
+                dstLine[x] = qRgba(0, 0, 0, 0);
+            } else {
+                QRgb p = srcLine[x];
+                // 背景に隣接しているかチェック（ソフトエッジ）
+                bool neighborBg = false;
+                for (int i = 0; i < 4; ++i) {
+                    int nx = x + dx[i];
+                    int ny = y + dy[i];
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (visited[ny * width + nx]) {
+                            neighborBg = true;
+                            break;
+                        }
+                    }
+                }
+                if (neighborBg) {
+                    int dist = colorDist(p, targetBg);
+                    int alpha = std::clamp(static_cast<int>((static_cast<double>(dist) / (tol * 1.5)) * 255.0), 30, 255);
+                    dstLine[x] = qRgba(qRed(p), qGreen(p), qBlue(p), std::min(alpha, qAlpha(p)));
+                } else {
+                    dstLine[x] = p;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+static QString mapSamplerToComfyUi(const QString& sampler) {
+    QString s = sampler.toLower().trimmed();
+    if (s.contains("euler a") || s.contains("euler_a") || s.contains("ancestral")) return "euler_ancestral";
+    if (s.contains("euler")) return "euler";
+    if (s.contains("2m_sde") || s.contains("2m sde")) return "dpmpp_2m_sde";
+    if (s.contains("2m")) return "dpmpp_2m";
+    if (s.contains("2s_a") || s.contains("2s a") || s.contains("2s_ancestral")) return "dpmpp_2s_ancestral";
+    if (s.contains("2s")) return "dpmpp_2s";
+    if (s.contains("ddim")) return "ddim";
+    if (s.contains("heun")) return "heun";
+    if (s.contains("lcm")) return "lcm";
+    return "euler";
+}
+
+static QString mapSchedulerToComfyUi(const QString& scheduler) {
+    QString s = scheduler.toLower().trimmed();
+    if (s.contains("karras")) return "karras";
+    if (s.contains("exponential")) return "exponential";
+    if (s.contains("sgm_uniform") || s.contains("sgm uniform")) return "sgm_uniform";
+    if (s.contains("simple")) return "simple";
+    if (s.contains("ays")) return "ays";
+    if (s.contains("kl_optimal") || s.contains("kl optimal")) return "kl_optimal";
+    return "normal";
+}
+
+static QString mapSamplerToSdCpp(const QString& sampler) {
+    QString s = sampler.toLower().trimmed();
+    if (s.contains("euler a") || s.contains("euler_a")) return "euler_a";
+    if (s.contains("euler")) return "euler";
+    if (s.contains("2m_sde") || s.contains("2m sde")) return "dpm++2m_sde";
+    if (s.contains("2m")) return "dpm++2m";
+    if (s.contains("2s_a") || s.contains("2s a")) return "dpm++2s_a";
+    if (s.contains("ddim")) return "ddim_trailing";
+    if (s.contains("heun")) return "heun";
+    if (s.contains("lcm")) return "lcm";
+    return "euler_a";
+}
+
+static QString mapSchedulerToSdCpp(const QString& scheduler) {
+    QString s = scheduler.toLower().trimmed();
+    if (s.contains("karras")) return "karras";
+    if (s.contains("exponential")) return "exponential";
+    if (s.contains("sgm_uniform") || s.contains("sgm uniform")) return "sgm_uniform";
+    if (s.contains("simple")) return "simple";
+    if (s.contains("ays")) return "ays";
+    if (s.contains("kl_optimal") || s.contains("kl optimal")) return "kl_optimal";
+    return "normal";
+}
+
 QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
     QJsonObject json;
     json["prompt"] = params.prompt;
@@ -94,6 +258,9 @@ QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
     json["n_iter"] = 1;
     json["seed"] = static_cast<qint64>(params.seed);
     json["sampler_name"] = params.sampler.isEmpty() ? "Euler a" : params.sampler;
+    if (!params.scheduler.isEmpty()) {
+        json["scheduler"] = params.scheduler;
+    }
     json["tiling"] = (params.mode == AiMode::SeamlessTexture) || params.tiling;
 
     QJsonObject alwaysOn;
@@ -271,8 +438,8 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     node3Inputs["seed"] = static_cast<qint64>(params.seed >= 0 ? params.seed : 123456789);
     node3Inputs["steps"] = params.steps;
     node3Inputs["cfg"] = params.cfgScale;
-    node3Inputs["sampler_name"] = "euler";
-    node3Inputs["scheduler"] = "normal";
+    node3Inputs["sampler_name"] = mapSamplerToComfyUi(params.sampler);
+    node3Inputs["scheduler"] = mapSchedulerToComfyUi(params.scheduler);
     node3Inputs["denoise"] = isImg2Img ? params.denoisingStrength : 1.0;
 
     QJsonArray modelLink; modelLink.append("4"); modelLink.append(0);
@@ -407,6 +574,8 @@ QJsonObject AiService::paramsToJson(const AiGenerateParams& params) {
     json["width"] = params.width;
     json["height"] = params.height;
     json["sampler"] = params.sampler;
+    json["scheduler"] = params.scheduler;
+    json["removeBackground"] = params.removeBackground;
     json["tiling"] = params.tiling;
 
     json["enableControlNet"] = params.enableControlNet;
@@ -442,6 +611,8 @@ AiGenerateParams AiService::jsonToParams(const QJsonObject& json) {
     if (json.contains("width")) params.width = json["width"].toInt(512);
     if (json.contains("height")) params.height = json["height"].toInt(512);
     if (json.contains("sampler")) params.sampler = json["sampler"].toString("Euler a");
+    if (json.contains("scheduler")) params.scheduler = json["scheduler"].toString("normal");
+    if (json.contains("removeBackground")) params.removeBackground = json["removeBackground"].toBool(false);
     if (json.contains("tiling")) params.tiling = json["tiling"].toBool(false);
 
     if (json.contains("enableControlNet")) params.enableControlNet = json["enableControlNet"].toBool(false);
@@ -722,6 +893,8 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
 
     QString tempOutput = QDir::temp().filePath(QString("kaburagi_embed_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
     m_embeddedOutputPath = tempOutput;
+    m_embeddedGeneratedFiles.clear();
+    m_embeddedProcessLog.clear();
 
     QStringList args;
     args << "-m" << modelPath;
@@ -737,6 +910,15 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
     if (params.seed >= 0) {
         args << "-s" << QString::number(params.seed);
     }
+
+    // サンプラー & スケジューラー
+    if (!params.sampler.isEmpty()) {
+        args << "--sampling-method" << mapSamplerToSdCpp(params.sampler);
+    }
+    if (!params.scheduler.isEmpty()) {
+        args << "--scheduler" << mapSchedulerToSdCpp(params.scheduler);
+    }
+
     args << "-o" << tempOutput;
 
     emit generationProgress(20, tr("組み込み推論エンジン(sd.exe)を実行中..."));
@@ -756,61 +938,73 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
 }
 
 void AiService::onEmbeddedProcessFinished(int exitCode) {
-    if (exitCode == 0) {
-        QList<QImage> results;
+    QList<QImage> results;
+    QSet<QString> processedPaths;
 
-        // 1. Check if single output file exists (batch == 1 case)
-        if (QFile::exists(m_embeddedOutputPath)) {
-            QImage img(m_embeddedOutputPath);
-            QFile::remove(m_embeddedOutputPath);
+    auto tryAddImageFile = [&](const QString& filePath) {
+        if (filePath.isEmpty() || processedPaths.contains(filePath)) return;
+        if (QFile::exists(filePath)) {
+            QImage img(filePath);
+            QFile::remove(filePath);
+            processedPaths.insert(filePath);
             if (!img.isNull()) {
-                results.append(img);
-            }
-        }
-
-        // 2. Check for multiple batch output files (e.g. name_0.png, name_1.png or name_1.png, name_2.png)
-        QFileInfo fi(m_embeddedOutputPath);
-        QDir dir = fi.absoluteDir();
-        QString baseName = fi.completeBaseName();
-        QString ext = fi.suffix().isEmpty() ? "png" : fi.suffix();
-
-        int maxSearch = std::max(8, m_currentParams.batchCount + 4);
-        for (int i = 0; i <= maxSearch; ++i) {
-            QStringList candidateNames = {
-                QString("%1_%2.%3").arg(baseName).arg(i).arg(ext),
-                QString("%1%2.%3").arg(baseName).arg(i).arg(ext)
-            };
-            for (const QString& cName : candidateNames) {
-                QString cPath = dir.filePath(cName);
-                if (QFile::exists(cPath)) {
-                    QImage img(cPath);
-                    QFile::remove(cPath);
-                    if (!img.isNull()) {
-                        results.append(img);
-                    }
+                if (m_currentParams.removeBackground) {
+                    img = removeBackground(img);
                 }
-            }
-        }
-
-        // 3. Fallback: scan directory for any remaining files with baseName prefix
-        QStringList nameFilters = { QString("%1*.%2").arg(baseName, ext) };
-        QFileInfoList extraFiles = dir.entryInfoList(nameFilters, QDir::Files);
-        for (const auto& extraFi : extraFiles) {
-            QString extraPath = extraFi.absoluteFilePath();
-            QImage img(extraPath);
-            QFile::remove(extraPath);
-            if (!img.isNull()) {
                 results.append(img);
             }
         }
+    };
 
-        if (!results.isEmpty()) {
-            emit generationProgress(100, tr("生成完了！ (%1枚)").arg(results.size()));
-            emit generationFinished(results);
-            return;
+    // 1. プロセス実行中のログから検出されたファイルを読み込み
+    for (const QString& logPath : m_embeddedGeneratedFiles) {
+        tryAddImageFile(logPath);
+    }
+
+    // 2. 単一出力ファイル (batchCount == 1 の場合など)
+    tryAddImageFile(m_embeddedOutputPath);
+
+    // 3. 連番出力ファイル (base_0.png, base_1.png 等)
+    QFileInfo fi(m_embeddedOutputPath);
+    QDir dir = fi.absoluteDir();
+    QString baseName = fi.completeBaseName();
+    QString ext = fi.suffix().isEmpty() ? "png" : fi.suffix();
+
+    int maxSearch = std::max(16, m_currentParams.batchCount + 4);
+    for (int i = 0; i <= maxSearch; ++i) {
+        tryAddImageFile(dir.filePath(QString("%1_%2.%3").arg(baseName).arg(i).arg(ext)));
+        tryAddImageFile(dir.filePath(QString("%1%2.%3").arg(baseName).arg(i).arg(ext)));
+        tryAddImageFile(dir.filePath(QString("%1_%2.%3").arg(baseName).arg(i, 3, 10, QChar('0')).arg(ext)));
+    }
+
+    // 4. ディレクトリ内のプレフィックス一致ファイルをフォールバック探索
+    QStringList nameFilters = { QString("%1*.%2").arg(baseName, ext) };
+    QFileInfoList extraFiles = dir.entryInfoList(nameFilters, QDir::Files);
+    for (const auto& extraFi : extraFiles) {
+        tryAddImageFile(extraFi.absoluteFilePath());
+    }
+
+    if (!results.isEmpty()) {
+        emit generationProgress(100, tr("生成完了！ (%1枚)").arg(results.size()));
+        emit generationFinished(results);
+        return;
+    }
+
+    // 失敗時: ログから直近のエラー行を抽出
+    QString errDetail;
+    QStringList lines = m_embeddedProcessLog.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
+    QStringList errLines;
+    for (int i = std::max(0, static_cast<int>(lines.size()) - 8); i < lines.size(); ++i) {
+        QString l = lines[i].trimmed();
+        if (!l.isEmpty() && !l.startsWith('|')) {
+            errLines.append(l);
         }
     }
-    emit generationFailed(tr("組み込み推論エンジンの実行に失敗しました (終了コード: %1)").arg(exitCode));
+    if (!errLines.isEmpty()) {
+        errDetail = "\n\n" + tr("詳細:") + "\n" + errLines.join("\n");
+    }
+
+    emit generationFailed(tr("組み込み推論エンジンの実行に失敗しました (終了コード: %1)%2").arg(exitCode).arg(errDetail));
 }
 
 void AiService::startServerLaunchAndRetry(ApiBackend backend, const QString& launchPath) {
@@ -985,6 +1179,12 @@ void AiService::onGenerateReplyFinished() {
         return;
     }
 
+    if (m_currentParams.removeBackground) {
+        for (auto& im : results) {
+            im = removeBackground(im);
+        }
+    }
+
     emit generationProgress(100, tr("生成完了！"));
     emit generationFinished(results);
 }
@@ -1084,6 +1284,11 @@ void AiService::downloadComfyUiImages(const QStringList& imageFilenames) {
                 if (collectedImages->isEmpty()) {
                     emit generationFailed(tr("ComfyUIからの画像取得に失敗しました。"));
                 } else {
+                    if (m_currentParams.removeBackground) {
+                        for (auto& im : *collectedImages) {
+                            im = removeBackground(im);
+                        }
+                    }
                     emit generationProgress(100, tr("生成完了！"));
                     emit generationFinished(*collectedImages);
                 }
@@ -1272,6 +1477,18 @@ void AiService::onEmbeddedProcessReadyRead() {
     QByteArray data = m_embeddedProcess->readAllStandardOutput();
     data += m_embeddedProcess->readAllStandardError();
     QString text = QString::fromUtf8(data);
+    m_embeddedProcessLog += text;
+
+    // save result image 0 to 'path' (success)
+    static QRegularExpression saveRegex(R"(save result image \d+ to '([^']+)')", QRegularExpression::CaseInsensitiveOption);
+    auto saveIt = saveRegex.globalMatch(text);
+    while (saveIt.hasNext()) {
+        auto m = saveIt.next();
+        QString savedPath = m.captured(1).trimmed();
+        if (!savedPath.isEmpty() && !m_embeddedGeneratedFiles.contains(savedPath)) {
+            m_embeddedGeneratedFiles.append(savedPath);
+        }
+    }
 
     QStringList lines = text.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
     for (const QString& line : lines) {
@@ -1282,6 +1499,15 @@ void AiService::onEmbeddedProcessReadyRead() {
             emit generationProgress(10, tr("組み込み推論: モデル読み込み中..."));
         } else if (trimmed.contains("applying", Qt::CaseInsensitive) || trimmed.contains("clip", Qt::CaseInsensitive)) {
             emit generationProgress(15, tr("組み込み推論: プロンプト解析中..."));
+        }
+
+        // Match "generating image: 1/2"
+        static QRegularExpression batchRegex(R"(generating image:\s*(\d+)\s*/\s*(\d+))", QRegularExpression::CaseInsensitiveOption);
+        auto bMatch = batchRegex.match(trimmed);
+        if (bMatch.hasMatch()) {
+            int curBatch = bMatch.captured(1).toInt();
+            int totalBatch = bMatch.captured(2).toInt();
+            emit generationProgress(20, tr("組み込み推論中... (枚数 %1/%2)").arg(curBatch).arg(totalBatch));
         }
 
         // Match "12/20" or "step 12/20" or "iteration 12/20"

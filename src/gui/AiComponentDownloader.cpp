@@ -51,11 +51,16 @@ ComponentInfo AiComponentDownloader::getComponentInfo(ComponentType type) {
         info.name = "AIアップスケーラー (R-ESRGAN 4x+ Anime6B)";
         info.fileName = "RealESRGAN_x4plus_anime_6B.pth";
         {
-            QString mDir = PreferencesDialog::aiModelDirectory();
-            if (!mDir.isEmpty()) {
-                info.targetDirectory = mDir + "/upscale_models";
+            QString uDir = PreferencesDialog::upscaleModelDirectory();
+            if (!uDir.isEmpty()) {
+                info.targetDirectory = uDir;
             } else {
-                info.targetDirectory = appData + "/models/ESRGAN";
+                QString mDir = PreferencesDialog::aiModelDirectory();
+                if (!mDir.isEmpty()) {
+                    info.targetDirectory = mDir + "/upscale_models";
+                } else {
+                    info.targetDirectory = appData + "/models/ESRGAN";
+                }
             }
         }
         info.downloadUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth";
@@ -67,11 +72,16 @@ ComponentInfo AiComponentDownloader::getComponentInfo(ComponentType type) {
         info.name = "AIアップスケーラー (RealESRGAN_x4plus)";
         info.fileName = "RealESRGAN_x4plus.pth";
         {
-            QString mDir = PreferencesDialog::aiModelDirectory();
-            if (!mDir.isEmpty()) {
-                info.targetDirectory = mDir + "/upscale_models";
+            QString uDir = PreferencesDialog::upscaleModelDirectory();
+            if (!uDir.isEmpty()) {
+                info.targetDirectory = uDir;
             } else {
-                info.targetDirectory = appData + "/models/ESRGAN";
+                QString mDir = PreferencesDialog::aiModelDirectory();
+                if (!mDir.isEmpty()) {
+                    info.targetDirectory = mDir + "/upscale_models";
+                } else {
+                    info.targetDirectory = appData + "/models/ESRGAN";
+                }
             }
         }
         info.downloadUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth";

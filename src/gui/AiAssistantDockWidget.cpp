@@ -359,11 +359,35 @@ void AiAssistantDockWidget::setupUi() {
     m_spinCfg->setSingleStep(0.5);
     m_spinCfg->setValue(7.0);
 
+    m_comboSampler = new QComboBox(grpParams);
+    m_comboSampler->addItem("Euler a", "euler_a");
+    m_comboSampler->addItem("Euler", "euler");
+    m_comboSampler->addItem("DPM++ 2M", "dpmpp_2m");
+    m_comboSampler->addItem("DPM++ 2M SDE", "dpmpp_2m_sde");
+    m_comboSampler->addItem("DPM++ 2S a", "dpmpp_2s_a");
+    m_comboSampler->addItem("DDIM", "ddim");
+    m_comboSampler->addItem("Heun", "heun");
+    m_comboSampler->addItem("LCM", "lcm");
+
+    m_comboScheduler = new QComboBox(grpParams);
+    m_comboScheduler->addItem("Normal (標準)", "normal");
+    m_comboScheduler->addItem("Karras", "karras");
+    m_comboScheduler->addItem("Exponential", "exponential");
+    m_comboScheduler->addItem("SGM Uniform", "sgm_uniform");
+    m_comboScheduler->addItem("Simple", "simple");
+    m_comboScheduler->addItem("AYS", "ays");
+    m_comboScheduler->addItem("KL-Optimal", "kl_optimal");
+
+    m_chkRemoveBackground = new QCheckBox(tr("生成後に背景を自動透明化 (透過)"), grpParams);
+
     formParams->addRow(tr("生成枚数:"), m_spinBatchCount);
+    formParams->addRow(tr("サンプラー:"), m_comboSampler);
+    formParams->addRow(tr("スケジューラー:"), m_comboScheduler);
     formParams->addRow(tr("生成強度 (Denoise):"), m_spinDenoising);
     formParams->addRow(tr("シード値:"), laySeed);
     formParams->addRow(tr("ステップ数:"), m_spinSteps);
     formParams->addRow(tr("CFG Scale:"), m_spinCfg);
+    formParams->addRow("", m_chkRemoveBackground);
     mainLayout->addWidget(grpParams);
 
     mainLayout->addStretch(1);
@@ -650,6 +674,10 @@ QStringList AiAssistantDockWidget::scanUpscaleModels() const {
     result << "RealESRGAN_x4plus";
 
     QStringList searchDirs;
+    QString userUpscaleDir = PreferencesDialog::upscaleModelDirectory();
+    if (!userUpscaleDir.isEmpty()) {
+        searchDirs << userUpscaleDir;
+    }
     QString modelDir = PreferencesDialog::aiModelDirectory();
     if (!modelDir.isEmpty()) {
         QDir mDir(QDir::cleanPath(QDir::fromNativeSeparators(modelDir.trimmed())));
@@ -979,6 +1007,9 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.steps = m_spinSteps->value();
     params.cfgScale = static_cast<float>(m_spinCfg->value());
     params.denoisingStrength = static_cast<float>(m_spinDenoising->value());
+    params.sampler = m_comboSampler ? m_comboSampler->currentText() : "Euler a";
+    params.scheduler = m_comboScheduler ? m_comboScheduler->currentData().toString() : "normal";
+    params.removeBackground = m_chkRemoveBackground ? m_chkRemoveBackground->isChecked() : false;
 
     int64_t inputSeed = m_spinSeed->value();
     if (inputSeed < 0) {
@@ -1364,6 +1395,9 @@ void AiAssistantDockWidget::saveSettings() {
     if (m_spinCfg) settings.setValue("cfgScale", m_spinCfg->value());
     if (m_spinDenoising) settings.setValue("denoisingStrength", m_spinDenoising->value());
     if (m_spinSeed) settings.setValue("seed", m_spinSeed->value());
+    if (m_comboSampler) settings.setValue("sampler", m_comboSampler->currentText());
+    if (m_comboScheduler) settings.setValue("scheduler", m_comboScheduler->currentData().toString());
+    if (m_chkRemoveBackground) settings.setValue("removeBackground", m_chkRemoveBackground->isChecked());
 
     if (m_comboResolution) settings.setValue("resolutionIndex", m_comboResolution->currentIndex());
     if (m_spinWidth) settings.setValue("width", m_spinWidth->value());
@@ -1429,6 +1463,24 @@ void AiAssistantDockWidget::loadSettings() {
     if (m_spinCfg && settings.contains("cfgScale")) m_spinCfg->setValue(settings.value("cfgScale").toDouble());
     if (m_spinDenoising && settings.contains("denoisingStrength")) m_spinDenoising->setValue(settings.value("denoisingStrength").toDouble());
     if (m_spinSeed && settings.contains("seed")) m_spinSeed->setValue(settings.value("seed").toInt());
+
+    if (m_comboSampler && settings.contains("sampler")) {
+        QString s = settings.value("sampler").toString();
+        int idx = m_comboSampler->findText(s);
+        if (idx >= 0) m_comboSampler->setCurrentIndex(idx);
+    }
+    if (m_comboScheduler && settings.contains("scheduler")) {
+        QString sch = settings.value("scheduler").toString();
+        int idx = m_comboScheduler->findData(sch);
+        if (idx >= 0) m_comboScheduler->setCurrentIndex(idx);
+        else {
+            idx = m_comboScheduler->findText(sch);
+            if (idx >= 0) m_comboScheduler->setCurrentIndex(idx);
+        }
+    }
+    if (m_chkRemoveBackground && settings.contains("removeBackground")) {
+        m_chkRemoveBackground->setChecked(settings.value("removeBackground").toBool());
+    }
 
     if (m_comboResolution && settings.contains("resolutionIndex")) {
         m_comboResolution->setCurrentIndex(settings.value("resolutionIndex").toInt());
@@ -1534,6 +1586,22 @@ void AiAssistantDockWidget::loadParametersFromLayer(const std::shared_ptr<Layer>
     if (m_spinDenoising) m_spinDenoising->setValue(params.denoisingStrength);
     if (m_spinSeed) m_spinSeed->setValue(static_cast<int>(params.seed));
 
+    if (m_comboSampler && !params.sampler.isEmpty()) {
+        int sIdx = m_comboSampler->findText(params.sampler);
+        if (sIdx >= 0) m_comboSampler->setCurrentIndex(sIdx);
+    }
+    if (m_comboScheduler && !params.scheduler.isEmpty()) {
+        int schIdx = m_comboScheduler->findData(params.scheduler);
+        if (schIdx >= 0) m_comboScheduler->setCurrentIndex(schIdx);
+        else {
+            schIdx = m_comboScheduler->findText(params.scheduler);
+            if (schIdx >= 0) m_comboScheduler->setCurrentIndex(schIdx);
+        }
+    }
+    if (m_chkRemoveBackground) {
+        m_chkRemoveBackground->setChecked(params.removeBackground);
+    }
+
     // 解像度
     if (m_spinWidth) m_spinWidth->setValue(params.width);
     if (m_spinHeight) m_spinHeight->setValue(params.height);
@@ -1605,6 +1673,9 @@ void AiAssistantDockWidget::resetToDefaults() {
     if (m_spinCfg) m_spinCfg->setValue(7.0);
     if (m_spinDenoising) m_spinDenoising->setValue(0.55);
     if (m_spinSeed) m_spinSeed->setValue(-1);
+    if (m_comboSampler) m_comboSampler->setCurrentIndex(0); // Euler a
+    if (m_comboScheduler) m_comboScheduler->setCurrentIndex(0); // Normal
+    if (m_chkRemoveBackground) m_chkRemoveBackground->setChecked(false);
 
     // ControlNet
     if (m_chkControlNet) m_chkControlNet->setChecked(false);

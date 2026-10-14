@@ -68,18 +68,22 @@ public:
 signals:
     void modelsFetched(const QStringList& models);
     void modelsFetchFailed(const QString& errorMessage);
+    void promptGenerationProgress(int percent, const QString& statusMessage, const QString& currentContent);
     void promptGenerated(const LlmPromptResult& result);
     void promptGenerationFailed(const QString& errorMessage);
 
 private slots:
     void onFetchModelsFinished();
     void onGenerateFinished();
+    void onGenerateReadyRead();
 
 private:
     QNetworkAccessManager* m_netManager = nullptr;
     QNetworkReply* m_modelsReply = nullptr;
     QNetworkReply* m_generateReply = nullptr;
     LlmBackend m_currentFetchBackend = LlmBackend::Ollama;
+    QByteArray m_streamBuffer;
+    QString m_accumulatedContent;
 };
 
 } // namespace Kaburagi

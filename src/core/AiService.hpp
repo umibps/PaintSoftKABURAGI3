@@ -60,6 +60,8 @@ struct AiGenerateParams {
     int width = 512;
     int height = 512;
     QString sampler = "Euler a";
+    QString scheduler = "normal";
+    bool removeBackground = false;
     bool tiling = false;
 
     QImage initImage;
@@ -110,6 +112,9 @@ public:
 
     // 画像アップスケールユーティリティ
     static QImage upscaleImage(const QImage& source, const QSize& targetSize, const QString& method);
+
+    // 背景透過ユーティリティ（外周・4隅からFloodFillし、境界を滑らかにフェザリング透過）
+    static QImage removeBackground(const QImage& source, int tolerance = 25);
 
     // ユーティリティ & パーサー (テストやモックにも利用可能)
     static QString imageToBase64Png(const QImage& img);
@@ -182,6 +187,8 @@ private:
     // 組み込みエンジン (QProcess)
     QProcess* m_embeddedProcess = nullptr;
     QString m_embeddedOutputPath;
+    QStringList m_embeddedGeneratedFiles;
+    QString m_embeddedProcessLog;
 };
 
 } // namespace Kaburagi

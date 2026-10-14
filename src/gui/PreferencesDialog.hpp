@@ -32,6 +32,7 @@ public:
     static QString effectiveLanguage();
     static QString aiModelDirectory();
     static QString aiControlNetDirectory();
+    static QString upscaleModelDirectory();
     static QString comfyUiLaunchPath();
     static QString webUiLaunchPath();
     static bool isAutoLaunchServerEnabled();
@@ -39,6 +40,7 @@ public:
     static void setEmbeddedEnginePath(const QString& path);
     static void setAiModelDirectory(const QString& path);
     static void setAiControlNetDirectory(const QString& path);
+    static void setUpscaleModelDirectory(const QString& path);
 
     static int llmBackend();
     static QString llmServerUrl();
@@ -67,6 +69,8 @@ private:
     QPushButton* m_btnBrowseAiModelDir = nullptr;
     QLineEdit* m_editAiControlNetDir = nullptr;
     QPushButton* m_btnBrowseAiControlNetDir = nullptr;
+    QLineEdit* m_editUpscaleModelDir = nullptr;
+    QPushButton* m_btnBrowseUpscaleModelDir = nullptr;
 
     QLineEdit* m_editComfyUiPath = nullptr;
     QPushButton* m_btnBrowseComfyUiPath = nullptr;

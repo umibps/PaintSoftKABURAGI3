@@ -36,6 +36,7 @@ private slots:
     // LlmPromptService slots
     void onModelsFetched(const QStringList& models);
     void onModelsFetchFailed(const QString& errorMessage);
+    void onPromptGenerationProgress(int percent, const QString& statusMessage, const QString& currentContent);
     void onPromptGenerated(const LlmPromptResult& result);
     void onPromptGenerationFailed(const QString& errorMessage);
 

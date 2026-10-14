@@ -155,10 +155,13 @@ private:
     // Generation parameters
     QSpinBox* m_spinBatchCount = nullptr;
     QSpinBox* m_spinSteps = nullptr;
+    QComboBox* m_comboSampler = nullptr;
+    QComboBox* m_comboScheduler = nullptr;
     QDoubleSpinBox* m_spinCfg = nullptr;
     QDoubleSpinBox* m_spinDenoising = nullptr;
     QSpinBox* m_spinSeed = nullptr;
     QPushButton* m_btnRandomSeed = nullptr;
+    QCheckBox* m_chkRemoveBackground = nullptr;
 
     QPushButton* m_btnGenerate = nullptr;
     QPushButton* m_btnCancel = nullptr;

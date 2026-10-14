@@ -27,6 +27,7 @@ LlmPromptDialog::LlmPromptDialog(QWidget* parent)
 
     connect(m_llmService, &LlmPromptService::modelsFetched, this, &LlmPromptDialog::onModelsFetched);
     connect(m_llmService, &LlmPromptService::modelsFetchFailed, this, &LlmPromptDialog::onModelsFetchFailed);
+    connect(m_llmService, &LlmPromptService::promptGenerationProgress, this, &LlmPromptDialog::onPromptGenerationProgress);
     connect(m_llmService, &LlmPromptService::promptGenerated, this, &LlmPromptDialog::onPromptGenerated);
     connect(m_llmService, &LlmPromptService::promptGenerationFailed, this, &LlmPromptDialog::onPromptGenerationFailed);
 
@@ -142,7 +143,9 @@ void LlmPromptDialog::setupUi() {
     layAction->addWidget(m_btnGenerate);
 
     m_progressBar = new QProgressBar(this);
-    m_progressBar->setRange(0, 0); // ビジーインジケーター
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
+    m_progressBar->setTextVisible(true);
     m_progressBar->setVisible(false);
     m_lblStatus = new QLabel(tr("準備完了"), this);
     m_lblStatus->setAlignment(Qt::AlignCenter);
@@ -276,20 +279,37 @@ void LlmPromptDialog::onGenerateClicked() {
 
     m_btnGenerate->setEnabled(false);
     m_progressBar->setVisible(true);
+    m_progressBar->setValue(5);
     m_lblStatus->setText(tr("LLM がプロンプトを考案中..."));
+    m_editResultPrompt->clear();
+    m_editResultNegative->clear();
 
     QString style = m_comboStyle->currentText();
     m_llmService->generatePrompt(cfg, idea, style, m_existingPrompt);
 }
 
+void LlmPromptDialog::onPromptGenerationProgress(int percent, const QString& statusMessage, const QString& currentContent) {
+    if (!m_progressBar->isVisible()) {
+        m_progressBar->setVisible(true);
+    }
+    m_progressBar->setValue(percent);
+    m_lblStatus->setText(statusMessage);
+
+    // ストリーミング中のテキストをプレビュー欄に表示
+    if (!currentContent.isEmpty()) {
+        m_editResultPrompt->setPlainText(currentContent);
+    }
+}
+
 void LlmPromptDialog::onPromptGenerated(const LlmPromptResult& result) {
     m_btnGenerate->setEnabled(true);
+    m_progressBar->setValue(100);
     m_progressBar->setVisible(false);
     m_lblStatus->setText(tr("プロンプト生成が完了しました！"));
 
     m_editResultPrompt->setPlainText(result.prompt);
     m_editResultNegative->setPlainText(result.negativePrompt);
-    m_btnApply->setEnabled(true);
+    m_btnApply->setEnabled(!result.prompt.isEmpty());
 }
 
 void LlmPromptDialog::onPromptGenerationFailed(const QString& errorMessage) {

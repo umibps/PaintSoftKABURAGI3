@@ -498,6 +498,92 @@ void testLlmPromptService() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+static void testSamplerAndScheduler() {
+    std::cout << "[TEST] 10. Sampler & Scheduler Mapping & Serialization..." << std::endl;
+
+    AiGenerateParams params;
+    params.sampler = "DPM++ 2M SDE";
+    params.scheduler = "karras";
+    params.removeBackground = true;
+
+    // 1. Serialization
+    QJsonObject json = AiService::paramsToJson(params);
+    assert(json["sampler"].toString() == "DPM++ 2M SDE");
+    assert(json["scheduler"].toString() == "karras");
+    assert(json["removeBackground"].toBool() == true);
+
+    AiGenerateParams restored = AiService::jsonToParams(json);
+    assert(restored.sampler == "DPM++ 2M SDE");
+    assert(restored.scheduler == "karras");
+    assert(restored.removeBackground == true);
+
+    // 2. ComfyUI Mapping
+    QJsonObject comfy = AiService::buildComfyUiPromptJson(params);
+    assert(comfy.contains("3"));
+    QJsonObject node3Inputs = comfy["3"].toObject()["inputs"].toObject();
+    assert(node3Inputs["sampler_name"].toString() == "dpmpp_2m_sde");
+    assert(node3Inputs["scheduler"].toString() == "karras");
+
+    // 3. WebUI JSON
+    QJsonObject webUi = AiService::buildWebUiTxt2ImgJson(params);
+    assert(webUi["sampler_name"].toString() == "DPM++ 2M SDE");
+    assert(webUi["scheduler"].toString() == "karras");
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+static void testRemoveBackground() {
+    std::cout << "[TEST] 11. Remove Background (Transparency & Alpha Edge)..." << std::endl;
+
+    // 100x100 の白背景画像を作成
+    QImage src(100, 100, QImage::Format_ARGB32);
+    src.fill(QColor(255, 255, 255, 255));
+
+    // 中央に赤い正方形 (30,30)-(70,70) を描画
+    for (int y = 30; y < 70; ++y) {
+        for (int x = 30; x < 70; ++x) {
+            src.setPixelColor(x, y, QColor(255, 0, 0, 255));
+        }
+    }
+
+    QImage transparent = AiService::removeBackground(src, 25);
+    assert(!transparent.isNull());
+    assert(transparent.size() == src.size());
+
+    // 4隅は完全に透明 (alpha == 0)
+    assert(qAlpha(transparent.pixel(0, 0)) == 0);
+    assert(qAlpha(transparent.pixel(99, 0)) == 0);
+    assert(qAlpha(transparent.pixel(0, 99)) == 0);
+    assert(qAlpha(transparent.pixel(99, 99)) == 0);
+
+    // 中央の赤部分は不透明 (alpha == 255) かつ 赤色
+    QRgb centerPixel = transparent.pixel(50, 50);
+    assert(qAlpha(centerPixel) == 255);
+    assert(qRed(centerPixel) == 255);
+    assert(qGreen(centerPixel) == 0);
+    assert(qBlue(centerPixel) == 0);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+static void testUpscaleModelDirectoryPreference() {
+    std::cout << "[TEST] 12. Upscale Model Directory Preference & Downloader..." << std::endl;
+
+    QTemporaryDir tempUpscaleDir;
+    assert(tempUpscaleDir.isValid());
+
+    PreferencesDialog::setUpscaleModelDirectory(tempUpscaleDir.path());
+    assert(PreferencesDialog::upscaleModelDirectory() == tempUpscaleDir.path());
+
+    auto infoAnime6B = AiComponentDownloader::getComponentInfo(ComponentType::UpscaleModelAnime6B);
+    assert(infoAnime6B.targetDirectory == tempUpscaleDir.path());
+
+    auto infoRealEsrgan = AiComponentDownloader::getComponentInfo(ComponentType::UpscaleModelRealEsrgan);
+    assert(infoRealEsrgan.targetDirectory == tempUpscaleDir.path());
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -512,6 +598,9 @@ int main(int argc, char* argv[]) {
     testPreferencesAiDirectories();
     testAiComponentDownloader();
     testLlmPromptService();
+    testSamplerAndScheduler();
+    testRemoveBackground();
+    testUpscaleModelDirectoryPreference();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

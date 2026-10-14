@@ -275,6 +275,22 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
         }
     });
 
+    // アップスケールモデル保存フォルダ (RealESRGAN, Anime6B等)
+    auto layUpscaleDir = new QHBoxLayout();
+    m_editUpscaleModelDir = new QLineEdit(this);
+    m_editUpscaleModelDir->setPlaceholderText("例: models/upscale_models (RealESRGAN, Anime6B 等)");
+    m_btnBrowseUpscaleModelDir = new QPushButton("参照...", this);
+    layUpscaleDir->addWidget(m_editUpscaleModelDir);
+    layUpscaleDir->addWidget(m_btnBrowseUpscaleModelDir);
+    aiForm->addRow("アップスケールモデル保存フォルダ:", layUpscaleDir);
+
+    connect(m_btnBrowseUpscaleModelDir, &QPushButton::clicked, this, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, "アップスケールモデル保存フォルダを選択", m_editUpscaleModelDir->text());
+        if (!dir.isEmpty()) {
+            m_editUpscaleModelDir->setText(dir);
+        }
+    });
+
     // サーバー自動起動チェック
     m_chkAutoLaunchServer = new QCheckBox("サーバー未起動(接続拒否)時に自動起動する", this);
     m_chkAutoLaunchServer->setChecked(true);
@@ -504,6 +520,16 @@ QString PreferencesDialog::aiControlNetDirectory() {
     return settings.value("AiLocal/controlNetDirectory", "").toString();
 }
 
+QString PreferencesDialog::upscaleModelDirectory() {
+    QSettings settings = getSettings();
+    QString path = settings.value("AiLocal/upscaleModelDirectory", "").toString();
+    if (!path.isEmpty() && QDir(path).exists()) return path;
+
+    if (QDir("models/upscale_models").exists()) return "models/upscale_models";
+    if (QDir("tools/upscale_models").exists()) return "tools/upscale_models";
+    return path;
+}
+
 QString PreferencesDialog::comfyUiLaunchPath() {
     QSettings settings = getSettings();
     QString path = settings.value("AiLocal/comfyUiPath", "").toString();
@@ -567,6 +593,11 @@ void PreferencesDialog::setAiModelDirectory(const QString& path) {
 void PreferencesDialog::setAiControlNetDirectory(const QString& path) {
     QSettings settings = getSettings();
     settings.setValue("AiLocal/controlNetDirectory", path);
+}
+
+void PreferencesDialog::setUpscaleModelDirectory(const QString& path) {
+    QSettings settings = getSettings();
+    settings.setValue("AiLocal/upscaleModelDirectory", path);
 }
 
 int PreferencesDialog::llmBackend() {
@@ -755,6 +786,7 @@ void PreferencesDialog::loadSettings() {
     settings.beginGroup("AiLocal");
     m_editAiModelDir->setText(settings.value("modelDirectory", "").toString());
     m_editAiControlNetDir->setText(settings.value("controlNetDirectory", "").toString());
+    m_editUpscaleModelDir->setText(settings.value("upscaleModelDirectory", "").toString());
 
     QString comfyPath = settings.value("comfyUiPath", "").toString();
     if (comfyPath.isEmpty()) comfyPath = comfyUiLaunchPath();
@@ -811,6 +843,7 @@ void PreferencesDialog::saveSettings() {
     settings.beginGroup("AiLocal");
     settings.setValue("modelDirectory", m_editAiModelDir->text().trimmed());
     settings.setValue("controlNetDirectory", m_editAiControlNetDir->text().trimmed());
+    settings.setValue("upscaleModelDirectory", m_editUpscaleModelDir->text().trimmed());
     settings.setValue("comfyUiPath", m_editComfyUiPath->text().trimmed());
     settings.setValue("webUiPath", m_editWebUiPath->text().trimmed());
     settings.setValue("autoLaunchServer", m_chkAutoLaunchServer->isChecked());

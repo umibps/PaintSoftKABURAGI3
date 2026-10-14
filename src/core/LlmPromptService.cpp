@@ -193,6 +193,9 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
         m_generateReply->abort();
     }
 
+    m_streamBuffer.clear();
+    m_accumulatedContent.clear();
+
     QString base = config.serverUrl.trimmed();
     if (base.endsWith("/")) base.chop(1);
 
@@ -206,6 +209,7 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
     }
 
     QJsonObject reqJson = buildChatRequestJson(config, userIdea, stylePreset, currentPrompt);
+    reqJson["stream"] = true; // ストリーミング受信を有効化
     QByteArray body = QJsonDocument(reqJson).toJson(QJsonDocument::Compact);
 
     QNetworkRequest request{QUrl(chatEndpoint)};
@@ -215,8 +219,58 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
         request.setRawHeader("Authorization", "Bearer " + config.apiKey.toUtf8());
     }
 
+    emit promptGenerationProgress(10, tr("LLMサーバーに接続・プロンプト送信中..."), QString());
+
     m_generateReply = m_netManager->post(request, body);
+    connect(m_generateReply, &QNetworkReply::readyRead, this, &LlmPromptService::onGenerateReadyRead);
     connect(m_generateReply, &QNetworkReply::finished, this, &LlmPromptService::onGenerateFinished);
+}
+
+void LlmPromptService::onGenerateReadyRead() {
+    if (!m_generateReply) return;
+
+    QByteArray chunk = m_generateReply->readAll();
+    m_streamBuffer.append(chunk);
+
+    // SSE (Server-Sent Events) の各行を処理
+    while (true) {
+        int newlineIdx = m_streamBuffer.indexOf('\n');
+        if (newlineIdx < 0) break;
+
+        QByteArray lineBytes = m_streamBuffer.left(newlineIdx).trimmed();
+        m_streamBuffer.remove(0, newlineIdx + 1);
+
+        if (lineBytes.startsWith("data:")) {
+            QByteArray dataContent = lineBytes.mid(5).trimmed();
+            if (dataContent == "[DONE]") {
+                continue;
+            }
+
+            QJsonDocument doc = QJsonDocument::fromJson(dataContent);
+            if (doc.isObject()) {
+                QJsonObject obj = doc.object();
+                QJsonArray choices = obj["choices"].toArray();
+                if (!choices.isEmpty()) {
+                    QJsonObject choice0 = choices[0].toObject();
+                    if (choice0.contains("delta")) {
+                        QJsonObject delta = choice0["delta"].toObject();
+                        if (delta.contains("content")) {
+                            QString dStr = delta["content"].toString();
+                            m_accumulatedContent.append(dStr);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!m_accumulatedContent.isEmpty()) {
+        // 文字数に応じたプログレスバー計算 (20%〜90%)
+        int progressPercent = std::clamp(20 + static_cast<int>(m_accumulatedContent.length() / 4), 20, 92);
+        emit promptGenerationProgress(progressPercent,
+                                      tr("LLM が考案・生成中... (%1文字)").arg(m_accumulatedContent.length()),
+                                      m_accumulatedContent);
+    }
 }
 
 void LlmPromptService::onGenerateFinished() {
@@ -230,15 +284,49 @@ void LlmPromptService::onGenerateFinished() {
         return;
     }
 
-    QByteArray data = m_generateReply->readAll();
     m_generateReply->deleteLater();
     m_generateReply = nullptr;
 
     QString err;
-    LlmPromptResult res = parseChatResponseJson(data, &err);
+    LlmPromptResult res;
+
+    // ストリーミングで蓄積されたテキストがあればそれをパース
+    if (!m_accumulatedContent.isEmpty()) {
+        QString cleanContent = m_accumulatedContent.trimmed();
+        // markdown code block の除去
+        if (cleanContent.startsWith("```json")) cleanContent = cleanContent.mid(7);
+        else if (cleanContent.startsWith("```")) cleanContent = cleanContent.mid(3);
+        if (cleanContent.endsWith("```")) cleanContent.chop(3);
+        cleanContent = cleanContent.trimmed();
+
+        // JSONブロックの抽出
+        int firstBrace = cleanContent.indexOf('{');
+        int lastBrace = cleanContent.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            cleanContent = cleanContent.mid(firstBrace, lastBrace - firstBrace + 1);
+        }
+
+        QJsonDocument doc = QJsonDocument::fromJson(cleanContent.toUtf8());
+        if (doc.isObject()) {
+            QJsonObject root = doc.object();
+            res.prompt = root.contains("prompt") ? root["prompt"].toString().trimmed() : QString();
+            res.negativePrompt = root.contains("negative_prompt") ? root["negative_prompt"].toString().trimmed() : QString();
+            if (res.prompt.isEmpty() && root.contains("positive")) {
+                res.prompt = root["positive"].toString().trimmed();
+            }
+        } else {
+            // JSON 以外のフリーテキストで返ってきた場合のフォールバック
+            res.prompt = m_accumulatedContent.trimmed();
+        }
+    } else {
+        // ストリーミング非対応でバッファに一括返却された場合
+        res = parseChatResponseJson(m_streamBuffer, &err);
+    }
+
     if (!err.isEmpty()) {
         emit promptGenerationFailed(err);
     } else {
+        emit promptGenerationProgress(100, tr("プロンプト生成が完了しました！"), res.prompt);
         emit promptGenerated(res);
     }
 }
