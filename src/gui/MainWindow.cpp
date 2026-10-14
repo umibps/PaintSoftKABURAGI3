@@ -939,6 +939,7 @@ void MainWindow::setupLayout() {
     });
 
     m_canvasWidget = new CanvasWidget(this);
+    m_canvasWidget->setRightClickEyedropperEnabled(PreferencesDialog::isRightClickEyedropperEnabled());
     m_canvasWidget->setDocument(m_document);
     m_canvasWidget->setTextSettingsWidget(m_textSettings);
     m_canvasWidget->setPanelSettingsWidget(m_panelSettings);
@@ -2940,6 +2941,9 @@ void MainWindow::onPreferences() {
         restartAutoBackupTimer();
         if (m_layerPanel) {
             m_layerPanel->updateScrollBarPosition();
+        }
+        if (m_canvasWidget) {
+            m_canvasWidget->setRightClickEyedropperEnabled(PreferencesDialog::isRightClickEyedropperEnabled());
         }
         if (m_aiAssistantDock) {
             m_aiAssistantDock->refreshLocalModels();

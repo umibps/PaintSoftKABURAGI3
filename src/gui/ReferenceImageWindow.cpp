@@ -11,6 +11,10 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QScrollBar>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileInfo>
@@ -273,7 +277,7 @@ void ReferenceImageWindow::setupUi() {
     m_centralStack = new QStackedWidget(central);
 
     // プレースホルダー
-    m_placeholderLabel = new QLabel(tr("Open an image via [File] > [Open Image] or [Edit] > [Paste].\n\n"
+    m_placeholderLabel = new QLabel(tr("Open an image via Drag & Drop, [File] > [Open Image], or [Edit] > [Paste].\n\n"
                                        "・Left click: Sample pixel color and set as drawing color\n"
                                        "・Right click: Register to palette / Close image\n"
                                        "・Middle drag: Pan view\n"
@@ -307,6 +311,18 @@ void ReferenceImageWindow::setupUi() {
     mainLayout->addWidget(bottomBar, 0);
 
     setCentralWidget(central);
+
+    // ドラッグ＆ドロップの受付有効化
+    setAcceptDrops(true);
+    central->setAcceptDrops(true);
+    m_centralStack->setAcceptDrops(true);
+    m_tabWidget->setAcceptDrops(true);
+    m_placeholderLabel->setAcceptDrops(true);
+
+    central->installEventFilter(this);
+    m_centralStack->installEventFilter(this);
+    m_tabWidget->installEventFilter(this);
+    m_placeholderLabel->installEventFilter(this);
 }
 
 void ReferenceImageWindow::updatePlaceholder() {
@@ -337,6 +353,8 @@ void ReferenceImageWindow::addImage(const QImage& image, const QString& title) {
     if (image.isNull()) return;
 
     ReferenceImageView* view = new ReferenceImageView(image, m_tabWidget);
+    view->setAcceptDrops(true);
+    view->installEventFilter(this);
     connect(view, &ReferenceImageView::colorPicked, this, &ReferenceImageWindow::colorPicked);
     connect(view, &ReferenceImageView::addToPalette, this, &ReferenceImageWindow::addToPalette);
     connect(view, &ReferenceImageView::closeRequested, this, [this, view]() {
@@ -431,6 +449,62 @@ void ReferenceImageWindow::onChildViewZoomChanged(double zoom) {
 void ReferenceImageWindow::closeEvent(QCloseEvent* event) {
     emit windowClosed();
     QMainWindow::closeEvent(event);
+}
+
+void ReferenceImageWindow::dragEnterEvent(QDragEnterEvent* event) {
+    if (event->mimeData()->hasUrls() || event->mimeData()->hasImage()) {
+        event->acceptProposedAction();
+    }
+}
+
+void ReferenceImageWindow::dragMoveEvent(QDragMoveEvent* event) {
+    if (event->mimeData()->hasUrls() || event->mimeData()->hasImage()) {
+        event->acceptProposedAction();
+    }
+}
+
+void ReferenceImageWindow::dropEvent(QDropEvent* event) {
+    handleDrop(event);
+}
+
+void ReferenceImageWindow::handleDrop(QDropEvent* event) {
+    if (event->mimeData()->hasUrls()) {
+        const auto urls = event->mimeData()->urls();
+        for (const auto& url : urls) {
+            QString localPath = url.toLocalFile();
+            if (!localPath.isEmpty()) {
+                openImageFile(localPath);
+            }
+        }
+        event->acceptProposedAction();
+    } else if (event->mimeData()->hasImage()) {
+        QImage img = qvariant_cast<QImage>(event->mimeData()->imageData());
+        if (!img.isNull()) {
+            addImage(img, tr("Dropped Image %1").arg(m_pasteCounter++));
+            event->acceptProposedAction();
+        }
+    }
+}
+
+bool ReferenceImageWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::DragEnter) {
+        auto de = static_cast<QDragEnterEvent*>(event);
+        if (de->mimeData()->hasUrls() || de->mimeData()->hasImage()) {
+            de->acceptProposedAction();
+            return true;
+        }
+    } else if (event->type() == QEvent::DragMove) {
+        auto de = static_cast<QDragMoveEvent*>(event);
+        if (de->mimeData()->hasUrls() || de->mimeData()->hasImage()) {
+            de->acceptProposedAction();
+            return true;
+        }
+    } else if (event->type() == QEvent::Drop) {
+        auto de = static_cast<QDropEvent*>(event);
+        handleDrop(de);
+        return true;
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 } // namespace Kaburagi

@@ -102,6 +102,11 @@ public:
     BlendMode brushBlendMode() const { return m_brushBlendMode; }
     bool isDrawing() const { return m_isDrawing; }
 
+    // 右クリックスポイト設定 (通常レイヤー用ツール使用時)
+    void setRightClickEyedropperEnabled(bool enabled) { m_rightClickEyedropperEnabled = enabled; }
+    bool isRightClickEyedropperEnabled() const { return m_rightClickEyedropperEnabled; }
+    bool isRasterDrawingTool(ToolType tool) const;
+
     // ブラシ散布設定
     void setBrushScatter(bool s) { m_brushScatter = s; }
     bool isBrushScatter() const { return m_brushScatter; }
@@ -1057,6 +1062,8 @@ private:
     void renderCageTransformPreview(QPainter& painter);
     void renderCageTransformGizmo(QPainter& painter);
     QPointF evaluateMLS(const QPointF& pt, const std::vector<QPointF>& origPts, const std::vector<QPointF>& curPts) const;
+    bool m_rightClickEyedropperEnabled = true;
+    bool m_isRightClickEyedropper = false;
 };
 
 } // namespace Kaburagi

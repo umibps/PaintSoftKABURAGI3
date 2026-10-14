@@ -135,6 +135,24 @@ void CanvasWidget::updateCursorForActiveLayer() {
     update();
 }
 
+bool CanvasWidget::isRasterDrawingTool(ToolType tool) const {
+    switch (tool) {
+    case ToolType::Pen:
+    case ToolType::Airbrush:
+    case ToolType::Watercolor:
+    case ToolType::Marker:
+    case ToolType::Eraser:
+    case ToolType::Bucket:
+    case ToolType::Blur:
+    case ToolType::Blend:
+    case ToolType::Gradient:
+    case ToolType::CompositeBrush:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void CanvasWidget::setShowSelection(bool show) {
     if (m_showSelection != show) {
         m_showSelection = show;
@@ -3416,6 +3434,23 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
 
 void CanvasWidget::tabletEvent(QTabletEvent* event) {
     auto activeL = m_document ? m_document->activeLayer() : nullptr;
+
+    bool isRightClick = (event->button() == Qt::RightButton) || (event->buttons() & Qt::RightButton);
+    if ((isRightClick || m_isRightClickEyedropper) && m_rightClickEyedropperEnabled && m_document && activeL && activeL->type() == LayerType::Raster && isRasterDrawingTool(m_currentTool)) {
+        if (event->type() == QEvent::TabletPress || event->type() == QEvent::TabletMove) {
+            m_isRightClickEyedropper = true;
+            QPointF docPt = viewToDoc(event->position());
+            QColor sampled = m_document->samplePixel(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()));
+            emit colorPicked(sampled);
+            event->accept();
+            return;
+        } else if (event->type() == QEvent::TabletRelease) {
+            m_isRightClickEyedropper = false;
+            event->accept();
+            return;
+        }
+    }
+
     if ((activeL && activeL->type() == LayerType::Group) || m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon ||
         m_currentTool == ToolType::Pipette || m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::EllipseSelect ||
         m_currentTool == ToolType::LassoSelect || m_currentTool == ToolType::MagicWand || m_currentTool == ToolType::ColorSelect ||
@@ -3567,6 +3602,17 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::RightButton) {
         if (m_isCreatingVectorLine) {
             finishVectorLine();
+            event->accept();
+            return;
+        }
+
+        auto activeL = m_document ? m_document->activeLayer() : nullptr;
+        if (m_rightClickEyedropperEnabled && m_document && activeL && activeL->type() == LayerType::Raster && isRasterDrawingTool(m_currentTool)) {
+            m_isRightClickEyedropper = true;
+            QPointF docPt = viewToDoc(event->position());
+            m_cursorDocPos = docPt;
+            QColor sampled = m_document->samplePixel(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()));
+            emit colorPicked(sampled);
             event->accept();
             return;
         }
@@ -4693,6 +4739,15 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
+    if (m_isRightClickEyedropper && (event->buttons() & Qt::RightButton)) {
+        if (m_document) {
+            QColor sampled = m_document->samplePixel(static_cast<int>(m_cursorDocPos.x()), static_cast<int>(m_cursorDocPos.y()));
+            emit colorPicked(sampled);
+        }
+        event->accept();
+        return;
+    }
+
     if (m_currentTool == ToolType::Pipette && (event->buttons() & Qt::LeftButton)) {
         if (m_document) {
             QColor sampled = m_document->samplePixel(static_cast<int>(m_cursorDocPos.x()), static_cast<int>(m_cursorDocPos.y()));
@@ -5071,6 +5126,12 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::RightButton && m_isRightClickEyedropper) {
+        m_isRightClickEyedropper = false;
+        event->accept();
+        return;
+    }
+
     if (m_isRotating && (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton)) {
         m_isRotating = false;
         if (m_isSpacePressed) {

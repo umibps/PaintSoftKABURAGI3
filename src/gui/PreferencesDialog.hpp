@@ -49,6 +49,7 @@ public:
     static void setMonitorProfilePath(const QString& path);
     static QString iccProfilePath();
     static void setIccProfilePath(const QString& path);
+    static bool isRightClickEyedropperEnabled();
 
     void accept() override;
 
@@ -60,6 +61,7 @@ private:
     QSpinBox* m_backupIntervalSpin = nullptr;
     QComboBox* m_layerScrollPosCombo = nullptr;
     QComboBox* m_comboLanguage = nullptr;
+    QCheckBox* m_chkRightClickEyedropper = nullptr;
 
     QLineEdit* m_editAiModelDir = nullptr;
     QPushButton* m_btnBrowseAiModelDir = nullptr;

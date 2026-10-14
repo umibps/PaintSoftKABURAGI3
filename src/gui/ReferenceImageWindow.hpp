@@ -77,6 +77,13 @@ public slots:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
+private:
+    void handleDrop(QDropEvent* event);
 
 private slots:
     void onTabChanged(int index);

@@ -74,6 +74,15 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
 
     layGeneral->addWidget(langGroup);
 
+    // 4. キャンバス操作設定 (Canvas Operation Settings)
+    auto canvasGroup = new QGroupBox(tr("Canvas Operation Settings"), tabGeneral);
+    auto canvasForm = new QFormLayout(canvasGroup);
+
+    m_chkRightClickEyedropper = new QCheckBox(tr("Use right-click as eyedropper when using standard drawing tools"), this);
+    canvasForm->addRow(m_chkRightClickEyedropper);
+
+    layGeneral->addWidget(canvasGroup);
+
     layGeneral->addStretch();
     tabWidget->addTab(tabGeneral, tr("General"));
 
@@ -469,6 +478,11 @@ void PreferencesDialog::setLanguage(const QString& lang) {
     settings.setValue("Preferences/language", lang);
 }
 
+bool PreferencesDialog::isRightClickEyedropperEnabled() {
+    QSettings settings = getSettings();
+    return settings.value("Preferences/rightClickEyedropper", true).toBool();
+}
+
 QString PreferencesDialog::effectiveLanguage() {
     QString lang = language();
     if (lang == "system") {
@@ -714,6 +728,8 @@ void PreferencesDialog::loadSettings() {
         m_comboLanguage->setCurrentIndex(0);
     }
 
+    m_chkRightClickEyedropper->setChecked(settings.value("Preferences/rightClickEyedropper", true).toBool());
+
     // モニタープロファイル読み込み
     QString monPath = settings.value("display/monitorProfilePath", DisplayFilterManager::instance().monitorProfilePath()).toString();
     m_editMonitorProfilePath->setText(monPath);
@@ -779,6 +795,8 @@ void PreferencesDialog::saveSettings() {
         QMessageBox::information(this, tr("Language Setting"),
             tr("The language setting will take effect after restarting the application."));
     }
+
+    settings.setValue("Preferences/rightClickEyedropper", m_chkRightClickEyedropper->isChecked());
 
     // モニタープロファイル保存
     QString monPath = m_editMonitorProfilePath->text().trimmed();

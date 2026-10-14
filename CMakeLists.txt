@@ -405,6 +405,18 @@ target_link_libraries(test_three_d PRIVATE
     Qt6::Network
 )
 
+add_executable(test_ui_improvements
+    tests/test_ui_improvements.cpp
+    ${CORE_SOURCES}
+    ${GUI_SOURCES}
+)
+target_link_libraries(test_ui_improvements PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Network
+)
+
 if (WIN32)
     # Windows GUIアプリケーションとしてビルド（起動時のコマンドプロンプトを非表示）
     set_target_properties(PaintSoftKABURAGI PROPERTIES
