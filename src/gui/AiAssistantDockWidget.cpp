@@ -86,6 +86,13 @@ void AiAssistantDockWidget::setupUi() {
     connect(m_btnLoadFromLayer, &QPushButton::clicked, this, &AiAssistantDockWidget::onLoadFromActiveLayerClicked);
     mainLayout->addWidget(m_btnLoadFromLayer);
 
+    // 設定をデフォルト値にリセットボタン
+    m_btnResetDefaults = new QPushButton(tr("⚙️ 設定をデフォルト値にリセット"), mainContainer);
+    m_btnResetDefaults->setToolTip(tr("AIアシスタントのすべてのパラメータ設定を標準の初期値に戻します"));
+    m_btnResetDefaults->setStyleSheet("QPushButton { padding: 5px; background-color: #f5f5f5; border: 1px solid #cfd8dc; border-radius: 4px; } QPushButton:hover { background-color: #eceff1; }");
+    connect(m_btnResetDefaults, &QPushButton::clicked, this, &AiAssistantDockWidget::onResetDefaultsClicked);
+    mainLayout->addWidget(m_btnResetDefaults);
+
     // 1. 接続設定グループ
     auto grpConn = new QGroupBox(tr("接続設定"), mainContainer);
     auto layConn = new QVBoxLayout(grpConn);
@@ -1289,6 +1296,61 @@ void AiAssistantDockWidget::onLoadFromActiveLayerClicked() {
     loadParametersFromLayer(activeL);
     if (m_lblStatus) {
         m_lblStatus->setText(tr("レイヤー「%1」から生成パラメータを読み込みました。").arg(activeL->name()));
+    }
+}
+
+void AiAssistantDockWidget::resetToDefaults() {
+    // 接続設定
+    if (m_radioComfyUi) m_radioComfyUi->setChecked(true);
+    if (m_editServerUrl) m_editServerUrl->setText("http://127.0.0.1:8188");
+    if (m_editApiKey) m_editApiKey->clear();
+    if (m_comboDevice) m_comboDevice->setCurrentIndex(0);
+    if (m_comboModel && m_comboModel->count() > 0) m_comboModel->setCurrentIndex(0);
+
+    // 制作モード
+    if (m_comboMode) m_comboMode->setCurrentIndex(0); // RoughToClean
+
+    // プロンプト
+    if (m_editPrompt) m_editPrompt->clear();
+    if (m_editNegativePrompt) m_editNegativePrompt->setPlainText("worst quality, low quality, bad anatomy, deformed");
+
+    // 解像度 & アップスケール
+    if (m_comboResolution) m_comboResolution->setCurrentIndex(0); // 512 x 512
+    if (m_spinWidth) m_spinWidth->setValue(512);
+    if (m_spinHeight) m_spinHeight->setValue(512);
+    if (m_comboUpscaleMethod) m_comboUpscaleMethod->setCurrentIndex(0);
+
+    // 生成パラメータ
+    if (m_spinBatchCount) m_spinBatchCount->setValue(1);
+    if (m_spinSteps) m_spinSteps->setValue(20);
+    if (m_spinCfg) m_spinCfg->setValue(7.0);
+    if (m_spinDenoising) m_spinDenoising->setValue(0.55);
+    if (m_spinSeed) m_spinSeed->setValue(-1);
+
+    // ControlNet
+    if (m_chkControlNet) m_chkControlNet->setChecked(true);
+    if (m_comboControlNetType) m_comboControlNetType->setCurrentIndex(0);
+    if (m_spinControlNetWeight) m_spinControlNetWeight->setValue(1.0);
+    if (m_comboControlNetSource) m_comboControlNetSource->setCurrentIndex(0);
+
+    saveSettings();
+
+    if (m_lblStatus) {
+        m_lblStatus->setText(tr("設定をデフォルト値にリセットしました。"));
+    }
+}
+
+void AiAssistantDockWidget::onResetDefaultsClicked() {
+    auto reply = QMessageBox::question(
+        this,
+        tr("設定のリセット確認"),
+        tr("AIアシスタントのすべての設定をデフォルト値に戻しますか？"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+    );
+
+    if (reply == QMessageBox::Yes) {
+        resetToDefaults();
     }
 }
 

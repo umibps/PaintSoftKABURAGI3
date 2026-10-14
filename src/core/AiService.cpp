@@ -723,12 +723,57 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
 }
 
 void AiService::onEmbeddedProcessFinished(int exitCode) {
-    if (exitCode == 0 && QFile::exists(m_embeddedOutputPath)) {
-        QImage result(m_embeddedOutputPath);
-        QFile::remove(m_embeddedOutputPath);
-        if (!result.isNull()) {
-            emit generationProgress(100, tr("生成完了！"));
-            emit generationFinished({result});
+    if (exitCode == 0) {
+        QList<QImage> results;
+
+        // 1. Check if single output file exists (batch == 1 case)
+        if (QFile::exists(m_embeddedOutputPath)) {
+            QImage img(m_embeddedOutputPath);
+            QFile::remove(m_embeddedOutputPath);
+            if (!img.isNull()) {
+                results.append(img);
+            }
+        }
+
+        // 2. Check for multiple batch output files (e.g. name_0.png, name_1.png or name_1.png, name_2.png)
+        QFileInfo fi(m_embeddedOutputPath);
+        QDir dir = fi.absoluteDir();
+        QString baseName = fi.completeBaseName();
+        QString ext = fi.suffix().isEmpty() ? "png" : fi.suffix();
+
+        int maxSearch = std::max(8, m_currentParams.batchCount + 4);
+        for (int i = 0; i <= maxSearch; ++i) {
+            QStringList candidateNames = {
+                QString("%1_%2.%3").arg(baseName).arg(i).arg(ext),
+                QString("%1%2.%3").arg(baseName).arg(i).arg(ext)
+            };
+            for (const QString& cName : candidateNames) {
+                QString cPath = dir.filePath(cName);
+                if (QFile::exists(cPath)) {
+                    QImage img(cPath);
+                    QFile::remove(cPath);
+                    if (!img.isNull()) {
+                        results.append(img);
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: scan directory for any remaining files with baseName prefix
+        QStringList nameFilters = { QString("%1*.%2").arg(baseName, ext) };
+        QFileInfoList extraFiles = dir.entryInfoList(nameFilters, QDir::Files);
+        for (const auto& extraFi : extraFiles) {
+            QString extraPath = extraFi.absoluteFilePath();
+            QImage img(extraPath);
+            QFile::remove(extraPath);
+            if (!img.isNull()) {
+                results.append(img);
+            }
+        }
+
+        if (!results.isEmpty()) {
+            emit generationProgress(100, tr("生成完了！ (%1枚)").arg(results.size()));
+            emit generationFinished(results);
             return;
         }
     }

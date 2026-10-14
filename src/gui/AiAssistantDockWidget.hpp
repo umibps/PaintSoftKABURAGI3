@@ -45,6 +45,7 @@ public:
     void refreshLocalModels();
     void saveSettings();
     void loadSettings();
+    void resetToDefaults();
     void loadParametersFromLayer(const std::shared_ptr<Layer>& layer);
 
 signals:
@@ -54,6 +55,7 @@ signals:
 public slots:
     void onFetchModelsClicked();
     void onLoadFromActiveLayerClicked();
+    void onResetDefaultsClicked();
 
 private slots:
     void onBackendChanged();
@@ -137,6 +139,7 @@ private:
     QPushButton* m_btnApplyNewLayer = nullptr;
     QPushButton* m_btnApplyOverwrite = nullptr;
     QPushButton* m_btnLoadFromLayer = nullptr;
+    QPushButton* m_btnResetDefaults = nullptr;
 
     AiGenerateParams m_lastGeneratedParams;
     QJsonObject m_lastGeneratedJson;
