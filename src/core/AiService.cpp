@@ -894,6 +894,7 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
     QString tempOutput = QDir::temp().filePath(QString("kaburagi_embed_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
     m_embeddedOutputPath = tempOutput;
     m_embeddedGeneratedFiles.clear();
+    m_embeddedTempFiles.clear();
     m_embeddedProcessLog.clear();
 
     QStringList args;
@@ -917,6 +918,33 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
     }
     if (!params.scheduler.isEmpty()) {
         args << "--scheduler" << mapSchedulerToSdCpp(params.scheduler);
+    }
+
+    // メモリ最適化 & ワークスペース容量不足・OOM防止オプション
+    // --offload-to-cpu: 重みをRAMに配置し必要に応じてVRAMへ転送することで、VRAM不足環境やSDXL等の大型モデルでもOOMを完全防止
+    // --vae-tiling: タイル分割デコードにより高解像度や大型モデルでのVAEデコード時のVRAM枯渇を防止
+    // --fa: Flash Attentionによりアテンション計算のワークスペースメモリを大幅削減
+    args << "--offload-to-cpu";
+    args << "--vae-tiling";
+    args << "--fa";
+
+    // 入力画像 (img2img)
+    if (!params.initImage.isNull()) {
+        QString tempInitPath = QDir::temp().filePath(QString("kaburagi_embed_init_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
+        if (params.initImage.save(tempInitPath, "PNG")) {
+            m_embeddedTempFiles.append(tempInitPath);
+            args << "-i" << tempInitPath;
+            args << "--strength" << QString::number(params.denoisingStrength);
+        }
+    }
+
+    // マスク画像 (inpaint)
+    if (!params.maskImage.isNull()) {
+        QString tempMaskPath = QDir::temp().filePath(QString("kaburagi_embed_mask_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
+        if (params.maskImage.save(tempMaskPath, "PNG")) {
+            m_embeddedTempFiles.append(tempMaskPath);
+            args << "--mask" << tempMaskPath;
+        }
     }
 
     args << "-o" << tempOutput;
@@ -983,6 +1011,14 @@ void AiService::onEmbeddedProcessFinished(int exitCode) {
     for (const auto& extraFi : extraFiles) {
         tryAddImageFile(extraFi.absoluteFilePath());
     }
+
+    // 入力・マスク等の一時ファイルを削除
+    for (const QString& tempFile : m_embeddedTempFiles) {
+        if (!tempFile.isEmpty() && QFile::exists(tempFile)) {
+            QFile::remove(tempFile);
+        }
+    }
+    m_embeddedTempFiles.clear();
 
     if (!results.isEmpty()) {
         emit generationProgress(100, tr("生成完了！ (%1枚)").arg(results.size()));

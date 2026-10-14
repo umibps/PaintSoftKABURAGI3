@@ -188,6 +188,7 @@ private:
     QProcess* m_embeddedProcess = nullptr;
     QString m_embeddedOutputPath;
     QStringList m_embeddedGeneratedFiles;
+    QStringList m_embeddedTempFiles;
     QString m_embeddedProcessLog;
 };
 
