@@ -79,8 +79,8 @@
 
 #### 1. リポジトリのクローン
 ```bash
-git clone https://github.com/<your-username>/PaintSoftKABURAGI.git
-cd PaintSoftKABURAGI
+git clone https://github.com/umibps/PaintSoftKABURAGI3.git
+cd PaintSoftKABURAGI3
 ```
 
 #### 2. 環境変数の設定 (MinGW / Qt 6 の場合)
@@ -136,8 +136,8 @@ Designed with a low-latency "Tile-Based Graphics Engine" that eliminates memory 
 #### Build Steps
 ```powershell
 # Clone the repository
-git clone https://github.com/<your-username>/PaintSoftKABURAGI.git
-cd PaintSoftKABURAGI
+git clone https://github.com/umibps/PaintSoftKABURAGI3.git
+cd PaintSoftKABURAGI3
 
 # Configure & Build
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
