@@ -914,6 +914,7 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
                 if (!chosenDir.isEmpty()) {
                     AiComponentDownloader downloader(this);
                     if (downloader.downloadComponentWithDialog(upType, this, chosenDir)) {
+                        PreferencesDialog::setUpscaleModelDirectory(chosenDir);
                         m_lblStatus->setText(tr("アップスケールモデルをダウンロードしました"));
                     }
                 }

@@ -181,11 +181,11 @@ QString AiComponentDownloader::resolveLatestDownloadUrl(ComponentType type) {
 
 QString AiComponentDownloader::getLocalFilePath(ComponentType type) {
     ComponentInfo info = getComponentInfo(type);
+    QString appDir = QCoreApplication::applicationDirPath();
     if (type == ComponentType::EmbeddedSdExe) {
         QString pref = PreferencesDialog::embeddedEnginePath();
         if (!pref.isEmpty() && QFile::exists(pref)) return pref;
 
-        QString appDir = QCoreApplication::applicationDirPath();
         if (QFile::exists(appDir + "/tools/sd-cli.exe")) return appDir + "/tools/sd-cli.exe";
         if (QFile::exists(appDir + "/tools/sd.exe")) return appDir + "/tools/sd.exe";
         if (QFile::exists(appDir + "/sd-cli.exe")) return appDir + "/sd-cli.exe";
@@ -197,15 +197,66 @@ QString AiComponentDownloader::getLocalFilePath(ComponentType type) {
         return info.targetDirectory + "/sd.exe";
     }
 
-    QString target = info.targetDirectory + "/" + info.fileName;
-    if (QFile::exists(target)) return target;
+    QStringList searchDirs;
+    if (!info.targetDirectory.isEmpty()) searchDirs << info.targetDirectory;
 
-    if (type == ComponentType::UpscaleModelAnime6B) {
-        QString alt1 = info.targetDirectory + "/R-ESRGAN 4x+ Anime6B.pth";
-        if (QFile::exists(alt1)) return alt1;
+    QString uDir = PreferencesDialog::upscaleModelDirectory();
+    if (!uDir.isEmpty() && !searchDirs.contains(uDir)) searchDirs << uDir;
+
+    // アップスケールモデルの場合、ComfyUIやモデルフォルダのサブフォルダも自動探索
+    if (type == ComponentType::UpscaleModelAnime6B || type == ComponentType::UpscaleModelRealEsrgan) {
+        QString mDir = PreferencesDialog::aiModelDirectory();
+        if (!mDir.isEmpty()) {
+            QDir md(mDir);
+            searchDirs << md.filePath("upscale_models");
+            searchDirs << md.filePath("ESRGAN");
+            searchDirs << md.filePath("Upscaler");
+            QDir parentDir = md;
+            if (parentDir.cdUp()) {
+                searchDirs << parentDir.filePath("upscale_models");
+                searchDirs << parentDir.filePath("ESRGAN");
+                searchDirs << parentDir.filePath("Upscaler");
+            }
+        }
+        QString comfyPath = PreferencesDialog::comfyUiLaunchPath();
+        if (!comfyPath.isEmpty()) {
+            QFileInfo cfi(comfyPath);
+            QDir cDir = cfi.absoluteDir();
+            searchDirs << cDir.filePath("models/upscale_models");
+            searchDirs << cDir.filePath("models/ESRGAN");
+            searchDirs << cDir.filePath("Data/Models/Upscaler");
+            searchDirs << cDir.filePath("Data/Models/ESRGAN");
+        }
+        searchDirs << (appDir + "/models/ESRGAN");
+        searchDirs << (appDir + "/tools/upscale_models");
     }
 
-    return target;
+    QStringList candidateNames;
+    candidateNames << info.fileName;
+    if (type == ComponentType::UpscaleModelAnime6B) {
+        candidateNames << "R-ESRGAN 4x+ Anime6B.pth";
+        candidateNames << "RealESRGAN_x4plus_anime_6B.safetensors";
+        candidateNames << "R-ESRGAN 4x+ Anime6B.safetensors";
+        candidateNames << "Anime6B.pth";
+        candidateNames << "Anime6B.safetensors";
+    } else if (type == ComponentType::UpscaleModelRealEsrgan) {
+        candidateNames << "RealESRGAN_x4plus.safetensors";
+        candidateNames << "RealESRGAN_x4plus.pth";
+    }
+
+    for (const QString& dirPath : searchDirs) {
+        if (dirPath.isEmpty()) continue;
+        QDir d(dirPath);
+        if (!d.exists()) continue;
+        for (const QString& fn : candidateNames) {
+            QString fullPath = d.filePath(fn);
+            if (QFile::exists(fullPath)) {
+                return fullPath;
+            }
+        }
+    }
+
+    return info.targetDirectory + "/" + info.fileName;
 }
 
 bool AiComponentDownloader::isComponentInstalled(ComponentType type) {

@@ -569,6 +569,13 @@ static void testRemoveBackground() {
 static void testUpscaleModelDirectoryPreference() {
     std::cout << "[TEST] 12. Upscale Model Directory Preference & Downloader..." << std::endl;
 
+    QString origUpscaleDir = PreferencesDialog::upscaleModelDirectory();
+    if (origUpscaleDir.contains("Temp") || origUpscaleDir.isEmpty() || !QDir(origUpscaleDir).exists()) {
+        if (QDir("E:/ComfyUI/Data/Models/Upscaler").exists()) {
+            origUpscaleDir = "E:/ComfyUI/Data/Models/Upscaler";
+        }
+    }
+
     QTemporaryDir tempUpscaleDir;
     assert(tempUpscaleDir.isValid());
 
@@ -580,6 +587,9 @@ static void testUpscaleModelDirectoryPreference() {
 
     auto infoRealEsrgan = AiComponentDownloader::getComponentInfo(ComponentType::UpscaleModelRealEsrgan);
     assert(infoRealEsrgan.targetDirectory == tempUpscaleDir.path());
+
+    // 元の設定を確実に復元
+    PreferencesDialog::setUpscaleModelDirectory(origUpscaleDir);
 
     std::cout << "  -> PASSED!" << std::endl;
 }
