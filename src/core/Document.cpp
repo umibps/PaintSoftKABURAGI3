@@ -164,13 +164,20 @@ LayerPtr Document::addRasterLayer(const QString& name) {
     return layer;
 }
 
-LayerPtr Document::addRasterLayerWithImage(const QImage& img, const QString& name, const QPoint& offset) {
+LayerPtr Document::addRasterLayerWithImage(const QImage& img, const QString& name, const QPoint& offset, const QJsonObject& aiParams) {
     if (img.isNull()) {
-        return addRasterLayer(name);
+        auto emptyLayer = addRasterLayer(name);
+        if (emptyLayer && !aiParams.isEmpty()) {
+            emptyLayer->setAiParameters(aiParams);
+        }
+        return emptyLayer;
     }
 
     QString lName = name.isEmpty() ? QString("レイヤー %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<Layer>(lName, m_width, m_height, LayerType::Raster);
+    if (!aiParams.isEmpty()) {
+        layer->setAiParameters(aiParams);
+    }
 
     QImage converted = img.convertToFormat(QImage::Format_ARGB32);
     int imgW = converted.width();

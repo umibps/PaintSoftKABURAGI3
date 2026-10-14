@@ -126,8 +126,9 @@ public slots:
     void updateLayerMenuActions();
 
 
-    void onAiApplyAsNewLayer(const QImage& image);
-    void onAiApplyOverwriteSelection(const QImage& image);
+    void onAiApplyAsNewLayer(const QImage& image, const QJsonObject& aiParams = QJsonObject());
+    void onAiApplyOverwriteSelection(const QImage& image, const QJsonObject& aiParams = QJsonObject());
+    void loadAiParametersFromActiveLayer();
     void onTogglePreviewWindow(bool checked);
     void onToggleReferenceImageWindow(bool checked);
     void onToggleSelectionEdit(bool checked);

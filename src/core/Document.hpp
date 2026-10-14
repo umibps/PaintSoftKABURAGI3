@@ -53,7 +53,7 @@ public:
     void addExistingLayer(LayerPtr layer);
 
     LayerPtr addRasterLayer(const QString& name = QString());
-    LayerPtr addRasterLayerWithImage(const QImage& img, const QString& name = QString(), const QPoint& offset = QPoint(0, 0));
+    LayerPtr addRasterLayerWithImage(const QImage& img, const QString& name = QString(), const QPoint& offset = QPoint(0, 0), const QJsonObject& aiParams = QJsonObject());
     std::shared_ptr<VectorLayer> addVectorLayer(const QString& name = QString());
     std::shared_ptr<AdjustmentLayer> addAdjustmentLayer(AdjustmentType type, const QString& name = QString());
     std::shared_ptr<TextLayer> addTextLayer(const QString& name = QString());

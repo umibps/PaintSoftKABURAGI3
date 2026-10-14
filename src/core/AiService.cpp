@@ -357,6 +357,68 @@ QList<QImage> AiService::parseOpenAiResponse(const QByteArray& responseData, QSt
     return result;
 }
 
+QJsonObject AiService::paramsToJson(const AiGenerateParams& params) {
+    QJsonObject json;
+    json["backend"] = static_cast<int>(params.backend);
+    json["serverUrl"] = params.serverUrl;
+    json["apiKey"] = params.apiKey;
+    json["modelName"] = params.modelName;
+
+    json["mode"] = static_cast<int>(params.mode);
+    json["prompt"] = params.prompt;
+    json["negativePrompt"] = params.negativePrompt;
+
+    json["batchCount"] = params.batchCount;
+    json["steps"] = params.steps;
+    json["cfgScale"] = static_cast<double>(params.cfgScale);
+    json["denoisingStrength"] = static_cast<double>(params.denoisingStrength);
+    json["seed"] = static_cast<qint64>(params.seed);
+    json["width"] = params.width;
+    json["height"] = params.height;
+    json["sampler"] = params.sampler;
+    json["tiling"] = params.tiling;
+
+    json["enableControlNet"] = params.enableControlNet;
+    json["controlNetType"] = static_cast<int>(params.controlNetType);
+    json["controlNetWeight"] = static_cast<double>(params.controlNetWeight);
+
+    json["computeDevice"] = params.computeDevice;
+    json["upscaleMethod"] = params.upscaleMethod;
+
+    return json;
+}
+
+AiGenerateParams AiService::jsonToParams(const QJsonObject& json) {
+    AiGenerateParams params;
+    if (json.contains("backend")) params.backend = static_cast<ApiBackend>(json["backend"].toInt());
+    if (json.contains("serverUrl")) params.serverUrl = json["serverUrl"].toString();
+    if (json.contains("apiKey")) params.apiKey = json["apiKey"].toString();
+    if (json.contains("modelName")) params.modelName = json["modelName"].toString();
+
+    if (json.contains("mode")) params.mode = static_cast<AiMode>(json["mode"].toInt());
+    if (json.contains("prompt")) params.prompt = json["prompt"].toString();
+    if (json.contains("negativePrompt")) params.negativePrompt = json["negativePrompt"].toString();
+
+    if (json.contains("batchCount")) params.batchCount = json["batchCount"].toInt(1);
+    if (json.contains("steps")) params.steps = json["steps"].toInt(20);
+    if (json.contains("cfgScale")) params.cfgScale = static_cast<float>(json["cfgScale"].toDouble(7.0));
+    if (json.contains("denoisingStrength")) params.denoisingStrength = static_cast<float>(json["denoisingStrength"].toDouble(0.55));
+    if (json.contains("seed")) params.seed = json["seed"].toInteger(-1);
+    if (json.contains("width")) params.width = json["width"].toInt(512);
+    if (json.contains("height")) params.height = json["height"].toInt(512);
+    if (json.contains("sampler")) params.sampler = json["sampler"].toString("Euler a");
+    if (json.contains("tiling")) params.tiling = json["tiling"].toBool(false);
+
+    if (json.contains("enableControlNet")) params.enableControlNet = json["enableControlNet"].toBool(false);
+    if (json.contains("controlNetType")) params.controlNetType = static_cast<ControlNetType>(json["controlNetType"].toInt(0));
+    if (json.contains("controlNetWeight")) params.controlNetWeight = static_cast<float>(json["controlNetWeight"].toDouble(1.0));
+
+    if (json.contains("computeDevice")) params.computeDevice = json["computeDevice"].toString("cuda");
+    if (json.contains("upscaleMethod")) params.upscaleMethod = json["upscaleMethod"].toString("bicubic");
+
+    return params;
+}
+
 void AiService::fetchModels(ApiBackend backend, const QString& serverUrl, const QString& apiKey) {
     Q_UNUSED(apiKey);
     if (backend == ApiBackend::CloudOpenAI) {

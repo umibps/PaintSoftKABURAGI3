@@ -114,6 +114,10 @@ public:
     static QList<QImage> parseWebUiResponse(const QByteArray& responseData, QString* outError = nullptr);
     static QList<QImage> parseOpenAiResponse(const QByteArray& responseData, QString* outError = nullptr);
 
+    // パラメータと JSON の相互変換（レイヤー保持・設定復元用）
+    static QJsonObject paramsToJson(const AiGenerateParams& params);
+    static AiGenerateParams jsonToParams(const QJsonObject& json);
+
 signals:
     void modelsFetched(const QStringList& models);
     void modelsFetchFailed(const QString& errorMessage);

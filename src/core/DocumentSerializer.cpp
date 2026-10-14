@@ -11,6 +11,8 @@
 #include <QByteArray>
 #include <QBuffer>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace Kaburagi {
 
@@ -178,6 +180,10 @@ bool DocumentSerializer::saveToFile(const Document* document, const QString& fil
         stream << layer->isAlphaLocked();
         stream << layer->isLocked();
         stream << parentGroupIdx;
+
+        // Version 5: AI生成パラメータ (JSON)
+        QByteArray aiJsonData = layer->hasAiParameters() ? QJsonDocument(layer->aiParameters()).toJson(QJsonDocument::Compact) : QByteArray();
+        stream << aiJsonData;
 
         // レイヤー種別固有データ
         switch (layer->type()) {
@@ -413,6 +419,11 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
         stream >> typeInt >> name >> visible >> opacity >> blendModeInt >> isClippingMask >> isAlphaLocked >> isLocked >> parentGroupIdx;
         parentGroupIndices.push_back(parentGroupIdx);
 
+        QByteArray aiJsonData;
+        if (version >= 5) {
+            stream >> aiJsonData;
+        }
+
         LayerType lType = static_cast<LayerType>(typeInt);
         LayerPtr newLayer;
 
@@ -579,6 +590,13 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
             newLayer->setClippingMask(isClippingMask);
             newLayer->setAlphaLocked(isAlphaLocked);
             newLayer->setLocked(isLocked);
+
+            if (!aiJsonData.isEmpty()) {
+                QJsonDocument aDoc = QJsonDocument::fromJson(aiJsonData);
+                if (aDoc.isObject()) {
+                    newLayer->setAiParameters(aDoc.object());
+                }
+            }
 
             doc->addExistingLayer(newLayer);
         }

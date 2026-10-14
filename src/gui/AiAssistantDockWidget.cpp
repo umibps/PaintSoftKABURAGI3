@@ -28,6 +28,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QRandomGenerator>
+#include <QSettings>
 
 namespace Kaburagi {
 
@@ -45,11 +46,15 @@ AiAssistantDockWidget::AiAssistantDockWidget(QWidget* parent)
     connect(m_aiService, &AiService::generationFinished, this, &AiAssistantDockWidget::onGenerationFinished);
     connect(m_aiService, &AiService::generationFailed, this, &AiAssistantDockWidget::onGenerationFailed);
 
+    loadSettings();
+
     onBackendChanged();
-    onModeChanged(0);
+    onModeChanged(m_comboMode ? m_comboMode->currentIndex() : 0);
 }
 
-AiAssistantDockWidget::~AiAssistantDockWidget() = default;
+AiAssistantDockWidget::~AiAssistantDockWidget() {
+    saveSettings();
+}
 
 void AiAssistantDockWidget::setDocument(Document* doc) {
     m_document = doc;
@@ -73,6 +78,13 @@ void AiAssistantDockWidget::setupUi() {
     auto mainLayout = new QVBoxLayout(mainContainer);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(8);
+
+    // レイヤーパラメータ読み込みボタン
+    m_btnLoadFromLayer = new QPushButton(tr("選択中レイヤーの生成パラメータを読込"), mainContainer);
+    m_btnLoadFromLayer->setToolTip(tr("選択中のレイヤーに記憶されているAI生成パラメータ（プロンプト・モデル・シード等）を呼び出して入力欄に復元します"));
+    m_btnLoadFromLayer->setStyleSheet("QPushButton { font-weight: bold; padding: 6px; background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px; } QPushButton:hover { background-color: #bbdefb; }");
+    connect(m_btnLoadFromLayer, &QPushButton::clicked, this, &AiAssistantDockWidget::onLoadFromActiveLayerClicked);
+    mainLayout->addWidget(m_btnLoadFromLayer);
 
     // 1. 接続設定グループ
     auto grpConn = new QGroupBox(tr("接続設定"), mainContainer);
@@ -878,7 +890,16 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.steps = m_spinSteps->value();
     params.cfgScale = static_cast<float>(m_spinCfg->value());
     params.denoisingStrength = static_cast<float>(m_spinDenoising->value());
-    params.seed = m_spinSeed->value();
+
+    int64_t inputSeed = m_spinSeed->value();
+    if (inputSeed < 0) {
+        // -1 の場合は実際に使用する乱数シードを生成して決定し、UIの表示も変更
+        int64_t actualSeed = static_cast<int64_t>(QRandomGenerator::global()->bounded(1ll, 2147483647ll));
+        params.seed = actualSeed;
+        m_spinSeed->setValue(static_cast<int>(actualSeed));
+    } else {
+        params.seed = inputSeed;
+    }
 
     // 指定された解像度を使用 (64の倍数にアライン)
     int w = m_spinWidth ? m_spinWidth->value() : 512;
@@ -897,6 +918,13 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.controlNetType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
     params.controlNetWeight = static_cast<float>(m_spinControlNetWeight->value());
     params.controlNetImage = getControlNetImage();
+
+    // 生成パラメータを記憶（レイヤー適用用）
+    m_lastGeneratedParams = params;
+    m_lastGeneratedJson = AiService::paramsToJson(params);
+
+    // 前回の設定を記憶（※プロンプトとネガティブプロンプトは除く）
+    saveSettings();
 
     m_btnGenerate->setEnabled(false);
     m_btnCancel->setEnabled(true);
@@ -1023,7 +1051,7 @@ void AiAssistantDockWidget::onApplyNewLayerClicked() {
                 img = AiService::upscaleImage(img, targetSize, method);
             }
         }
-        emit applyAsNewLayer(img);
+        emit applyAsNewLayer(img, m_lastGeneratedJson);
     }
 }
 
@@ -1043,7 +1071,7 @@ void AiAssistantDockWidget::onApplyOverwriteClicked() {
                 img = AiService::upscaleImage(img, targetSize, method);
             }
         }
-        emit applyOverwriteSelection(img);
+        emit applyOverwriteSelection(img, m_lastGeneratedJson);
     }
 }
 
@@ -1072,6 +1100,188 @@ void AiAssistantDockWidget::onPromptAssistClicked() {
         if (!newNeg.isEmpty()) {
             m_editNegativePrompt->setPlainText(newNeg);
         }
+    }
+}
+
+void AiAssistantDockWidget::saveSettings() {
+    QSettings settings("KABURAGI", "PaintSoft KABURAGI");
+    settings.beginGroup("AiAssistant");
+
+    int backendInt = 0;
+    if (m_radioComfyUi && m_radioComfyUi->isChecked()) backendInt = 1;
+    else if (m_radioWebUi && m_radioWebUi->isChecked()) backendInt = 0;
+    else if (m_radioEmbedded && m_radioEmbedded->isChecked()) backendInt = 2;
+    else if (m_radioCloud && m_radioCloud->isChecked()) backendInt = 3;
+    settings.setValue("backend", backendInt);
+
+    if (m_editServerUrl) settings.setValue("serverUrl", m_editServerUrl->text());
+    if (m_editApiKey) settings.setValue("apiKey", m_editApiKey->text());
+    if (m_comboModel) settings.setValue("modelName", m_comboModel->currentText());
+    if (m_comboDevice) settings.setValue("device", m_comboDevice->currentData().toString());
+    if (m_comboMode) settings.setValue("mode", m_comboMode->currentData().toInt());
+
+    if (m_spinBatchCount) settings.setValue("batchCount", m_spinBatchCount->value());
+    if (m_spinSteps) settings.setValue("steps", m_spinSteps->value());
+    if (m_spinCfg) settings.setValue("cfgScale", m_spinCfg->value());
+    if (m_spinDenoising) settings.setValue("denoisingStrength", m_spinDenoising->value());
+    if (m_spinSeed) settings.setValue("seed", m_spinSeed->value());
+
+    if (m_comboResolution) settings.setValue("resolutionIndex", m_comboResolution->currentIndex());
+    if (m_spinWidth) settings.setValue("width", m_spinWidth->value());
+    if (m_spinHeight) settings.setValue("height", m_spinHeight->value());
+    if (m_comboUpscaleMethod) settings.setValue("upscaleMethod", m_comboUpscaleMethod->currentText());
+
+    if (m_chkControlNet) settings.setValue("enableControlNet", m_chkControlNet->isChecked());
+    if (m_comboControlNetType) settings.setValue("controlNetType", m_comboControlNetType->currentData().toInt());
+    if (m_spinControlNetWeight) settings.setValue("controlNetWeight", m_spinControlNetWeight->value());
+    if (m_comboControlNetSource) settings.setValue("controlNetSource", m_comboControlNetSource->currentIndex());
+
+    // ※ 注意: プロンプトとネガティブプロンプトはユーザーの指定により記憶から除外
+    settings.endGroup();
+}
+
+void AiAssistantDockWidget::loadSettings() {
+    QSettings settings("KABURAGI", "PaintSoft KABURAGI");
+    settings.beginGroup("AiAssistant");
+
+    if (settings.contains("backend")) {
+        int backendInt = settings.value("backend", 1).toInt();
+        if (backendInt == 0 && m_radioWebUi) m_radioWebUi->setChecked(true);
+        else if (backendInt == 1 && m_radioComfyUi) m_radioComfyUi->setChecked(true);
+        else if (backendInt == 2 && m_radioEmbedded) m_radioEmbedded->setChecked(true);
+        else if (backendInt == 3 && m_radioCloud) m_radioCloud->setChecked(true);
+    }
+
+    if (m_editServerUrl && settings.contains("serverUrl")) {
+        m_editServerUrl->setText(settings.value("serverUrl").toString());
+    }
+    if (m_editApiKey && settings.contains("apiKey")) {
+        m_editApiKey->setText(settings.value("apiKey").toString());
+    }
+    if (m_comboModel && settings.contains("modelName")) {
+        QString model = settings.value("modelName").toString();
+        int idx = m_comboModel->findText(model);
+        if (idx >= 0) {
+            m_comboModel->setCurrentIndex(idx);
+        } else if (!model.isEmpty()) {
+            m_comboModel->setEditText(model);
+        }
+    }
+    if (m_comboDevice && settings.contains("device")) {
+        QString dev = settings.value("device").toString();
+        int idx = m_comboDevice->findData(dev);
+        if (idx >= 0) m_comboDevice->setCurrentIndex(idx);
+    }
+    if (m_comboMode && settings.contains("mode")) {
+        int modeVal = settings.value("mode").toInt();
+        int idx = m_comboMode->findData(modeVal);
+        if (idx >= 0) m_comboMode->setCurrentIndex(idx);
+    }
+
+    if (m_spinBatchCount && settings.contains("batchCount")) m_spinBatchCount->setValue(settings.value("batchCount").toInt());
+    if (m_spinSteps && settings.contains("steps")) m_spinSteps->setValue(settings.value("steps").toInt());
+    if (m_spinCfg && settings.contains("cfgScale")) m_spinCfg->setValue(settings.value("cfgScale").toDouble());
+    if (m_spinDenoising && settings.contains("denoisingStrength")) m_spinDenoising->setValue(settings.value("denoisingStrength").toDouble());
+    if (m_spinSeed && settings.contains("seed")) m_spinSeed->setValue(settings.value("seed").toInt());
+
+    if (m_comboResolution && settings.contains("resolutionIndex")) {
+        m_comboResolution->setCurrentIndex(settings.value("resolutionIndex").toInt());
+    }
+    if (m_spinWidth && settings.contains("width")) m_spinWidth->setValue(settings.value("width").toInt());
+    if (m_spinHeight && settings.contains("height")) m_spinHeight->setValue(settings.value("height").toInt());
+    if (m_comboUpscaleMethod && settings.contains("upscaleMethod")) {
+        QString up = settings.value("upscaleMethod").toString();
+        int idx = m_comboUpscaleMethod->findText(up);
+        if (idx >= 0) m_comboUpscaleMethod->setCurrentIndex(idx);
+    }
+
+    if (m_chkControlNet && settings.contains("enableControlNet")) {
+        m_chkControlNet->setChecked(settings.value("enableControlNet").toBool());
+    }
+    if (m_comboControlNetType && settings.contains("controlNetType")) {
+        int cnType = settings.value("controlNetType").toInt();
+        int idx = m_comboControlNetType->findData(cnType);
+        if (idx >= 0) m_comboControlNetType->setCurrentIndex(idx);
+    }
+    if (m_spinControlNetWeight && settings.contains("controlNetWeight")) {
+        m_spinControlNetWeight->setValue(settings.value("controlNetWeight").toDouble());
+    }
+    if (m_comboControlNetSource && settings.contains("controlNetSource")) {
+        m_comboControlNetSource->setCurrentIndex(settings.value("controlNetSource").toInt());
+    }
+
+    settings.endGroup();
+}
+
+void AiAssistantDockWidget::loadParametersFromLayer(const std::shared_ptr<Layer>& layer) {
+    if (!layer || !layer->hasAiParameters()) return;
+
+    AiGenerateParams params = AiService::jsonToParams(layer->aiParameters());
+
+    // バックエンド
+    if (params.backend == ApiBackend::LocalWebUI && m_radioWebUi) m_radioWebUi->setChecked(true);
+    else if (params.backend == ApiBackend::LocalComfyUI && m_radioComfyUi) m_radioComfyUi->setChecked(true);
+    else if (params.backend == ApiBackend::EmbeddedEngine && m_radioEmbedded) m_radioEmbedded->setChecked(true);
+    else if (params.backend == ApiBackend::CloudOpenAI && m_radioCloud) m_radioCloud->setChecked(true);
+
+    if (m_editServerUrl && !params.serverUrl.isEmpty()) m_editServerUrl->setText(params.serverUrl);
+    if (m_editApiKey && !params.apiKey.isEmpty()) m_editApiKey->setText(params.apiKey);
+    if (m_comboModel && !params.modelName.isEmpty()) {
+        int idx = m_comboModel->findText(params.modelName);
+        if (idx >= 0) m_comboModel->setCurrentIndex(idx);
+        else m_comboModel->setEditText(params.modelName);
+    }
+
+    // 制作モード
+    if (m_comboMode) {
+        int modeIdx = m_comboMode->findData(static_cast<int>(params.mode));
+        if (modeIdx >= 0) m_comboMode->setCurrentIndex(modeIdx);
+    }
+
+    // プロンプト・ネガティブプロンプト
+    if (m_editPrompt) m_editPrompt->setPlainText(params.prompt);
+    if (m_editNegativePrompt) m_editNegativePrompt->setPlainText(params.negativePrompt);
+
+    // 生成パラメータ
+    if (m_spinBatchCount) m_spinBatchCount->setValue(std::clamp(params.batchCount, 1, 8));
+    if (m_spinSteps) m_spinSteps->setValue(std::clamp(params.steps, 1, 150));
+    if (m_spinCfg) m_spinCfg->setValue(params.cfgScale);
+    if (m_spinDenoising) m_spinDenoising->setValue(params.denoisingStrength);
+    if (m_spinSeed) m_spinSeed->setValue(static_cast<int>(params.seed));
+
+    // 解像度
+    if (m_spinWidth) m_spinWidth->setValue(params.width);
+    if (m_spinHeight) m_spinHeight->setValue(params.height);
+
+    // ControlNet
+    if (m_chkControlNet) m_chkControlNet->setChecked(params.enableControlNet);
+    if (m_comboControlNetType) {
+        int cnIdx = m_comboControlNetType->findData(static_cast<int>(params.controlNetType));
+        if (cnIdx >= 0) m_comboControlNetType->setCurrentIndex(cnIdx);
+    }
+    if (m_spinControlNetWeight) m_spinControlNetWeight->setValue(params.controlNetWeight);
+
+    // デバイス & アップスケール
+    if (m_comboDevice && !params.computeDevice.isEmpty()) {
+        int devIdx = m_comboDevice->findData(params.computeDevice);
+        if (devIdx >= 0) m_comboDevice->setCurrentIndex(devIdx);
+    }
+    if (m_comboUpscaleMethod && !params.upscaleMethod.isEmpty()) {
+        int upIdx = m_comboUpscaleMethod->findText(params.upscaleMethod);
+        if (upIdx >= 0) m_comboUpscaleMethod->setCurrentIndex(upIdx);
+    }
+}
+
+void AiAssistantDockWidget::onLoadFromActiveLayerClicked() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    if (!activeL || !activeL->hasAiParameters()) {
+        QMessageBox::information(this, tr("AI Parameters"), tr("選択中のレイヤーにはAI生成パラメータが保存されていません。"));
+        return;
+    }
+    loadParametersFromLayer(activeL);
+    if (m_lblStatus) {
+        m_lblStatus->setText(tr("レイヤー「%1」から生成パラメータを読み込みました。").arg(activeL->name()));
     }
 }
 

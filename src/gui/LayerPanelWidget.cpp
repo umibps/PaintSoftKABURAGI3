@@ -950,6 +950,14 @@ QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {
     menu->addAction("名前の変更", [this, item]() {
         m_layerListWidget->editItem(item);
     });
+
+    if (layer->hasAiParameters()) {
+        menu->addSeparator();
+        menu->addAction(tr("AI生成パラメータを呼び出し"), this, [this, layer]() {
+            emit loadAiParametersRequested(layer);
+        });
+    }
+
     menu->addSeparator();
 
     if (layer->type() == LayerType::Group) {

@@ -22,6 +22,7 @@ namespace Kaburagi {
 
 class Document;
 class CanvasWidget;
+class Layer;
 
 /**
  * @brief AI画像生成アシスタント用ドックウィジェット
@@ -42,13 +43,17 @@ public:
     QStringList scanLocalControlNetModels() const;
     QStringList scanUpscaleModels() const;
     void refreshLocalModels();
+    void saveSettings();
+    void loadSettings();
+    void loadParametersFromLayer(const std::shared_ptr<Layer>& layer);
 
 signals:
-    void applyAsNewLayer(const QImage& image);
-    void applyOverwriteSelection(const QImage& image);
+    void applyAsNewLayer(const QImage& image, const QJsonObject& aiParams);
+    void applyOverwriteSelection(const QImage& image, const QJsonObject& aiParams);
 
 public slots:
     void onFetchModelsClicked();
+    void onLoadFromActiveLayerClicked();
 
 private slots:
     void onBackendChanged();
@@ -131,6 +136,10 @@ private:
     QListWidget* m_listThumbnails = nullptr;
     QPushButton* m_btnApplyNewLayer = nullptr;
     QPushButton* m_btnApplyOverwrite = nullptr;
+    QPushButton* m_btnLoadFromLayer = nullptr;
+
+    AiGenerateParams m_lastGeneratedParams;
+    QJsonObject m_lastGeneratedJson;
 
     QList<QImage> m_currentResults;
     int m_selectedIndex = -1;

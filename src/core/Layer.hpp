@@ -4,6 +4,7 @@
 #include "BlendModes.hpp"
 #include <QString>
 #include <QImage>
+#include <QJsonObject>
 #include <memory>
 
 namespace Kaburagi {
@@ -49,6 +50,10 @@ public:
     bool isLocked() const { return m_isLocked; }
     void setLocked(bool lock) { m_isLocked = lock; }
 
+    bool hasAiParameters() const { return !m_aiParameters.isEmpty(); }
+    const QJsonObject& aiParameters() const { return m_aiParameters; }
+    void setAiParameters(const QJsonObject& params) { m_aiParameters = params; }
+
     TileManager& tileManager() { return m_tileManager; }
     const TileManager& tileManager() const { return m_tileManager; }
 
@@ -81,6 +86,7 @@ protected:
     bool m_isAlphaLocked = false;
     bool m_isPinned = false;
     bool m_isLocked = false;
+    QJsonObject m_aiParameters;
 
     std::weak_ptr<GroupLayer> m_parentGroup;
 

@@ -730,6 +730,14 @@ void MainWindow::setupLayout() {
 
     m_layerPanel = new LayerPanelWidget(this);
     m_layerPanel->setDocument(m_document);
+    connect(m_layerPanel, &LayerPanelWidget::loadAiParametersRequested, this, [this](const std::shared_ptr<Layer>& layer) {
+        if (m_aiAssistantDock && layer) {
+            m_aiAssistantDock->show();
+            m_aiAssistantDock->raise();
+            m_aiAssistantDock->loadParametersFromLayer(layer);
+            statusBar()->showMessage(tr("Loaded AI parameters from layer: %1").arg(layer->name()), 4000);
+        }
+    });
     m_navSplitter->addWidget(m_layerPanel);
 
     m_navSplitter->setStretchFactor(0, 0); // ナビゲーター
@@ -3897,7 +3905,7 @@ void MainWindow::onFillLayer() {
     }
 }
 
-void MainWindow::onAiApplyAsNewLayer(const QImage& image) {
+void MainWindow::onAiApplyAsNewLayer(const QImage& image, const QJsonObject& aiParams) {
     if (!m_document || image.isNull()) return;
 
     QImage layerImg = image;
@@ -3913,19 +3921,23 @@ void MainWindow::onAiApplyAsNewLayer(const QImage& image) {
         layerImg = image.scaled(m_document->width(), m_document->height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     }
 
-    auto newLayer = m_document->addRasterLayerWithImage(layerImg, tr("AI Generated Layer"), offset);
+    auto newLayer = m_document->addRasterLayerWithImage(layerImg, tr("AI Generated Layer"), offset, aiParams);
     if (newLayer) {
         statusBar()->showMessage(tr("Inserted AI generated image as a new layer."), 4000);
     }
 }
 
-void MainWindow::onAiApplyOverwriteSelection(const QImage& image) {
+void MainWindow::onAiApplyOverwriteSelection(const QImage& image, const QJsonObject& aiParams) {
     if (!m_document || image.isNull()) return;
 
     auto activeLayer = m_document->activeLayer();
     if (!activeLayer || activeLayer->type() != LayerType::Raster) {
         QMessageBox::warning(this, tr("Apply AI Image"), tr("Overwriting selection is only available on raster layers."));
         return;
+    }
+
+    if (!aiParams.isEmpty()) {
+        activeLayer->setAiParameters(aiParams);
     }
 
     TileManager preTiles = activeLayer->tileManager().clone();
@@ -3978,7 +3990,22 @@ void MainWindow::onAiApplyOverwriteSelection(const QImage& image) {
     }
 
     m_document->composite(targetRect);
-    statusBar()->showMessage(tr("Overwrote AI generated image into selection."), 4000);
+}
+
+void MainWindow::loadAiParametersFromActiveLayer() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    if (!activeL || !activeL->hasAiParameters()) {
+        QMessageBox::information(this, tr("AI Parameters"), tr("The selected layer does not contain AI generation parameters."));
+        return;
+    }
+
+    if (m_aiAssistantDock) {
+        m_aiAssistantDock->show();
+        m_aiAssistantDock->raise();
+        m_aiAssistantDock->loadParametersFromLayer(activeL);
+        statusBar()->showMessage(tr("Loaded AI parameters from layer: %1").arg(activeL->name()), 4000);
+    }
 }
 
 void MainWindow::onFilterFocusBlur() {
