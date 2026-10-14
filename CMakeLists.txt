@@ -131,6 +131,8 @@ set(GUI_SOURCES
     src/gui/ColorSelectSettingsWidget.cpp
     src/gui/BucketSettingsWidget.hpp
     src/gui/BucketSettingsWidget.cpp
+    src/gui/PatternFillSettingsWidget.hpp
+    src/gui/PatternFillSettingsWidget.cpp
     src/gui/AutoSelectSettingsWidget.hpp
     src/gui/AutoSelectSettingsWidget.cpp
     src/gui/BlurSettingsWidget.hpp
@@ -436,7 +438,10 @@ if (WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/translations"
                 "$<TARGET_FILE_DIR:PaintSoftKABURAGI>/translations"
-            COMMENT "Copying Qt6OpenGL.dll, Qt6WebSockets.dll and translations to output directory..."
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/pattern"
+                "$<TARGET_FILE_DIR:PaintSoftKABURAGI>/pattern"
+            COMMENT "Copying Qt6OpenGL.dll, Qt6WebSockets.dll, translations and pattern to output directory..."
         )
     endif()
 endif()

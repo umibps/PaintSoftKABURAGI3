@@ -830,6 +830,7 @@ void MainWindow::setupLayout() {
     m_lassoSelectSettings = new LassoSelectSettingsWidget(this);
     m_colorSelectSettings = new ColorSelectSettingsWidget(this);
     m_bucketSettings = new BucketSettingsWidget(this);
+    m_patternFillSettings = new PatternFillSettingsWidget(this);
     m_autoSelectSettings = new AutoSelectSettingsWidget(this);
     m_blurSettings = new BlurSettingsWidget(this);
     m_smudgeSettings = new SmudgeSettingsWidget(this);
@@ -873,6 +874,7 @@ void MainWindow::setupLayout() {
     m_toolSettingsStack->addWidget(m_lassoSelectSettings);            // 投げ縄選択設定
     m_toolSettingsStack->addWidget(m_colorSelectSettings);            // 色域選択設定
     m_toolSettingsStack->addWidget(m_bucketSettings);                 // index 2: バケツ塗りつぶし設定
+    m_toolSettingsStack->addWidget(m_patternFillSettings);            // パターン塗りつぶし設定
     m_toolSettingsStack->addWidget(m_autoSelectSettings);             // index 3: 自動選択設定
     m_toolSettingsStack->addWidget(m_blurSettings);                   // index 4: ぼかしツール設定
     m_toolSettingsStack->addWidget(m_smudgeSettings);                 // index 5: 指先ツール設定
@@ -1149,6 +1151,30 @@ void MainWindow::setupLayout() {
     connect(m_bucketSettings, &BucketSettingsWidget::expandPixelsChanged, this, [this](int) { saveSettings(); });
     connect(m_bucketSettings, &BucketSettingsWidget::narrowAreaFillChanged, this, [this](bool) { saveSettings(); });
     connect(m_bucketSettings, &BucketSettingsWidget::toleranceChanged, this, [this](int) { saveSettings(); });
+
+    // パターン塗りつぶし設定とキャンバスの連動
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::blendModeChanged, m_canvasWidget, &CanvasWidget::setPatternFillBlendMode);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::densityChanged, m_canvasWidget, &CanvasWidget::setPatternFillDensity);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternScaleChanged, m_canvasWidget, &CanvasWidget::setPatternFillScale);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternAngleChanged, m_canvasWidget, &CanvasWidget::setPatternFillAngle);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternImageChanged, this, [this](const QImage& img, const QString&) {
+        if (m_canvasWidget) m_canvasWidget->setPatternFillImage(img);
+    });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::referenceModeChanged, m_canvasWidget, &CanvasWidget::setPatternFillReference);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::expandPixelsChanged, m_canvasWidget, &CanvasWidget::setPatternFillExpandPixels);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::narrowAreaFillChanged, m_canvasWidget, &CanvasWidget::setPatternFillNarrowAreaFill);
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::toleranceChanged, m_canvasWidget, &CanvasWidget::setPatternFillTolerance);
+
+    // パターン塗りつぶし設定変更時の設定永続化
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::blendModeChanged, this, [this](BlendMode) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::densityChanged, this, [this](float) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternScaleChanged, this, [this](float) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternAngleChanged, this, [this](float) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::patternImageChanged, this, [this](const QImage&, const QString&) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::referenceModeChanged, this, [this](BucketReference) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::expandPixelsChanged, this, [this](int) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::narrowAreaFillChanged, this, [this](bool) { saveSettings(); });
+    connect(m_patternFillSettings, &PatternFillSettingsWidget::toleranceChanged, this, [this](int) { saveSettings(); });
 
     // 自動選択設定とキャンバスの連動
     connect(m_autoSelectSettings, &AutoSelectSettingsWidget::modeChanged, this, [this](SelectionMode mode) {
@@ -1868,6 +1894,20 @@ void MainWindow::saveSettings() {
     }
     settings.endGroup();
 
+    settings.beginGroup("PatternFillTool");
+    if (m_patternFillSettings) {
+        settings.setValue("blendMode", static_cast<int>(m_patternFillSettings->blendMode()));
+        settings.setValue("density", m_patternFillSettings->density());
+        settings.setValue("scale", m_patternFillSettings->patternScale());
+        settings.setValue("angle", m_patternFillSettings->patternAngle());
+        settings.setValue("selectedPatternName", m_patternFillSettings->currentPatternName());
+        settings.setValue("reference", static_cast<int>(m_patternFillSettings->referenceMode()));
+        settings.setValue("expandPixels", m_patternFillSettings->expandPixels());
+        settings.setValue("narrowAreaFill", m_patternFillSettings->isNarrowAreaFill());
+        settings.setValue("tolerance", m_patternFillSettings->tolerance());
+    }
+    settings.endGroup();
+
     settings.beginGroup("GradientTool");
     if (m_gradientSettings) {
         settings.setValue("shape", static_cast<int>(m_gradientSettings->shape()));
@@ -2390,6 +2430,48 @@ void MainWindow::loadSettings() {
             m_canvasWidget->setBucketExpandPixels(m_bucketSettings->expandPixels());
             m_canvasWidget->setBucketNarrowAreaFill(m_bucketSettings->isNarrowAreaFill());
             m_canvasWidget->setBucketTolerance(m_bucketSettings->tolerance());
+        }
+    }
+    settings.endGroup();
+
+    settings.beginGroup("PatternFillTool");
+    if (m_patternFillSettings) {
+        BlendMode bmode = static_cast<BlendMode>(settings.value("blendMode", static_cast<int>(BlendMode::Normal)).toInt());
+        m_patternFillSettings->setBlendMode(bmode);
+        if (settings.contains("density")) {
+            m_patternFillSettings->setDensity(settings.value("density").toFloat());
+        }
+        if (settings.contains("scale")) {
+            m_patternFillSettings->setPatternScale(settings.value("scale").toFloat());
+        }
+        if (settings.contains("angle")) {
+            m_patternFillSettings->setPatternAngle(settings.value("angle").toFloat());
+        }
+        if (settings.contains("selectedPatternName")) {
+            m_patternFillSettings->setSelectedPatternByName(settings.value("selectedPatternName").toString());
+        }
+        if (settings.contains("reference")) {
+            m_patternFillSettings->setReferenceMode(static_cast<BucketReference>(settings.value("reference").toInt()));
+        }
+        if (settings.contains("expandPixels")) {
+            m_patternFillSettings->setExpandPixels(settings.value("expandPixels").toInt());
+        }
+        if (settings.contains("narrowAreaFill")) {
+            m_patternFillSettings->setNarrowAreaFill(settings.value("narrowAreaFill").toBool());
+        }
+        if (settings.contains("tolerance")) {
+            m_patternFillSettings->setTolerance(settings.value("tolerance").toInt());
+        }
+        if (m_canvasWidget) {
+            m_canvasWidget->setPatternFillBlendMode(m_patternFillSettings->blendMode());
+            m_canvasWidget->setPatternFillDensity(m_patternFillSettings->density());
+            m_canvasWidget->setPatternFillScale(m_patternFillSettings->patternScale());
+            m_canvasWidget->setPatternFillAngle(m_patternFillSettings->patternAngle());
+            m_canvasWidget->setPatternFillImage(m_patternFillSettings->currentPatternImage());
+            m_canvasWidget->setPatternFillReference(m_patternFillSettings->referenceMode());
+            m_canvasWidget->setPatternFillExpandPixels(m_patternFillSettings->expandPixels());
+            m_canvasWidget->setPatternFillNarrowAreaFill(m_patternFillSettings->isNarrowAreaFill());
+            m_canvasWidget->setPatternFillTolerance(m_patternFillSettings->tolerance());
         }
     }
     settings.endGroup();
@@ -3593,6 +3675,8 @@ void MainWindow::onToolChanged(ToolType tool) {
             m_toolSettingsStack->setCurrentWidget(m_autoSelectSettings);
         } else if (tool == ToolType::Bucket) {
             m_toolSettingsStack->setCurrentWidget(m_bucketSettings);
+        } else if (tool == ToolType::PatternFill) {
+            m_toolSettingsStack->setCurrentWidget(m_patternFillSettings);
         } else if (tool == ToolType::Blur) {
             m_toolSettingsStack->setCurrentWidget(m_blurSettings);
         } else if (tool == ToolType::Blend) {
@@ -3661,6 +3745,16 @@ void MainWindow::onToolChanged(ToolType tool) {
     if (tool == ToolType::Bucket && m_bucketSettings && m_canvasWidget) {
         m_canvasWidget->setBucketBlendMode(m_bucketSettings->blendMode());
         m_canvasWidget->setBucketDensity(m_bucketSettings->density());
+    } else if (tool == ToolType::PatternFill && m_patternFillSettings && m_canvasWidget) {
+        m_canvasWidget->setPatternFillBlendMode(m_patternFillSettings->blendMode());
+        m_canvasWidget->setPatternFillDensity(m_patternFillSettings->density());
+        m_canvasWidget->setPatternFillScale(m_patternFillSettings->patternScale());
+        m_canvasWidget->setPatternFillAngle(m_patternFillSettings->patternAngle());
+        m_canvasWidget->setPatternFillImage(m_patternFillSettings->currentPatternImage());
+        m_canvasWidget->setPatternFillReference(m_patternFillSettings->referenceMode());
+        m_canvasWidget->setPatternFillExpandPixels(m_patternFillSettings->expandPixels());
+        m_canvasWidget->setPatternFillNarrowAreaFill(m_patternFillSettings->isNarrowAreaFill());
+        m_canvasWidget->setPatternFillTolerance(m_patternFillSettings->tolerance());
     } else if (tool == ToolType::Watercolor && m_watercolorSettings && m_canvasWidget) {
         m_canvasWidget->setWatercolorBlendMode(m_watercolorSettings->blendMode());
         m_canvasWidget->setWatercolorScatter(m_watercolorSettings->isScatter());

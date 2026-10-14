@@ -22,6 +22,7 @@
 #include "LassoSelectSettingsWidget.hpp"
 #include "ColorSelectSettingsWidget.hpp"
 #include "BucketSettingsWidget.hpp"
+#include "PatternFillSettingsWidget.hpp"
 #include "AutoSelectSettingsWidget.hpp"
 #include "BlurSettingsWidget.hpp"
 #include "SmudgeSettingsWidget.hpp"
@@ -174,6 +175,7 @@ private:
     LassoSelectSettingsWidget* m_lassoSelectSettings = nullptr;
     ColorSelectSettingsWidget* m_colorSelectSettings = nullptr;
     BucketSettingsWidget* m_bucketSettings = nullptr;
+    PatternFillSettingsWidget* m_patternFillSettings = nullptr;
     AutoSelectSettingsWidget* m_autoSelectSettings = nullptr;
     BlurSettingsWidget* m_blurSettings = nullptr;
     SmudgeSettingsWidget* m_smudgeSettings = nullptr;

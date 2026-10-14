@@ -7,6 +7,7 @@
 #include "Layer.hpp"
 #include "PreferencesDialog.hpp"
 #include "ReferenceImageWindow.hpp"
+#include "PatternFillSettingsWidget.hpp"
 
 using namespace Kaburagi;
 
@@ -166,6 +167,67 @@ int main(int argc, char* argv[]) {
                   << filledColor100.alpha() << ")" << std::endl;
         assert(filledColor100.alpha() == 255);
 
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 5. Pattern Fill Tool
+    {
+        std::cout << "[TEST] 5. Checking Pattern Fill Tool..." << std::endl;
+
+        // 5a. PatternFillSettingsWidget
+        PatternFillSettingsWidget patWidget;
+        patWidget.setDensity(0.8f);
+        assert(std::abs(patWidget.density() - 0.8f) < 0.01f);
+        patWidget.setPatternScale(2.0f);
+        assert(std::abs(patWidget.patternScale() - 2.0f) < 0.01f);
+        patWidget.setPatternAngle(45.0f);
+        assert(std::abs(patWidget.patternAngle() - 45.0f) < 0.01f);
+
+        // 5b. CanvasWidget fillPattern with a 2x2 custom pattern
+        // Pattern: [Red, Blue]
+        //          [Blue, Red]
+        QImage pattern(2, 2, QImage::Format_ARGB32);
+        pattern.setPixelColor(0, 0, QColor(255, 0, 0, 255));
+        pattern.setPixelColor(1, 0, QColor(0, 0, 255, 255));
+        pattern.setPixelColor(0, 1, QColor(0, 0, 255, 255));
+        pattern.setPixelColor(1, 1, QColor(255, 0, 0, 255));
+
+        Document doc(10, 10);
+        auto layer = doc.addRasterLayer("PatLayer");
+        doc.composite();
+
+        CanvasWidget canvas;
+        canvas.setDocument(&doc);
+        canvas.setCurrentTool(ToolType::PatternFill);
+        canvas.setPatternFillImage(pattern);
+        canvas.setPatternFillScale(1.0f);
+        canvas.setPatternFillAngle(0.0f);
+        canvas.setPatternFillDensity(1.0f);
+        canvas.setPatternFillReference(BucketReference::ActiveLayer);
+        canvas.setPatternFillTolerance(10);
+        canvas.setPatternFillExpandPixels(0);
+
+        canvas.fillPattern(QPointF(5, 5));
+
+        // Check tiled pixels
+        QColor c00 = doc.samplePixel(0, 0);
+        QColor c10 = doc.samplePixel(1, 0);
+        QColor c01 = doc.samplePixel(0, 1);
+        QColor c11 = doc.samplePixel(1, 1);
+
+        assert(c00 == QColor(255, 0, 0, 255));
+        assert(c10 == QColor(0, 0, 255, 255));
+        assert(c01 == QColor(0, 0, 255, 255));
+        assert(c11 == QColor(255, 0, 0, 255));
+
+        // Check repeat at (4, 4) -> should be Red (4 % 2 = 0)
+        QColor c44 = doc.samplePixel(4, 4);
+        assert(c44 == QColor(255, 0, 0, 255));
+        // (5, 4) -> should be Blue (5 % 2 = 1)
+        QColor c54 = doc.samplePixel(5, 4);
+        assert(c54 == QColor(0, 0, 255, 255));
+
+        std::cout << "  [INFO] Tiled coordinates (0,0), (1,0), (4,4), (5,4) matched pattern colors perfectly!" << std::endl;
         std::cout << "  -> PASSED!" << std::endl;
     }
 

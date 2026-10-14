@@ -111,7 +111,7 @@ void CanvasWidget::updateCursorForActiveLayer() {
         setCursor(Qt::CrossCursor);
         m_showBrushOutline = false;
     } else if (m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::MagicWand ||
-               m_currentTool == ToolType::Bucket || m_currentTool == ToolType::Gradient ||
+               m_currentTool == ToolType::Bucket || m_currentTool == ToolType::PatternFill || m_currentTool == ToolType::Gradient ||
                m_currentTool == ToolType::VectorPolyline || m_currentTool == ToolType::VectorCurve ||
                m_currentTool == ToolType::VectorEllipse || m_currentTool == ToolType::VectorCircle ||
                m_currentTool == ToolType::VectorPolygon) {
@@ -143,6 +143,7 @@ bool CanvasWidget::isRasterDrawingTool(ToolType tool) const {
     case ToolType::Marker:
     case ToolType::Eraser:
     case ToolType::Bucket:
+    case ToolType::PatternFill:
     case ToolType::Blur:
     case ToolType::Blend:
     case ToolType::Gradient:
@@ -3223,6 +3224,143 @@ void CanvasWidget::fillBucket(const QPointF& docPos) {
     update();
 }
 
+void CanvasWidget::fillPattern(const QPointF& docPos) {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    if (!activeL || activeL->type() == LayerType::Group || activeL->type() == LayerType::Vector) {
+        return; // パターン塗りつぶしは通常ラスターレイヤーのみ対象
+    }
+
+    FloodFillParams params;
+    params.reference = m_patternFillReference;
+    params.tolerance = m_patternFillTolerance;
+    params.expandPixels = m_patternFillExpandPixels;
+    params.narrowAreaFill = m_patternFillNarrowAreaFill;
+    params.restrictToSelection = true;
+
+    FloodFillResult res = computeFloodFillMask(docPos, params);
+    if (!res.success) return;
+
+    QImage patSrc = m_patternFillImage;
+    if (patSrc.isNull()) {
+        // フォールバック用のチェッカーボード
+        patSrc = QImage(16, 16, QImage::Format_ARGB32);
+        patSrc.fill(Qt::white);
+        for (int y = 0; y < 16; ++y) {
+            for (int x = 0; x < 16; ++x) {
+                if ((x / 4 + y / 4) % 2 == 0) {
+                    patSrc.setPixelColor(x, y, Qt::black);
+                }
+            }
+        }
+    }
+
+    // パターンの着色処理 (ImageBrush と同等の自動判定)
+    BrushImageType imgType = detectBrushImageType(patSrc);
+    QImage colorizedPattern = colorizeBrushImage(patSrc, imgType, m_currentColor, m_secondaryColor).convertToFormat(QImage::Format_ARGB32);
+    int pW = colorizedPattern.width();
+    int pH = colorizedPattern.height();
+    if (pW <= 0 || pH <= 0) return;
+
+    float scale = std::max(0.05f, m_patternFillScale);
+    float angle = m_patternFillAngle;
+
+    // キャンバス原点基準の逆変換マトリクス
+    QTransform xform;
+    xform.scale(1.0 / static_cast<double>(scale), 1.0 / static_cast<double>(scale));
+    xform.rotate(-angle);
+
+    int minX = res.minX;
+    int maxX = res.maxX;
+    int minY = res.minY;
+    int maxY = res.maxY;
+    int docW = res.docW;
+    int docH = res.docH;
+    const auto& mask = res.mask;
+
+    QRect dirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+    TileManager preTiles = activeL->tileManager().clone();
+
+    bool alphaLocked = activeL->isAlphaLocked();
+    int minTx = minX / TileMemoryPool::TILE_WIDTH;
+    int maxTx = maxX / TileMemoryPool::TILE_WIDTH;
+    int minTy = minY / TileMemoryPool::TILE_HEIGHT;
+    int maxTy = maxY / TileMemoryPool::TILE_HEIGHT;
+
+    for (int ty = minTy; ty <= maxTy; ++ty) {
+        for (int tx = minTx; tx <= maxTx; ++tx) {
+            int tLeft = tx * TileMemoryPool::TILE_WIDTH;
+            int tTop = ty * TileMemoryPool::TILE_HEIGHT;
+            int tRight = std::min(docW - 1, tLeft + static_cast<int>(TileMemoryPool::TILE_WIDTH) - 1);
+            int tBottom = std::min(docH - 1, tTop + static_cast<int>(TileMemoryPool::TILE_HEIGHT) - 1);
+
+            bool tileHasMask = false;
+            for (int y = std::max(minY, tTop); y <= std::min(maxY, tBottom) && !tileHasMask; ++y) {
+                for (int x = std::max(minX, tLeft); x <= std::min(maxX, tRight); ++x) {
+                    if (mask[static_cast<size_t>(y) * docW + x]) {
+                        tileHasMask = true;
+                        break;
+                    }
+                }
+            }
+            if (!tileHasMask) continue;
+
+            Tile* tile = activeL->tileManager().getTileForWrite(tx, ty);
+            if (!tile || !tile->writeBuffer()) continue;
+
+            uint32_t* pixels = reinterpret_cast<uint32_t*>(tile->writeBuffer());
+            for (int y = std::max(minY, tTop); y <= std::min(maxY, tBottom); ++y) {
+                int ly = y - tTop;
+                for (int x = std::max(minX, tLeft); x <= std::min(maxX, tRight); ++x) {
+                    if (mask[static_cast<size_t>(y) * docW + x]) {
+                        int lx = x - tLeft;
+                        int localIdx = ly * TileMemoryPool::TILE_WIDTH + lx;
+                        uint32_t basePixel = pixels[localIdx];
+
+                        float selWeight = 1.0f;
+                        if (m_document && m_document->hasSelection()) {
+                            uint8_t sel = m_document->selectionStrength(x, y);
+                            if (sel == 0) continue;
+                            selWeight = sel / 255.0f;
+                        }
+
+                        float effOpacity = m_patternFillDensity * selWeight;
+                        if (effOpacity <= 0.0f) continue;
+
+                        // キャンバス原点基準でのパターン座標サンプリング
+                        QPointF patPt = xform.map(QPointF(x, y));
+                        int px = static_cast<int>(std::floor(patPt.x())) % pW;
+                        if (px < 0) px += pW;
+                        int py = static_cast<int>(std::floor(patPt.y())) % pH;
+                        if (py < 0) py += pH;
+
+                        const uint32_t* patScanLine = reinterpret_cast<const uint32_t*>(colorizedPattern.constScanLine(py));
+                        uint32_t patPixel = patScanLine[px];
+
+                        if (alphaLocked) {
+                            uint32_t origA = (basePixel >> 24) & 0xFF;
+                            if (origA == 0) continue;
+                            uint32_t blended = blendPixel(basePixel, patPixel, effOpacity, m_patternFillBlendMode);
+                            pixels[localIdx] = (origA << 24) | (blended & 0x00FFFFFF);
+                        } else {
+                            pixels[localIdx] = blendPixel(basePixel, patPixel, effOpacity, m_patternFillBlendMode);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    TileManager postTiles = activeL->tileManager().clone();
+    if (m_document->undoStack()) {
+        m_document->undoStack()->push(new FillBucketCommand(m_document, m_document->activeLayerIndex(), std::move(preTiles), std::move(postTiles), dirtyRect));
+    }
+    activeL->invalidateContentBounds();
+    activeL->tileManager().markDirtyRect(dirtyRect);
+    m_document->composite(dirtyRect);
+    update();
+}
+
 void CanvasWidget::autoSelect(const QPointF& docPos) {
     if (!m_document) return;
 
@@ -3456,7 +3594,7 @@ void CanvasWidget::tabletEvent(QTabletEvent* event) {
     if ((activeL && activeL->type() == LayerType::Group) || m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon ||
         m_currentTool == ToolType::Pipette || m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::EllipseSelect ||
         m_currentTool == ToolType::LassoSelect || m_currentTool == ToolType::MagicWand || m_currentTool == ToolType::ColorSelect ||
-        m_currentTool == ToolType::Bucket || m_currentTool == ToolType::Gradient ||
+        m_currentTool == ToolType::Bucket || m_currentTool == ToolType::PatternFill || m_currentTool == ToolType::Gradient ||
         m_currentTool == ToolType::VectorControlPoint ||
         m_currentTool == ToolType::VectorPolyline || m_currentTool == ToolType::VectorCurve) {
         if (m_currentTool == ToolType::VectorControlPoint ||
@@ -3477,6 +3615,15 @@ void CanvasWidget::tabletEvent(QTabletEvent* event) {
                 }
             }
             fillBucket(docPt);
+        } else if (m_currentTool == ToolType::PatternFill && event->type() == QEvent::TabletPress) {
+            QPointF docPt = viewToDoc(event->position());
+            if (m_document && m_document->hasSelection()) {
+                if (!m_document->isPixelSelected(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()))) {
+                    event->accept();
+                    return;
+                }
+            }
+            fillPattern(docPt);
         } else if (m_currentTool == ToolType::MagicWand && event->type() == QEvent::TabletPress) {
             QPointF docPt = viewToDoc(event->position());
             autoSelect(docPt);
@@ -3906,6 +4053,18 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                 }
             }
             fillBucket(docPt);
+            event->accept();
+            return;
+        }
+
+        if (m_currentTool == ToolType::PatternFill) {
+            if (m_document && m_document->hasSelection()) {
+                if (!m_document->isPixelSelected(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()))) {
+                    event->accept();
+                    return; // 選択範囲外のクリックは無視
+                }
+            }
+            fillPattern(docPt);
             event->accept();
             return;
         }

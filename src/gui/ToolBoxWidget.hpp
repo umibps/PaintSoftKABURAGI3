@@ -24,6 +24,7 @@ enum class ToolType {
     Marker,
     Eraser,
     Bucket,
+    PatternFill,
     Blur,
     Blend,
     Gradient,

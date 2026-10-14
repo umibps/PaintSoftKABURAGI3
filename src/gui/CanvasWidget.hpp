@@ -161,6 +161,27 @@ public:
     int bucketTolerance() const { return m_bucketTolerance; }
     void fillBucket(const QPointF& docPos);
 
+    // パターン塗りつぶしツール設定
+    void setPatternFillBlendMode(BlendMode mode) { m_patternFillBlendMode = mode; }
+    BlendMode patternFillBlendMode() const { return m_patternFillBlendMode; }
+    void setPatternFillDensity(float density) { m_patternFillDensity = std::clamp(density, 0.0f, 1.0f); }
+    float patternFillDensity() const { return m_patternFillDensity; }
+    void setPatternFillScale(float scale) { m_patternFillScale = std::clamp(scale, 0.1f, 5.0f); }
+    float patternFillScale() const { return m_patternFillScale; }
+    void setPatternFillAngle(float angle) { m_patternFillAngle = angle; }
+    float patternFillAngle() const { return m_patternFillAngle; }
+    void setPatternFillImage(const QImage& img) { m_patternFillImage = img; }
+    QImage patternFillImage() const { return m_patternFillImage; }
+    void setPatternFillReference(BucketReference ref) { m_patternFillReference = ref; }
+    BucketReference patternFillReference() const { return m_patternFillReference; }
+    void setPatternFillExpandPixels(int px) { m_patternFillExpandPixels = px; }
+    int patternFillExpandPixels() const { return m_patternFillExpandPixels; }
+    void setPatternFillNarrowAreaFill(bool enable) { m_patternFillNarrowAreaFill = enable; }
+    bool patternFillNarrowAreaFill() const { return m_patternFillNarrowAreaFill; }
+    void setPatternFillTolerance(int tol) { m_patternFillTolerance = tol; }
+    int patternFillTolerance() const { return m_patternFillTolerance; }
+    void fillPattern(const QPointF& docPos);
+
     // 自動選択ツール設定
     void setAutoSelectMode(SelectionMode mode) { m_autoSelectMode = mode; }
     SelectionMode autoSelectMode() const { return m_autoSelectMode; }
@@ -757,6 +778,17 @@ private:
     int m_bucketExpandPixels = 1;
     bool m_bucketNarrowAreaFill = true;
     int m_bucketTolerance = 30;
+
+    // パターン塗りつぶしツール状態
+    BlendMode m_patternFillBlendMode = BlendMode::Normal;
+    float m_patternFillDensity = 1.0f;
+    float m_patternFillScale = 1.0f;
+    float m_patternFillAngle = 0.0f;
+    QImage m_patternFillImage;
+    BucketReference m_patternFillReference = BucketReference::Canvas;
+    int m_patternFillExpandPixels = 1;
+    bool m_patternFillNarrowAreaFill = true;
+    int m_patternFillTolerance = 30;
 
     // 自動選択ツール状態
     SelectionMode m_autoSelectMode = SelectionMode::New;

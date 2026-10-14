@@ -218,6 +218,23 @@ void SaiToolButton::paintEvent(QPaintEvent* /*event*/) {
         painter.drawEllipse(QPointF(5, 3), 2.5, 3.5);
         break;
     }
+    case ToolType::PatternFill: {
+        // パターン塗りつぶし (市松模様のバケツ)
+        painter.translate(c);
+        painter.rotate(25);
+        painter.setBrush(QColor(210, 210, 210));
+        QPolygonF poly; poly << QPointF(-5, -5) << QPointF(5, -5) << QPointF(3, 4) << QPointF(-3, 4);
+        painter.drawPolygon(poly);
+        // バケツ内部に市松模様
+        painter.setBrush(QColor(100, 100, 100));
+        painter.setPen(Qt::NoPen);
+        painter.drawRect(QRectF(-2.5, -3, 2.5, 2.5));
+        painter.drawRect(QRectF(0, -0.5, 2.5, 2.5));
+        // 注がれるインク
+        painter.setBrush(QColor(60, 100, 200));
+        painter.drawEllipse(QPointF(5, 3), 2.5, 3.5);
+        break;
+    }
     case ToolType::Blur: {
         // ぼかし (ぼやけた円)
         painter.translate(c);
@@ -718,10 +735,11 @@ static QString defaultToolName(ToolType type, int slotIndex = -1) {
     if (slotIndex == 7) return QString::fromUtf8("指先");
     if (slotIndex == 8) return QString::fromUtf8("グラデーション");
     if (slotIndex == 9) return QString::fromUtf8("合成ブラシ");
-    if (slotIndex == 10) return QString::fromUtf8("テキスト");
-    if (slotIndex == 11) return QString::fromUtf8("コマ枠");
-    if (slotIndex == 12) return QString::fromUtf8("コマ分割");
-    if (slotIndex == 13) return QString::fromUtf8("3D操作");
+    if (slotIndex == 10) return QString::fromUtf8("パターン");
+    if (slotIndex == 11) return QString::fromUtf8("テキスト");
+    if (slotIndex == 12) return QString::fromUtf8("コマ枠");
+    if (slotIndex == 13) return QString::fromUtf8("コマ分割");
+    if (slotIndex == 14) return QString::fromUtf8("3D操作");
 
     switch (type) {
     case ToolType::Pen: return QString::fromUtf8("鉛筆");
@@ -730,6 +748,7 @@ static QString defaultToolName(ToolType type, int slotIndex = -1) {
     case ToolType::Marker: return QString::fromUtf8("ブラシ");
     case ToolType::Eraser: return QString::fromUtf8("消しゴム");
     case ToolType::Bucket: return QString::fromUtf8("バケツ");
+    case ToolType::PatternFill: return QString::fromUtf8("パターン");
     case ToolType::Blur: return QString::fromUtf8("ぼかし");
     case ToolType::Blend: return QString::fromUtf8("指先");
     case ToolType::Gradient: return QString::fromUtf8("グラデーション");
@@ -792,12 +811,13 @@ void ToolBoxWidget::initDefaultSlots() {
 
     setSlot(8, ToolType::Gradient, QString::fromUtf8("グラデーション"));
     setSlot(9, ToolType::CompositeBrush, QString::fromUtf8("合成ブラシ"));
-    setSlot(10, ToolType::Text, QString::fromUtf8("テキスト"));
-    setSlot(11, ToolType::PanelFrame, QString::fromUtf8("コマ枠"));
-    setSlot(12, ToolType::PanelSplit, QString::fromUtf8("コマ分割"));
-    setSlot(13, ToolType::ThreeD, QString::fromUtf8("3D操作"));
+    setSlot(10, ToolType::PatternFill, QString::fromUtf8("パターン"));
+    setSlot(11, ToolType::Text, QString::fromUtf8("テキスト"));
+    setSlot(12, ToolType::PanelFrame, QString::fromUtf8("コマ枠"));
+    setSlot(13, ToolType::PanelSplit, QString::fromUtf8("コマ分割"));
+    setSlot(14, ToolType::ThreeD, QString::fromUtf8("3D操作"));
 
-    for (int i = 14; i < TOTAL_SLOTS; ++i) {
+    for (int i = 15; i < TOTAL_SLOTS; ++i) {
         m_rasterSlots[i].isEmpty = true;
         m_rasterSlots[i].name = QString();
         m_rasterSlots[i].toolType = ToolType::Pen;
