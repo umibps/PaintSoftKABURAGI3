@@ -13,6 +13,7 @@ class QNetworkAccessManager;
 class QNetworkReply;
 class QProcess;
 class QTimer;
+class QWebSocket;
 
 namespace Kaburagi {
 
@@ -132,6 +133,9 @@ private slots:
     void onComfyHistoryPollTimer();
     void onServerHealthCheckTimer();
     void onEmbeddedProcessFinished(int exitCode);
+    void onEmbeddedProcessReadyRead();
+    void onWebUiProgressTimer();
+    void onComfyWebSocketTextMessageReceived(const QString& message);
 
 private:
     void startServerLaunchAndRetry(ApiBackend backend, const QString& launchPath);
@@ -142,12 +146,23 @@ private:
     void pollComfyUiHistory(const QString& promptId);
     void downloadComfyUiImages(const QStringList& imageFilenames);
 
+    void startWebUiProgressPolling();
+    void stopWebUiProgressPolling();
+    void connectComfyWebSocket(const QString& serverUrl);
+    void disconnectComfyWebSocket();
+
     QNetworkAccessManager* m_netManager = nullptr;
     QNetworkReply* m_currentReply = nullptr;
     QNetworkReply* m_modelsReply = nullptr;
     AiGenerateParams m_currentParams;
 
-    // ComfyUI ポーリング管理
+    // Web UI 進捗ポーリング管理
+    QTimer* m_webUiProgressTimer = nullptr;
+    QNetworkReply* m_webUiProgressReply = nullptr;
+
+    // ComfyUI WebSocket & ポーリング管理
+    QWebSocket* m_comfyWebSocket = nullptr;
+    QString m_comfyClientId;
     QTimer* m_comfyPollTimer = nullptr;
     QString m_comfyPromptId;
     int m_comfyPollCount = 0;

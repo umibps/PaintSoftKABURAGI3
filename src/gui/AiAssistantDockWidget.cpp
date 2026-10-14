@@ -361,16 +361,23 @@ void AiAssistantDockWidget::setupUi() {
 }
 
 void AiAssistantDockWidget::onBackendChanged() {
+    auto shouldResetUrl = [](const QString& txt, int targetPort) {
+        if (txt.isEmpty() || txt.startsWith('(') || txt.contains("api.openai.com")) return true;
+        if (targetPort == 8188 && txt.contains(":7860")) return true;
+        if (targetPort == 7860 && txt.contains(":8188")) return true;
+        return false;
+    };
+
     if (m_radioComfyUi->isChecked()) {
         m_editServerUrl->setEnabled(true);
-        if (m_editServerUrl->text().contains(":7860") || m_editServerUrl->text().isEmpty()) {
+        if (shouldResetUrl(m_editServerUrl->text(), 8188)) {
             m_editServerUrl->setText("http://127.0.0.1:8188");
         }
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(true);
     } else if (m_radioWebUi->isChecked()) {
         m_editServerUrl->setEnabled(true);
-        if (m_editServerUrl->text().contains(":8188") || m_editServerUrl->text().isEmpty()) {
+        if (shouldResetUrl(m_editServerUrl->text(), 7860)) {
             m_editServerUrl->setText("http://127.0.0.1:7860");
         }
         m_editApiKey->setEnabled(false);

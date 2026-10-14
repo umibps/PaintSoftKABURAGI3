@@ -14,6 +14,9 @@
 #include <QHttpMultiPart>
 #include <QHttpPart>
 #include <QDebug>
+#include <QWebSocket>
+#include <QUuid>
+#include <QRegularExpression>
 
 namespace Kaburagi {
 
@@ -25,6 +28,8 @@ AiService::AiService(QObject* parent)
 
 AiService::~AiService() {
     cancel();
+    stopWebUiProgressPolling();
+    disconnectComfyWebSocket();
     if (m_serverHealthTimer) {
         m_serverHealthTimer->stop();
     }
@@ -37,6 +42,7 @@ bool AiService::isBusy() const {
     if (m_currentReply != nullptr && m_currentReply->isRunning()) return true;
     if (m_waitingServerLaunch) return true;
     if (m_comfyPollTimer != nullptr && m_comfyPollTimer->isActive()) return true;
+    if (m_comfyWebSocket != nullptr && m_comfyWebSocket->state() == QAbstractSocket::ConnectedState) return true;
     if (m_embeddedProcess != nullptr && m_embeddedProcess->state() != QProcess::NotRunning) return true;
     return false;
 }
@@ -439,9 +445,11 @@ void AiService::fetchModels(ApiBackend backend, const QString& serverUrl, const 
     }
 
     if (m_modelsReply) {
-        m_modelsReply->abort();
-        m_modelsReply->deleteLater();
+        QNetworkReply* oldReply = m_modelsReply;
         m_modelsReply = nullptr;
+        disconnect(oldReply, nullptr, this, nullptr);
+        oldReply->abort();
+        oldReply->deleteLater();
     }
 
     QString urlStr = serverUrl.trimmed();
@@ -458,7 +466,9 @@ void AiService::fetchModels(ApiBackend backend, const QString& serverUrl, const 
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     m_modelsReply = m_netManager->get(request);
-    connect(m_modelsReply, &QNetworkReply::finished, this, &AiService::onModelsReplyFinished);
+    if (m_modelsReply) {
+        connect(m_modelsReply, &QNetworkReply::finished, this, &AiService::onModelsReplyFinished);
+    }
 }
 
 void AiService::onModelsReplyFinished() {
@@ -556,6 +566,7 @@ void AiService::executeGenerate(const AiGenerateParams& params) {
         m_currentReply = m_netManager->post(request, data);
         connect(m_currentReply, &QNetworkReply::finished, this, &AiService::onGenerateReplyFinished);
         emit generationProgress(15, tr("ローカルAIサーバーへリクエスト送信中..."));
+        startWebUiProgressPolling();
     } else if (params.backend == ApiBackend::CloudOpenAI) {
         QUrl url("https://api.openai.com/v1/images/generations");
         QNetworkRequest request(url);
@@ -576,6 +587,8 @@ void AiService::executeGenerate(const AiGenerateParams& params) {
 void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
     QString urlStr = params.serverUrl.trimmed();
     if (urlStr.endsWith('/')) urlStr.chop(1);
+
+    connectComfyWebSocket(urlStr);
 
     bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                       params.mode == AiMode::Inpaint ||
@@ -632,7 +645,11 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
             QNetworkRequest pReq(pUrl);
             pReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-            QJsonObject pBody = buildComfyUiPromptJson(params, uploadedName);
+            QJsonObject pBody;
+            pBody["prompt"] = buildComfyUiPromptJson(params, uploadedName);
+            if (!m_comfyClientId.isEmpty()) {
+                pBody["client_id"] = m_comfyClientId;
+            }
             m_currentReply = m_netManager->post(pReq, QJsonDocument(pBody).toJson(QJsonDocument::Compact));
             connect(m_currentReply, &QNetworkReply::finished, this, &AiService::onGenerateReplyFinished);
             emit generationProgress(20, tr("ComfyUIワークフローをキューに追加中..."));
@@ -645,7 +662,11 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-    QJsonObject jsonBody = buildComfyUiPromptJson(params);
+    QJsonObject jsonBody;
+    jsonBody["prompt"] = buildComfyUiPromptJson(params);
+    if (!m_comfyClientId.isEmpty()) {
+        jsonBody["client_id"] = m_comfyClientId;
+    }
     QByteArray data = QJsonDocument(jsonBody).toJson(QJsonDocument::Compact);
 
     m_currentReply = m_netManager->post(request, data);
@@ -692,6 +713,8 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
         m_embeddedProcess->deleteLater();
     }
     m_embeddedProcess = new QProcess(this);
+    connect(m_embeddedProcess, &QProcess::readyReadStandardOutput, this, &AiService::onEmbeddedProcessReadyRead);
+    connect(m_embeddedProcess, &QProcess::readyReadStandardError, this, &AiService::onEmbeddedProcessReadyRead);
     connect(m_embeddedProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus) {
         onEmbeddedProcessFinished(exitCode);
     });
@@ -816,6 +839,7 @@ void AiService::onGenerateReplyFinished() {
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
+        stopWebUiProgressPolling();
         // ConnectionRefused 検出時の自動起動判定
         if (reply->error() == QNetworkReply::ConnectionRefusedError && m_currentParams.autoLaunchServer && !m_waitingServerLaunch) {
             if (m_currentParams.backend == ApiBackend::LocalComfyUI) {
@@ -842,6 +866,7 @@ void AiService::onGenerateReplyFinished() {
             pollComfyUiHistory(promptId);
             return;
         } else {
+            disconnectComfyWebSocket();
             QString errorMsg;
             if (promptRes.contains("error")) {
                 QJsonObject errObj = promptRes["error"].toObject();
@@ -866,6 +891,7 @@ void AiService::onGenerateReplyFinished() {
             return;
         }
     } else if (m_currentParams.backend == ApiBackend::LocalWebUI) {
+        stopWebUiProgressPolling();
         results = parseWebUiResponse(data, &err);
     } else if (m_currentParams.backend == ApiBackend::CloudOpenAI) {
         results = parseOpenAiResponse(data, &err);
@@ -901,11 +927,15 @@ void AiService::onComfyHistoryPollTimer() {
     m_comfyPollCount++;
     if (m_comfyPollCount > 180) { // 最大3分
         m_comfyPollTimer->stop();
+        disconnectComfyWebSocket();
         emit generationFailed(tr("ComfyUIの生成待機がタイムアウトしました。"));
         return;
     }
 
-    emit generationProgress(30 + std::min(m_comfyPollCount, 60), tr("ComfyUIにて推論中... (%1s)").arg(m_comfyPollCount));
+    // WebSocket 未接続または進捗メッセージ未受信時のフォールバック表示
+    if (!m_comfyWebSocket || m_comfyWebSocket->state() != QAbstractSocket::ConnectedState) {
+        emit generationProgress(30 + std::min(m_comfyPollCount, 60), tr("ComfyUIにて推論中... (%1s)").arg(m_comfyPollCount));
+    }
 
     QString urlStr = m_currentParams.serverUrl.trimmed();
     if (urlStr.endsWith('/')) urlStr.chop(1);
@@ -939,6 +969,7 @@ void AiService::onComfyHistoryPollTimer() {
 
             if (!imageFilenames.isEmpty()) {
                 m_comfyPollTimer->stop();
+                disconnectComfyWebSocket();
                 downloadComfyUiImages(imageFilenames);
             }
         }
@@ -971,6 +1002,7 @@ void AiService::downloadComfyUiImages(const QStringList& imageFilenames) {
             }
 
             if (*remainingCount == 0) {
+                disconnectComfyWebSocket();
                 if (collectedImages->isEmpty()) {
                     emit generationFailed(tr("ComfyUIからの画像取得に失敗しました。"));
                 } else {
@@ -983,6 +1015,8 @@ void AiService::downloadComfyUiImages(const QStringList& imageFilenames) {
 }
 
 void AiService::cancel() {
+    stopWebUiProgressPolling();
+    disconnectComfyWebSocket();
     if (m_serverHealthTimer) m_serverHealthTimer->stop();
     if (m_comfyPollTimer) m_comfyPollTimer->stop();
     m_waitingServerLaunch = false;
@@ -992,9 +1026,11 @@ void AiService::cancel() {
     }
 
     if (m_currentReply) {
-        m_currentReply->abort();
-        m_currentReply->deleteLater();
+        QNetworkReply* reply = m_currentReply;
         m_currentReply = nullptr;
+        disconnect(reply, nullptr, this, nullptr);
+        reply->abort();
+        reply->deleteLater();
 
         // WebUIの場合、interrupt APIを送信
         if (m_currentParams.backend == ApiBackend::LocalWebUI) {
@@ -1004,8 +1040,195 @@ void AiService::cancel() {
             QNetworkRequest request(url);
             request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
             m_netManager->post(request, QByteArray("{}"));
+        } else if (m_currentParams.backend == ApiBackend::LocalComfyUI) {
+            // ComfyUIの場合、interrupt APIを送信
+            QString urlStr = m_currentParams.serverUrl.trimmed();
+            if (urlStr.endsWith('/')) urlStr.chop(1);
+            QUrl url(urlStr + "/interrupt");
+            QNetworkRequest request(url);
+            request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            m_netManager->post(request, QByteArray("{}"));
         }
         emit generationProgress(0, tr("生成をキャンセルしました。"));
+    }
+}
+
+void AiService::startWebUiProgressPolling() {
+    stopWebUiProgressPolling();
+    if (!m_webUiProgressTimer) {
+        m_webUiProgressTimer = new QTimer(this);
+        connect(m_webUiProgressTimer, &QTimer::timeout, this, &AiService::onWebUiProgressTimer);
+    }
+    m_webUiProgressTimer->start(500);
+}
+
+void AiService::stopWebUiProgressPolling() {
+    if (m_webUiProgressTimer) {
+        m_webUiProgressTimer->stop();
+    }
+    if (m_webUiProgressReply) {
+        QNetworkReply* r = m_webUiProgressReply;
+        m_webUiProgressReply = nullptr;
+        disconnect(r, nullptr, this, nullptr);
+        r->abort();
+        r->deleteLater();
+    }
+}
+
+void AiService::onWebUiProgressTimer() {
+    if (m_webUiProgressReply) return;
+    QString urlStr = m_currentParams.serverUrl.trimmed();
+    if (urlStr.endsWith('/')) urlStr.chop(1);
+    QUrl pUrl(urlStr + "/sdapi/v1/progress?skip_current_image=true");
+    QNetworkRequest req(pUrl);
+    m_webUiProgressReply = m_netManager->get(req);
+    connect(m_webUiProgressReply, &QNetworkReply::finished, this, [this]() {
+        if (!m_webUiProgressReply) return;
+        QNetworkReply* r = m_webUiProgressReply;
+        m_webUiProgressReply = nullptr;
+        r->deleteLater();
+
+        if (r->error() == QNetworkReply::NoError) {
+            QByteArray data = r->readAll();
+            QJsonObject root = QJsonDocument::fromJson(data).object();
+            double progress = root["progress"].toDouble();
+            QJsonObject state = root["state"].toObject();
+            int step = state["sampling_step"].toInt();
+            int totalSteps = state["sampling_steps"].toInt();
+            double eta = root["eta_relative"].toDouble();
+
+            if (progress > 0.0) {
+                int percent = std::clamp(static_cast<int>(progress * 100), 10, 95);
+                QString msg;
+                if (totalSteps > 0) {
+                    msg = tr("Web UI 推論中... (%1% - ステップ %2/%3 - 残り約 %4秒)").arg(percent).arg(step).arg(totalSteps).arg(std::max(0, qRound(eta)));
+                } else {
+                    msg = tr("Web UI 推論中... (%1% - 残り約 %2秒)").arg(percent).arg(std::max(0, qRound(eta)));
+                }
+                emit generationProgress(percent, msg);
+            }
+        }
+    });
+}
+
+void AiService::connectComfyWebSocket(const QString& serverUrl) {
+    disconnectComfyWebSocket();
+
+    m_comfyClientId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    QUrl httpUrl(serverUrl);
+    QUrl wsUrl;
+    wsUrl.setScheme(httpUrl.scheme().compare("https", Qt::CaseInsensitive) == 0 ? "wss" : "ws");
+    wsUrl.setHost(httpUrl.host().isEmpty() ? "127.0.0.1" : httpUrl.host());
+    wsUrl.setPort(httpUrl.port() > 0 ? httpUrl.port() : 8188);
+    wsUrl.setPath("/ws");
+    QUrlQuery query;
+    query.addQueryItem("clientId", m_comfyClientId);
+    wsUrl.setQuery(query);
+
+    if (!m_comfyWebSocket) {
+        m_comfyWebSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+        connect(m_comfyWebSocket, &QWebSocket::textMessageReceived, this, &AiService::onComfyWebSocketTextMessageReceived);
+    }
+
+    m_comfyWebSocket->open(wsUrl);
+}
+
+void AiService::disconnectComfyWebSocket() {
+    if (m_comfyWebSocket) {
+        m_comfyWebSocket->close();
+    }
+}
+
+void AiService::onComfyWebSocketTextMessageReceived(const QString& message) {
+    QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
+    if (!doc.isObject()) return;
+    QJsonObject root = doc.object();
+    QString type = root["type"].toString();
+    QJsonObject data = root["data"].toObject();
+
+    if (type == "status") {
+        QJsonObject status = data["status"].toObject();
+        QJsonObject execInfo = status["exec_info"].toObject();
+        int queueRemaining = execInfo["queue_remaining"].toInt();
+        if (queueRemaining > 1) {
+            emit generationProgress(15, tr("ComfyUI キュー待機中 (残り %1 件)...").arg(queueRemaining));
+        }
+    } else if (type == "execution_start") {
+        emit generationProgress(20, tr("ComfyUI 推論開始..."));
+    } else if (type == "executing") {
+        QString node = data["node"].toString();
+        if (!node.isEmpty()) {
+            emit generationProgress(25, tr("ComfyUI ノード処理中 (Node %1)...").arg(node));
+        }
+    } else if (type == "progress") {
+        int value = data["value"].toInt();
+        int max = data["max"].toInt();
+        if (max > 0) {
+            int percent = std::clamp(20 + static_cast<int>((static_cast<double>(value) / max) * 75.0), 20, 95);
+            emit generationProgress(percent, tr("ComfyUI サンプリング中... (%1% - ステップ %2/%3)").arg(percent).arg(value).arg(max));
+        }
+    } else if (type == "executed") {
+        if (data.contains("output")) {
+            QJsonObject output = data["output"].toObject();
+            if (output.contains("images")) {
+                QJsonArray imgArr = output["images"].toArray();
+                QStringList filenames;
+                for (const auto& iv : imgArr) {
+                    QString fname = iv.toObject()["filename"].toString();
+                    if (!fname.isEmpty()) filenames.append(fname);
+                }
+                if (!filenames.isEmpty()) {
+                    if (m_comfyPollTimer) m_comfyPollTimer->stop();
+                    disconnectComfyWebSocket();
+                    downloadComfyUiImages(filenames);
+                }
+            }
+        }
+    }
+}
+
+void AiService::onEmbeddedProcessReadyRead() {
+    if (!m_embeddedProcess) return;
+
+    QByteArray data = m_embeddedProcess->readAllStandardOutput();
+    data += m_embeddedProcess->readAllStandardError();
+    QString text = QString::fromUtf8(data);
+
+    QStringList lines = text.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        QString trimmed = line.trimmed();
+        if (trimmed.isEmpty()) continue;
+
+        if (trimmed.contains("loading model", Qt::CaseInsensitive) || trimmed.contains("load_model", Qt::CaseInsensitive)) {
+            emit generationProgress(10, tr("組み込み推論: モデル読み込み中..."));
+        } else if (trimmed.contains("applying", Qt::CaseInsensitive) || trimmed.contains("clip", Qt::CaseInsensitive)) {
+            emit generationProgress(15, tr("組み込み推論: プロンプト解析中..."));
+        }
+
+        // Match "12/20" or "step 12/20" or "iteration 12/20"
+        static QRegularExpression stepRegex(R"((?:step|sampling|it|\b)?\s*(\d+)\s*/\s*(\d+))", QRegularExpression::CaseInsensitiveOption);
+        auto match = stepRegex.match(trimmed);
+        if (match.hasMatch()) {
+            int curStep = match.captured(1).toInt();
+            int totalSteps = match.captured(2).toInt();
+            if (totalSteps > 0 && curStep <= totalSteps && curStep > 0) {
+                int percent = std::clamp(20 + static_cast<int>((static_cast<double>(curStep) / totalSteps) * 75.0), 20, 95);
+                emit generationProgress(percent, tr("組み込み推論中... (%1% - ステップ %2/%3)").arg(percent).arg(curStep).arg(totalSteps));
+                continue;
+            }
+        }
+
+        // Match percentage "50%"
+        static QRegularExpression percentRegex(R"((\d{1,3})\s*%)");
+        auto pMatch = percentRegex.match(trimmed);
+        if (pMatch.hasMatch()) {
+            int p = pMatch.captured(1).toInt();
+            if (p >= 0 && p <= 100) {
+                int percent = std::clamp(20 + static_cast<int>(p * 0.75), 20, 95);
+                emit generationProgress(percent, tr("組み込み推論中... (%1%)").arg(p));
+            }
+        }
     }
 }
 

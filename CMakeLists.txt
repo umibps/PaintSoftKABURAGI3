@@ -14,7 +14,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network OpenGL WebSockets)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -28,6 +28,7 @@ link_libraries(
     Qt6::Widgets
     Qt6::Network
     Qt6::OpenGL
+    Qt6::WebSockets
 )
 
 set(CORE_SOURCES
@@ -404,9 +405,6 @@ target_link_libraries(test_three_d PRIVATE
     Qt6::Network
 )
 
-
-
-
 if (WIN32)
     # Windows GUIアプリケーションとしてビルド（起動時のコマンドプロンプトを非表示）
     set_target_properties(PaintSoftKABURAGI PROPERTIES
@@ -420,10 +418,13 @@ if (WIN32)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${_qt_bin_dir}/Qt6OpenGL.dll"
                 "$<TARGET_FILE_DIR:PaintSoftKABURAGI>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${_qt_bin_dir}/Qt6WebSockets.dll"
+                "$<TARGET_FILE_DIR:PaintSoftKABURAGI>"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/translations"
                 "$<TARGET_FILE_DIR:PaintSoftKABURAGI>/translations"
-            COMMENT "Copying Qt6OpenGL.dll and translations to output directory..."
+            COMMENT "Copying Qt6OpenGL.dll, Qt6WebSockets.dll and translations to output directory..."
         )
     endif()
 endif()
