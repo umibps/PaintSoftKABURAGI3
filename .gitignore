@@ -6,3 +6,5 @@ build/
 *.pdb
 scratch_*
 test_out.mp4
+dist/
+
