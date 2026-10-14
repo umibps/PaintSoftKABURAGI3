@@ -52,12 +52,17 @@ public:
     QStringList scanLocalModels() const;
     QStringList scanLocalControlNetModels() const;
     QStringList scanUpscaleModels() const;
-    void refreshLocalModels();
+    void refreshLocalModels(const QString& preferredModel = QString());
     void saveSettings();
     void loadSettings();
     void resetToDefaults();
     void loadParametersFromLayer(const std::shared_ptr<Layer>& layer);
     QImage getImageFromSource(int sourceIndex, const QString& filePath, QString* outError = nullptr);
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
     QImage getControlNetImage(QString* outError = nullptr);
     QImage getIpAdapterImage(QString* outError = nullptr);
 
@@ -97,6 +102,7 @@ private slots:
 private:
     void setupUi();
     void updateUiForMode(AiMode mode);
+    void updateBackendUiState();
     void detectAvailableDevices();
     bool ensureRequirementsReady();
     QImage getInitImageForCurrentMode();
@@ -181,6 +187,7 @@ private:
     QList<QImage> m_currentResults;
     int m_selectedIndex = -1;
     bool m_updatingResolution = false;
+    bool m_isLoadingSettings = false;
 };
 
 } // namespace Kaburagi

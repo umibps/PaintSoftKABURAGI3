@@ -51,13 +51,30 @@ AiAssistantDockWidget::AiAssistantDockWidget(QWidget* parent)
     connect(m_aiService, &AiService::generationFailed, this, &AiAssistantDockWidget::onGenerationFailed);
 
     loadSettings();
-
-    onBackendChanged();
     onModeChanged(m_comboMode ? m_comboMode->currentIndex() : 0);
 }
 
 AiAssistantDockWidget::~AiAssistantDockWidget() {
     saveSettings();
+}
+
+void AiAssistantDockWidget::closeEvent(QCloseEvent* event) {
+    saveSettings();
+    QDockWidget::closeEvent(event);
+}
+
+void AiAssistantDockWidget::resizeEvent(QResizeEvent* event) {
+    if (!m_isLoadingSettings) {
+        saveSettings();
+    }
+    QDockWidget::resizeEvent(event);
+}
+
+void AiAssistantDockWidget::moveEvent(QMoveEvent* event) {
+    if (!m_isLoadingSettings) {
+        saveSettings();
+    }
+    QDockWidget::moveEvent(event);
 }
 
 void AiAssistantDockWidget::setDocument(Document* doc) {
@@ -131,6 +148,11 @@ void AiAssistantDockWidget::setupUi() {
     auto layModel = new QHBoxLayout();
     m_comboModel = new QComboBox(grpConn);
     m_comboModel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    connect(m_comboModel, &QComboBox::currentTextChanged, this, [this](const QString&) {
+        if (!m_isLoadingSettings) {
+            saveSettings();
+        }
+    });
     m_btnFetchModels = new QPushButton(tr("更新"), grpConn);
     m_btnFetchModels->setMaximumWidth(50);
     connect(m_btnFetchModels, &QPushButton::clicked, this, &AiAssistantDockWidget::onFetchModelsClicked);
@@ -433,8 +455,32 @@ void AiAssistantDockWidget::setupUi() {
     m_listThumbnails->setViewMode(QListView::IconMode);
     m_listThumbnails->setIconSize(QSize(100, 100));
     m_listThumbnails->setMovement(QListView::Static);
-    m_listThumbnails->setMaximumHeight(120);
-    m_listThumbnails->setSpacing(4);
+    m_listThumbnails->setMaximumHeight(135);
+    m_listThumbnails->setSpacing(6);
+    m_listThumbnails->setStyleSheet(
+        "QListWidget {"
+        "    background-color: #fcfcfc;"
+        "    border: 1px solid #cfd8dc;"
+        "    border-radius: 4px;"
+        "    padding: 4px;"
+        "}"
+        "QListWidget::item {"
+        "    border: 2px solid transparent;"
+        "    border-radius: 6px;"
+        "    padding: 3px;"
+        "    color: #333333;"
+        "}"
+        "QListWidget::item:hover {"
+        "    border: 2px solid #ef9a9a;"
+        "    background-color: #ffebee;"
+        "}"
+        "QListWidget::item:selected {"
+        "    border: 3px solid #d32f2f;"
+        "    background-color: #ffcdd2;"
+        "    color: #b71c1c;"
+        "    font-weight: bold;"
+        "}"
+    );
     connect(m_listThumbnails, &QListWidget::currentRowChanged, this, &AiAssistantDockWidget::onThumbnailSelected);
     layResult->addWidget(m_listThumbnails);
 
@@ -456,12 +502,9 @@ void AiAssistantDockWidget::setupUi() {
     rootLayout->addWidget(bottomContainer, 0);
 
     setWidget(rootWidget);
-
-    // 起動時にローカルモデルフォルダを自動スキャンして一覧に設定
-    refreshLocalModels();
 }
 
-void AiAssistantDockWidget::onBackendChanged() {
+void AiAssistantDockWidget::updateBackendUiState() {
     auto shouldResetUrl = [](const QString& txt, int targetPort) {
         if (txt.isEmpty() || txt.startsWith('(') || txt.contains("api.openai.com")) return true;
         if (targetPort == 8188 && txt.contains(":7860")) return true;
@@ -469,7 +512,7 @@ void AiAssistantDockWidget::onBackendChanged() {
         return false;
     };
 
-    if (m_radioComfyUi->isChecked()) {
+    if (m_radioComfyUi && m_radioComfyUi->isChecked()) {
         m_editServerUrl->setEnabled(true);
         if (shouldResetUrl(m_editServerUrl->text(), 8188)) {
             m_editServerUrl->setText("http://127.0.0.1:8188");
@@ -477,7 +520,7 @@ void AiAssistantDockWidget::onBackendChanged() {
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(true);
         if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(true);
-    } else if (m_radioWebUi->isChecked()) {
+    } else if (m_radioWebUi && m_radioWebUi->isChecked()) {
         m_editServerUrl->setEnabled(true);
         if (shouldResetUrl(m_editServerUrl->text(), 7860)) {
             m_editServerUrl->setText("http://127.0.0.1:7860");
@@ -485,21 +528,27 @@ void AiAssistantDockWidget::onBackendChanged() {
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(true);
         if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(true);
-    } else if (m_radioEmbedded->isChecked()) {
+    } else if (m_radioEmbedded && m_radioEmbedded->isChecked()) {
         m_editServerUrl->setEnabled(false);
         m_editServerUrl->setText(tr("(サーバー不要 - 直接推論)"));
         m_editApiKey->setEnabled(false);
         m_chkControlNet->setEnabled(false);
         if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(false);
-    } else if (m_radioCloud->isChecked()) {
+    } else if (m_radioCloud && m_radioCloud->isChecked()) {
         m_editServerUrl->setEnabled(false);
         m_editServerUrl->setText("https://api.openai.com");
         m_editApiKey->setEnabled(true);
         m_chkControlNet->setEnabled(false);
         if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(false);
     }
+}
 
+void AiAssistantDockWidget::onBackendChanged() {
+    if (m_isLoadingSettings) return;
+
+    updateBackendUiState();
     onFetchModelsClicked();
+    saveSettings();
 }
 
 void AiAssistantDockWidget::onModeChanged(int index) {
@@ -598,11 +647,11 @@ QStringList AiAssistantDockWidget::scanLocalControlNetModels() const {
     return result;
 }
 
-void AiAssistantDockWidget::refreshLocalModels() {
+void AiAssistantDockWidget::refreshLocalModels(const QString& preferredModel) {
     bool isLocal = m_radioComfyUi->isChecked() || m_radioWebUi->isChecked() || m_radioEmbedded->isChecked();
     if (!isLocal) return;
 
-    QString current = m_comboModel->currentText();
+    QString current = !preferredModel.isEmpty() ? preferredModel : (m_comboModel ? m_comboModel->currentText() : QString());
     QStringList localModels = scanLocalModels();
     m_comboModel->clear();
 
@@ -613,6 +662,9 @@ void AiAssistantDockWidget::refreshLocalModels() {
         int idx = m_comboModel->findText(current);
         if (idx != -1) {
             m_comboModel->setCurrentIndex(idx);
+        } else if (!current.isEmpty()) {
+            m_comboModel->addItem(current);
+            m_comboModel->setCurrentIndex(m_comboModel->count() - 1);
         } else {
             m_comboModel->setCurrentIndex(0);
         }
@@ -1258,9 +1310,16 @@ QImage AiAssistantDockWidget::getIpAdapterImage(QString* outError) {
 }
 
 void AiAssistantDockWidget::onModelsFetched(const QStringList& models) {
+    QString current = m_comboModel ? m_comboModel->currentText() : QString();
     for (const auto& m : models) {
         if (m_comboModel->findText(m) == -1) {
             m_comboModel->addItem(m);
+        }
+    }
+    if (!current.isEmpty()) {
+        int idx = m_comboModel->findText(current);
+        if (idx >= 0) {
+            m_comboModel->setCurrentIndex(idx);
         }
     }
     m_lblStatus->setText(tr("モデル一覧を更新しました (%1 件)").arg(m_comboModel->count()));
@@ -1374,6 +1433,8 @@ void AiAssistantDockWidget::onPromptAssistClicked() {
 }
 
 void AiAssistantDockWidget::saveSettings() {
+    if (m_isLoadingSettings) return;
+
     QSettings settings("KABURAGI", "PaintSoft KABURAGI");
     settings.beginGroup("AiAssistant");
 
@@ -1416,21 +1477,35 @@ void AiAssistantDockWidget::saveSettings() {
     if (m_comboIpAdapterSource) settings.setValue("ipAdapterSource", m_comboIpAdapterSource->currentData().toInt());
     settings.setValue("ipAdapterFilePath", m_ipAdapterFilePath);
 
+    // ウィンドウの位置・サイズおよびフローティング状態
+    settings.setValue("floating", isFloating());
+    if (isFloating()) {
+        settings.setValue("floating_geometry", geometry());
+    } else {
+        settings.setValue("dock_width", width());
+        settings.setValue("dock_height", height());
+    }
+
     // ※ 注意: プロンプトとネガティブプロンプトはユーザーの指定により記憶から除外
     settings.endGroup();
 }
 
 void AiAssistantDockWidget::loadSettings() {
+    m_isLoadingSettings = true;
+
     QSettings settings("KABURAGI", "PaintSoft KABURAGI");
     settings.beginGroup("AiAssistant");
 
+    int backendInt = 1;
     if (settings.contains("backend")) {
-        int backendInt = settings.value("backend", 1).toInt();
+        backendInt = settings.value("backend", 1).toInt();
         if (backendInt == 0 && m_radioWebUi) m_radioWebUi->setChecked(true);
         else if (backendInt == 1 && m_radioComfyUi) m_radioComfyUi->setChecked(true);
         else if (backendInt == 2 && m_radioEmbedded) m_radioEmbedded->setChecked(true);
         else if (backendInt == 3 && m_radioCloud) m_radioCloud->setChecked(true);
     }
+
+    updateBackendUiState();
 
     if (m_editServerUrl && settings.contains("serverUrl")) {
         m_editServerUrl->setText(settings.value("serverUrl").toString());
@@ -1438,15 +1513,20 @@ void AiAssistantDockWidget::loadSettings() {
     if (m_editApiKey && settings.contains("apiKey")) {
         m_editApiKey->setText(settings.value("apiKey").toString());
     }
-    if (m_comboModel && settings.contains("modelName")) {
-        QString model = settings.value("modelName").toString();
-        int idx = m_comboModel->findText(model);
+
+    QString savedModel = settings.value("modelName").toString();
+    if (backendInt != 3) {
+        refreshLocalModels(savedModel);
+    } else if (m_comboModel && !savedModel.isEmpty()) {
+        int idx = m_comboModel->findText(savedModel);
         if (idx >= 0) {
             m_comboModel->setCurrentIndex(idx);
-        } else if (!model.isEmpty()) {
-            m_comboModel->setEditText(model);
+        } else {
+            m_comboModel->addItem(savedModel);
+            m_comboModel->setCurrentText(savedModel);
         }
     }
+
     if (m_comboDevice && settings.contains("device")) {
         QString dev = settings.value("device").toString();
         int idx = m_comboDevice->findData(dev);
@@ -1547,7 +1627,24 @@ void AiAssistantDockWidget::loadSettings() {
         m_widgetIpAdapterFile->setVisible(m_comboIpAdapterSource->currentData().toInt() == static_cast<int>(AiImageSource::File));
     }
 
+    // ウィンドウの位置・サイズおよびフローティング状態の復元
+    if (settings.contains("floating")) {
+        bool floating = settings.value("floating", false).toBool();
+        setFloating(floating);
+        if (floating && settings.contains("floating_geometry")) {
+            QRect geom = settings.value("floating_geometry").toRect();
+            if (geom.isValid()) {
+                setGeometry(geom);
+            }
+        } else if (!floating && settings.contains("dock_width")) {
+            int w = settings.value("dock_width", 320).toInt();
+            int h = settings.value("dock_height", 600).toInt();
+            resize(w, h);
+        }
+    }
+
     settings.endGroup();
+    m_isLoadingSettings = false;
 }
 
 void AiAssistantDockWidget::loadParametersFromLayer(const std::shared_ptr<Layer>& layer) {

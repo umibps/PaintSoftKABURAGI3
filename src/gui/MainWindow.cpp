@@ -1747,6 +1747,15 @@ void MainWindow::saveSettings() {
             settings.setValue("ColorBrush_geometry", m_colorBrushDock->geometry());
         }
     }
+    if (m_aiAssistantDock) {
+        settings.setValue("AiAssistant_floating", m_aiAssistantDock->isFloating());
+        settings.setValue("AiAssistant_visible", m_aiAssistantDock->isVisible());
+        settings.setValue("AiAssistant_area", static_cast<int>(dockWidgetArea(m_aiAssistantDock)));
+        settings.setValue("AiAssistant_width", m_aiAssistantDock->width());
+        if (m_aiAssistantDock->isFloating()) {
+            settings.setValue("AiAssistant_geometry", m_aiAssistantDock->geometry());
+        }
+    }
     if (m_toolSplitter) {
         settings.setValue("ToolSplitter_state", m_toolSplitter->saveState());
     }
@@ -2160,6 +2169,35 @@ void MainWindow::loadSettings() {
             }
         }
         m_colorBrushDock->show();
+    }
+    if (m_aiAssistantDock) {
+        bool aiFloating = settings.value("AiAssistant_floating", false).toBool();
+        int aiAreaInt = settings.value("AiAssistant_area", static_cast<int>(Qt::RightDockWidgetArea)).toInt();
+        Qt::DockWidgetArea aiArea = static_cast<Qt::DockWidgetArea>(aiAreaInt);
+        if (aiArea != Qt::LeftDockWidgetArea && aiArea != Qt::RightDockWidgetArea) {
+            aiArea = Qt::RightDockWidgetArea;
+        }
+
+        if (!stateRestored) {
+            m_aiAssistantDock->setFloating(aiFloating);
+            if (!aiFloating) {
+                addDockWidget(aiArea, m_aiAssistantDock);
+            }
+        } else {
+            if (m_aiAssistantDock->isFloating() != aiFloating) {
+                m_aiAssistantDock->setFloating(aiFloating);
+            }
+            if (!aiFloating && dockWidgetArea(m_aiAssistantDock) != aiArea) {
+                addDockWidget(aiArea, m_aiAssistantDock);
+            }
+        }
+
+        if (m_aiAssistantDock->isFloating() && settings.contains("AiAssistant_geometry")) {
+            QRect geom = settings.value("AiAssistant_geometry").toRect();
+            if (geom.isValid()) {
+                m_aiAssistantDock->setGeometry(geom);
+            }
+        }
     }
     if (m_toolSplitter && settings.contains("ToolSplitter_state")) {
         m_toolSplitter->restoreState(settings.value("ToolSplitter_state").toByteArray());

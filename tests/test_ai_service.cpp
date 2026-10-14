@@ -584,6 +584,90 @@ static void testUpscaleModelDirectoryPreference() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+static void testAiSettingsPersistenceAndThumbnailStyle() {
+    std::cout << "[TEST] 13. AI Settings Persistence (Backend, Model, Geometry) & Thumbnail Red Border..." << std::endl;
+
+    // 1. 設定保存
+    {
+        AiAssistantDockWidget dock1;
+        dock1.setFloating(true);
+        dock1.setGeometry(150, 200, 480, 680);
+
+        // ラジオボタンを組み込み(Embedded)に切り替え
+        QRadioButton* radioEmbedded = dock1.findChild<QRadioButton*>();
+        // 全ラジオボタン探索
+        const auto radios = dock1.findChildren<QRadioButton*>();
+        for (auto* r : radios) {
+            if (r->text().contains("組み込み")) {
+                r->setChecked(true);
+                break;
+            }
+        }
+
+        // モデル選択コンボボックス
+        QComboBox* comboModel = nullptr;
+        const auto combos = dock1.findChildren<QComboBox*>();
+        for (auto* c : combos) {
+            if (c->count() > 0 && c->itemText(0).contains(".safetensors")) {
+                comboModel = c;
+                break;
+            }
+        }
+        if (!comboModel && !combos.isEmpty()) {
+            comboModel = combos[0];
+        }
+        if (comboModel) {
+            comboModel->addItem("custom_saved_model_v2.safetensors");
+            comboModel->setCurrentText("custom_saved_model_v2.safetensors");
+        }
+
+        dock1.saveSettings();
+    }
+
+    // 2. 新規インスタンスでの復元検証
+    {
+        AiAssistantDockWidget dock2;
+        // loadSettings() はコンストラクタ内で自動実行される
+
+        // バックエンドが組み込みになっているか
+        const auto radios = dock2.findChildren<QRadioButton*>();
+        bool embeddedChecked = false;
+        for (auto* r : radios) {
+            if (r->text().contains("組み込み") && r->isChecked()) {
+                embeddedChecked = true;
+                break;
+            }
+        }
+        assert(embeddedChecked);
+
+        // モデルが復元されているか
+        QComboBox* comboModel = nullptr;
+        const auto combos = dock2.findChildren<QComboBox*>();
+        for (auto* c : combos) {
+            if (c->currentText().contains("custom_saved_model_v2.safetensors")) {
+                comboModel = c;
+                break;
+            }
+        }
+        assert(comboModel != nullptr);
+        assert(comboModel->currentText() == "custom_saved_model_v2.safetensors");
+
+        // フローティングとジオメトリが復元されているか
+        assert(dock2.isFloating() == true);
+        assert(dock2.geometry().width() == 480);
+        assert(dock2.geometry().height() == 680);
+
+        // サムネイルリストの赤枠強調表示スタイルシート検証
+        QListWidget* listThumb = dock2.findChild<QListWidget*>();
+        assert(listThumb != nullptr);
+        QString ss = listThumb->styleSheet();
+        assert(ss.contains("#d32f2f") || ss.contains("red") || ss.contains("#e53935"));
+        assert(ss.contains("border"));
+    }
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -601,6 +685,7 @@ int main(int argc, char* argv[]) {
     testSamplerAndScheduler();
     testRemoveBackground();
     testUpscaleModelDirectoryPreference();
+    testAiSettingsPersistenceAndThumbnailStyle();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
