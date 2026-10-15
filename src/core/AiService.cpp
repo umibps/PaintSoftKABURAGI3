@@ -1015,8 +1015,7 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
         QNetworkRequest pReq(pUrl);
         pReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-        QJsonObject pBody;
-        pBody["prompt"] = buildComfyUiPromptJson(params, uploadedInit, uploadedCn);
+        QJsonObject pBody = buildComfyUiPromptJson(params, uploadedInit, uploadedCn);
         if (!m_comfyClientId.isEmpty()) {
             pBody["client_id"] = m_comfyClientId;
         }
@@ -1418,6 +1417,8 @@ void AiService::onGenerateReplyFinished() {
     m_currentReply = nullptr;
     reply->deleteLater();
 
+    QByteArray data = reply->readAll();
+
     if (reply->error() != QNetworkReply::NoError) {
         stopWebUiProgressPolling();
         // ConnectionRefused 検出時の自動起動判定
@@ -1431,11 +1432,40 @@ void AiService::onGenerateReplyFinished() {
             }
         }
 
-        emit generationFailed(QString("生成エラー: %1").arg(reply->errorString()));
+        QString detailedError;
+        if (!data.isEmpty()) {
+            QJsonObject errJson = QJsonDocument::fromJson(data).object();
+            if (errJson.contains("error")) {
+                QJsonObject errObj = errJson["error"].toObject();
+                QString msg = errObj["message"].toString();
+                if (msg.isEmpty()) msg = errJson["error"].toString();
+                if (!msg.isEmpty()) detailedError += "\n" + tr("エラー詳細: %1").arg(msg);
+                if (errObj.contains("details")) {
+                    QString det = errObj["details"].toString();
+                    if (!det.isEmpty()) detailedError += QString(" (%1)").arg(det);
+                }
+            }
+            if (errJson.contains("node_errors")) {
+                QJsonObject nodeErrors = errJson["node_errors"].toObject();
+                for (auto it = nodeErrors.begin(); it != nodeErrors.end(); ++it) {
+                    QJsonObject nObj = it.value().toObject();
+                    QJsonArray errArr = nObj["errors"].toArray();
+                    for (const auto& ev : errArr) {
+                        detailedError += QString("\n・ノード %1 (%2): %3")
+                            .arg(it.key(), nObj["class_type"].toString(), ev.toObject()["message"].toString());
+                    }
+                }
+            }
+            if (detailedError.isEmpty() && m_currentParams.backend == ApiBackend::LocalWebUI) {
+                if (errJson.contains("detail")) {
+                    detailedError += "\n" + tr("エラー詳細: %1").arg(errJson["detail"].toString());
+                }
+            }
+        }
+
+        emit generationFailed(QString("生成エラー: %1%2").arg(reply->errorString(), detailedError));
         return;
     }
-
-    QByteArray data = reply->readAll();
     QString err;
     QList<QImage> results;
 
