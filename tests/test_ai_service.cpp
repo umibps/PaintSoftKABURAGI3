@@ -1060,9 +1060,9 @@ static void testCanvasAspectAutoSwitch() {
     QComboBox* modeCombo = nullptr;
     QComboBox* modelCombo = nullptr;
     for (auto* c : combos) {
-        if (c->count() > 0 && c->itemData(0).toSize() == QSize(512, 512)) {
+        if (c->findData(QSize(-1, -1)) >= 0) {
             resCombo = c;
-        } else if (c->count() > 0 && c->itemData(0).toInt() == static_cast<int>(AiMode::RoughToClean)) {
+        } else if (c->findData(static_cast<int>(AiMode::RoughToClean)) >= 0) {
             modeCombo = c;
         }
     }
@@ -1070,8 +1070,10 @@ static void testCanvasAspectAutoSwitch() {
     assert(modeCombo != nullptr);
 
     // 手動で 512x512 を選ぶ
-    resCombo->setCurrentIndex(0);
-    assert(resCombo->currentIndex() == 0);
+    int p512 = resCombo->findData(QSize(512, 512));
+    assert(p512 >= 0);
+    resCombo->setCurrentIndex(p512);
+    assert(resCombo->currentIndex() == p512);
 
     // 2. 「ラフから線画生成 (SketchToLineart)」モードに切り替える
     int sketchIdx = modeCombo->findData(static_cast<int>(AiMode::SketchToLineart));
@@ -1111,6 +1113,127 @@ static void testCanvasAspectAutoSwitch() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+static void testInsertLayerAboveActive() {
+    std::cout << "[TEST] 20. Insert Layer Directly Above Active Layer..." << std::endl;
+
+    Document doc(800, 600);
+    // 初期状態で Layer 1 (index 0) が存在
+    assert(doc.layers().size() == 1);
+    assert(doc.activeLayerIndex() == 0);
+
+    // Layer 2 を追加 -> index 1 に挿入され、activeLayerIndex は 1 になる
+    auto l2 = doc.addRasterLayer("Layer 2");
+    assert(doc.layers().size() == 2);
+    assert(doc.activeLayerIndex() == 1);
+    assert(doc.layers()[1]->name() == "Layer 2");
+
+    // Layer 3 を追加 -> index 2 に挿入され、activeLayerIndex は 2 になる
+    auto l3 = doc.addRasterLayer("Layer 3");
+    assert(doc.layers().size() == 3);
+    assert(doc.activeLayerIndex() == 2);
+    assert(doc.layers()[2]->name() == "Layer 3");
+
+    // ここで、中間の Layer 2 (index 1) をアクティブにする
+    doc.setActiveLayerIndex(1);
+    assert(doc.activeLayerIndex() == 1);
+
+    // 新規レイヤー "Layer 2.5" を追加
+    // -> アクティブな Layer 2 (index 1) の直上である index 2 に挿入されるべき！
+    auto l2_5 = doc.addRasterLayer("Layer 2.5");
+    assert(doc.layers().size() == 4);
+    assert(doc.activeLayerIndex() == 2);
+    assert(doc.layers()[2]->name() == "Layer 2.5");
+    assert(doc.layers()[1]->name() == "Layer 2");
+    assert(doc.layers()[3]->name() == "Layer 3");
+
+    // AI 生成レイヤー (addRasterLayerWithImage) も同様にアクティブレイヤーの直上に挿入されること
+    // 一番下の Layer 1 (index 0) をアクティブにする
+    doc.setActiveLayerIndex(0);
+    QImage dummyImg(100, 100, QImage::Format_ARGB32);
+    dummyImg.fill(Qt::blue);
+    auto aiLayer = doc.addRasterLayerWithImage(dummyImg, "AI Layer Above Layer 1");
+    assert(doc.layers().size() == 5);
+    assert(doc.activeLayerIndex() == 1);
+    assert(doc.layers()[1]->name() == "AI Layer Above Layer 1");
+    assert(doc.layers()[0]->name() == "レイヤー 1");
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+static void testQualityScaleControl() {
+    std::cout << "[TEST] 21. AI Generation Quality Scale (Speed vs Quality)..." << std::endl;
+
+    AiAssistantDockWidget widget;
+    Document doc(1000, 1000); // 1:1 正方形キャンバス
+    widget.setDocument(&doc);
+
+    // QComboBox から m_comboQualityScale を見つける
+    QList<QComboBox*> combos = widget.findChildren<QComboBox*>();
+    QComboBox* qualityCombo = nullptr;
+    QComboBox* resCombo = nullptr;
+    for (auto* c : combos) {
+        if (c->count() > 0 && c->itemData(0).toDouble() == 0.5) {
+            qualityCombo = c;
+        } else if (c->count() > 0 && c->itemData(0).toSize() == QSize(-1, -1)) {
+            resCombo = c;
+        }
+    }
+    assert(qualityCombo != nullptr);
+    assert(resCombo != nullptr);
+
+    // キャンバス比率追従を選択
+    int aspectIdx = resCombo->findData(QSize(-1, -1));
+    assert(aspectIdx >= 0);
+    resCombo->setCurrentIndex(aspectIdx);
+
+    QList<QSpinBox*> spins = widget.findChildren<QSpinBox*>();
+    QSpinBox* spinW = nullptr;
+    QSpinBox* spinH = nullptr;
+    for (auto* s : spins) {
+        if (s->suffix() == " px") {
+            if (!spinW) spinW = s;
+            else if (!spinH) spinH = s;
+        }
+    }
+    assert(spinW != nullptr && spinH != nullptr);
+
+    // 1. 標準 (1.0x) の解像度を取得
+    int standardIdx = qualityCombo->findData(1.0);
+    assert(standardIdx >= 0);
+    qualityCombo->setCurrentIndex(standardIdx);
+    int standardW = spinW->value();
+    int standardH = spinH->value();
+    assert(standardW > 0 && standardH > 0);
+
+    // 2. 高速ドラフト (0.5x 画素) に変更
+    int draftIdx = qualityCombo->findData(0.5);
+    assert(draftIdx >= 0);
+    qualityCombo->setCurrentIndex(draftIdx);
+    int draftW = spinW->value();
+    int draftH = spinH->value();
+
+    // 画素数が標準の約半分（W, H それぞれ標準の約 0.71 倍）になっていること
+    assert(draftW < standardW);
+    assert(draftH < standardH);
+    double areaRatio = (double)(draftW * draftH) / (double)(standardW * standardH);
+    assert(areaRatio >= 0.4 && areaRatio <= 0.65);
+
+    // 3. 最高品質 (2.0x 画素) に変更
+    int highIdx = qualityCombo->findData(2.0);
+    assert(highIdx >= 0);
+    qualityCombo->setCurrentIndex(highIdx);
+    int highW = spinW->value();
+    int highH = spinH->value();
+
+    // 画素数が標準の約2倍になっていること
+    assert(highW > standardW);
+    assert(highH > standardH);
+    double highAreaRatio = (double)(highW * highH) / (double)(standardW * standardH);
+    assert(highAreaRatio >= 1.7 && highAreaRatio <= 2.3);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1135,6 +1258,8 @@ int main(int argc, char* argv[]) {
     testSketchToLineartAndBrightnessToAlpha();
     testSdxlControlNetSupport();
     testCanvasAspectAutoSwitch();
+    testInsertLayerAboveActive();
+    testQualityScaleControl();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

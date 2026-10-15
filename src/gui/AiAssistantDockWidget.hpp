@@ -82,6 +82,7 @@ private slots:
     void onBackendChanged();
     void onModeChanged(int index);
     void onResolutionPresetChanged(int index);
+    void onQualityScaleChanged(int index);
     void onCustomResolutionChanged();
     void onRandomSeedClicked();
     void onGenerateClicked();
@@ -161,6 +162,7 @@ private:
 
     // Resolution & Upscale
     QComboBox* m_comboResolution = nullptr;
+    QComboBox* m_comboQualityScale = nullptr;
     QSpinBox* m_spinWidth = nullptr;
     QSpinBox* m_spinHeight = nullptr;
     QComboBox* m_comboUpscaleMethod = nullptr;

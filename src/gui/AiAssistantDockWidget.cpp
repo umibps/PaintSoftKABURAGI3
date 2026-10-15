@@ -328,13 +328,22 @@ void AiAssistantDockWidget::setupUi() {
     auto formRes = new QFormLayout(grpRes);
 
     m_comboResolution = new QComboBox(grpRes);
+    m_comboResolution->addItem(tr("キャンバス比率追従 (Canvas Aspect)"), QSize(-1, -1));
     m_comboResolution->addItem(tr("512 x 512 (標準 1:1)"), QSize(512, 512));
     m_comboResolution->addItem(tr("768 x 768 (SDXL 1:1)"), QSize(768, 768));
     m_comboResolution->addItem(tr("832 x 1216 (SDXL 縦長 2:3)"), QSize(832, 1216));
     m_comboResolution->addItem(tr("1216 x 832 (SDXL 横長 3:2)"), QSize(1216, 832));
     m_comboResolution->addItem(tr("1024 x 1024 (高解像度 1:1)"), QSize(1024, 1024));
-    m_comboResolution->addItem(tr("キャンバス比率追従 (Canvas Aspect)"), QSize(-1, -1));
     m_comboResolution->addItem(tr("カスタム (Custom)"), QSize(0, 0));
+
+    m_comboQualityScale = new QComboBox(grpRes);
+    m_comboQualityScale->addItem(tr("⚡ 高速ドラフト (生成時間 短縮 / 0.5x 画素)"), 0.5);
+    m_comboQualityScale->addItem(tr("⚡ 軽量 (速度重視 / 0.75x 画素)"), 0.75);
+    m_comboQualityScale->addItem(tr("⚖️ 標準バランス (推奨品質 / 1.0x 画素)"), 1.0);
+    m_comboQualityScale->addItem(tr("🎨 高精細 (品質重視 / 1.5x 画素)"), 1.5);
+    m_comboQualityScale->addItem(tr("💎 最高品質 (超高精細 / 2.0x 画素)"), 2.0);
+    m_comboQualityScale->setCurrentIndex(2); // 1.0x
+    m_comboQualityScale->setToolTip(tr("生成時間と解像度（品質）のバランスを切り替えます。\n・高速ドラフト: 画素数を約半分にして短時間で生成（アタリや構図確認用）\n・標準バランス: モデル推奨画素数で綺麗に生成\n・高精細 / 最高品質: 緻密に描き込みますが生成時間が長くなります\n※キャンバス適用時には指定のアップスケール方式で自動拡大・合成されます。"));
 
     auto layResCustom = new QHBoxLayout();
     m_spinWidth = new QSpinBox(grpRes);
@@ -350,6 +359,7 @@ void AiAssistantDockWidget::setupUi() {
     m_spinHeight->setSuffix(" px");
 
     connect(m_comboResolution, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AiAssistantDockWidget::onResolutionPresetChanged);
+    connect(m_comboQualityScale, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AiAssistantDockWidget::onQualityScaleChanged);
     connect(m_spinWidth, QOverload<int>::of(&QSpinBox::valueChanged), this, &AiAssistantDockWidget::onCustomResolutionChanged);
     connect(m_spinHeight, QOverload<int>::of(&QSpinBox::valueChanged), this, &AiAssistantDockWidget::onCustomResolutionChanged);
 
@@ -365,7 +375,8 @@ void AiAssistantDockWidget::setupUi() {
     }
 
     formRes->addRow(tr("解像度プリセット:"), m_comboResolution);
-    formRes->addRow(tr("生成サイズ:"), layResCustom);
+    formRes->addRow(tr("生成品質 (速度 ⇔ 品質):"), m_comboQualityScale);
+    formRes->addRow(tr("生成解像度:"), layResCustom);
     formRes->addRow(tr("アップスケール方式:"), m_comboUpscaleMethod);
     mainLayout->addWidget(grpRes);
 
@@ -874,17 +885,39 @@ QStringList AiAssistantDockWidget::scanUpscaleModels() const {
     return result;
 }
 
+void AiAssistantDockWidget::onQualityScaleChanged(int index) {
+    Q_UNUSED(index);
+    if (!m_isLoadingSettings) {
+        saveSettings();
+    }
+    if (m_comboResolution) {
+        onResolutionPresetChanged(m_comboResolution->currentIndex());
+    }
+}
+
 void AiAssistantDockWidget::onResolutionPresetChanged(int index) {
     if (!m_comboResolution || !m_spinWidth || !m_spinHeight) return;
 
     QVariant val = m_comboResolution->itemData(index);
     QSize sz = val.toSize();
+    double qualityScale = m_comboQualityScale ? m_comboQualityScale->currentData().toDouble() : 1.0;
+    if (qualityScale <= 0.0) qualityScale = 1.0;
 
     if (sz.width() > 0 && sz.height() > 0) {
+        // 固定プリセットの場合: 品質スケールに応じてサイズをスケール (64の倍数)
+        double aspect = static_cast<double>(sz.width()) / std::max(1, sz.height());
+        double baseArea = static_cast<double>(sz.width()) * sz.height();
+        double targetArea = baseArea * qualityScale;
+
+        int w = static_cast<int>(std::round(std::sqrt(targetArea * aspect)));
+        int h = static_cast<int>(std::round(std::sqrt(targetArea / aspect)));
+        w = std::clamp(((w + 32) / 64) * 64, 128, 4096);
+        h = std::clamp(((h + 32) / 64) * 64, 128, 4096);
+
         m_spinWidth->blockSignals(true);
         m_spinHeight->blockSignals(true);
-        m_spinWidth->setValue(sz.width());
-        m_spinHeight->setValue(sz.height());
+        m_spinWidth->setValue(w);
+        m_spinHeight->setValue(h);
         m_spinWidth->blockSignals(false);
         m_spinHeight->blockSignals(false);
     } else if (sz.width() == -1) {
@@ -896,7 +929,9 @@ void AiAssistantDockWidget::onResolutionPresetChanged(int index) {
             float aspect = static_cast<float>(m_document->width()) / static_cast<float>(m_document->height());
 
             // 目標の総画素数（面積）: SDXLは約100万画素 (1024x1024)、SD 1.5は約26万画素 (512x512)
-            double targetArea = isSdxl ? (1024.0 * 1024.0) : (512.0 * 512.0);
+            // 品質スケール (0.5x, 0.75x, 1.0x, 1.5x, 2.0x) を適用
+            double baseArea = isSdxl ? (1024.0 * 1024.0) : (512.0 * 512.0);
+            double targetArea = baseArea * qualityScale;
 
             // アスペクト比を維持して幅と高さを計算
             int w = static_cast<int>(std::round(std::sqrt(targetArea * aspect)));
@@ -906,9 +941,9 @@ void AiAssistantDockWidget::onResolutionPresetChanged(int index) {
             w = ((w + 32) / 64) * 64;
             h = ((h + 32) / 64) * 64;
 
-            // クランプ (SDXLなら256〜2048、SD 1.5なら256〜1024)
+            // クランプ (SDXLなら256〜4096、SD 1.5なら256〜2048)
             int minDim = 256;
-            int maxDim = isSdxl ? 2048 : 1024;
+            int maxDim = isSdxl ? 4096 : 2048;
             w = std::clamp(w, minDim, maxDim);
             h = std::clamp(h, minDim, maxDim);
 
@@ -921,10 +956,12 @@ void AiAssistantDockWidget::onResolutionPresetChanged(int index) {
         } else {
             // キャンバスがまだ開いていない場合のフォールバック
             int defSz = isSdxl ? 1024 : 512;
+            int w = static_cast<int>(std::round(defSz * std::sqrt(qualityScale)));
+            w = std::clamp(((w + 32) / 64) * 64, 256, 4096);
             m_spinWidth->blockSignals(true);
             m_spinHeight->blockSignals(true);
-            m_spinWidth->setValue(defSz);
-            m_spinHeight->setValue(defSz);
+            m_spinWidth->setValue(w);
+            m_spinHeight->setValue(w);
             m_spinWidth->blockSignals(false);
             m_spinHeight->blockSignals(false);
         }
@@ -1919,6 +1956,7 @@ void AiAssistantDockWidget::saveSettings() {
     if (m_chkRemoveBackground) settings.setValue("removeBackground", m_chkRemoveBackground->isChecked());
 
     if (m_comboResolution) settings.setValue("resolutionIndex", m_comboResolution->currentIndex());
+    if (m_comboQualityScale) settings.setValue("qualityScaleIndex", m_comboQualityScale->currentIndex());
     if (m_spinWidth) settings.setValue("width", m_spinWidth->value());
     if (m_spinHeight) settings.setValue("height", m_spinHeight->value());
     if (m_comboUpscaleMethod) settings.setValue("upscaleMethod", m_comboUpscaleMethod->currentText());
@@ -2022,6 +2060,9 @@ void AiAssistantDockWidget::loadSettings() {
 
     if (m_comboResolution && settings.contains("resolutionIndex")) {
         m_comboResolution->setCurrentIndex(settings.value("resolutionIndex").toInt());
+    }
+    if (m_comboQualityScale && settings.contains("qualityScaleIndex")) {
+        m_comboQualityScale->setCurrentIndex(settings.value("qualityScaleIndex").toInt());
     }
     if (m_spinWidth && settings.contains("width")) m_spinWidth->setValue(settings.value("width").toInt());
     if (m_spinHeight && settings.contains("height")) m_spinHeight->setValue(settings.value("height").toInt());

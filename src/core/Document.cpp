@@ -152,12 +152,10 @@ void Document::addExistingLayer(LayerPtr layer) {
 LayerPtr Document::addRasterLayer(const QString& name) {
     QString lName = name.isEmpty() ? QString("レイヤー %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<Layer>(lName, m_width, m_height, LayerType::Raster);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
@@ -228,12 +226,10 @@ LayerPtr Document::addRasterLayerWithImage(const QImage& img, const QString& nam
     }
 
     layer->invalidateContentBounds();
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (dstX0 <= dstX1 && dstY0 <= dstY1) {
         composite(QRect(dstX0, dstY0, dstX1 - dstX0 + 1, dstY1 - dstY0 + 1));
@@ -243,7 +239,7 @@ LayerPtr Document::addRasterLayerWithImage(const QImage& img, const QString& nam
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         auto cmd = new AddLayerCommand(this, layer, newIndex);
-        cmd->setText(tr("貼り付け"));
+        cmd->setText(name.isEmpty() ? tr("貼り付け") : name);
         m_undoStack->push(cmd);
     }
     return layer;
@@ -252,12 +248,10 @@ LayerPtr Document::addRasterLayerWithImage(const QImage& img, const QString& nam
 std::shared_ptr<VectorLayer> Document::addVectorLayer(const QString& name) {
     QString lName = name.isEmpty() ? QString("ベクトルレイヤー %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<VectorLayer>(lName, m_width, m_height);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
@@ -268,13 +262,10 @@ std::shared_ptr<VectorLayer> Document::addVectorLayer(const QString& name) {
 std::shared_ptr<AdjustmentLayer> Document::addAdjustmentLayer(AdjustmentType type, const QString& name) {
     QString lName = name.isEmpty() ? QString("調整レイヤー %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<AdjustmentLayer>(lName, m_width, m_height, type);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    composite(QRect(0, 0, m_width, m_height));
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
@@ -285,13 +276,10 @@ std::shared_ptr<AdjustmentLayer> Document::addAdjustmentLayer(AdjustmentType typ
 std::shared_ptr<TextLayer> Document::addTextLayer(const QString& name) {
     QString lName = name.isEmpty() ? QString("テキスト %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<TextLayer>(lName, m_width, m_height);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    composite(QRect(0, 0, m_width, m_height));
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
@@ -302,13 +290,10 @@ std::shared_ptr<TextLayer> Document::addTextLayer(const QString& name) {
 std::shared_ptr<GroupLayer> Document::addGroupLayer(const QString& name) {
     QString lName = name.isEmpty() ? QString("グループ %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<GroupLayer>(lName, m_width, m_height);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    composite(QRect(0, 0, m_width, m_height));
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
@@ -320,13 +305,10 @@ std::shared_ptr<ThreeDLayer> Document::addThreeDLayer(const QString& name) {
     clearSelection();
     QString lName = name.isEmpty() ? QString("3Dレイヤー %1").arg(m_layers.size() + 1) : name;
     auto layer = std::make_shared<ThreeDLayer>(lName, m_width, m_height);
-    int newIndex = static_cast<int>(m_layers.size());
-    m_layers.push_back(layer);
-    m_activeLayerIndex = newIndex;
-
-    composite(QRect(0, 0, m_width, m_height));
-    emit layerListChanged();
-    emit activeLayerChanged(m_activeLayerIndex);
+    int newIndex = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                   ? (m_activeLayerIndex + 1)
+                   : static_cast<int>(m_layers.size());
+    insertLayer(newIndex, layer);
 
     if (m_undoStack && !m_isUndoRedoInProgress) {
         m_undoStack->push(new AddLayerCommand(this, layer, newIndex));
