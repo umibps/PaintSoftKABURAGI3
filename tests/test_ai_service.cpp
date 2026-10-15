@@ -979,6 +979,7 @@ void testSdxlControlNetSupport() {
     // 1. isModelSdxl 判定
     assert(AiService::isModelSdxl("animagine-xl-3.1.safetensors") == true);
     assert(AiService::isModelSdxl("illustrious-xl-v0.1.safetensors") == true);
+    assert(AiService::isModelSdxl("ilustmix_v111.safetensors") == true);
     assert(AiService::isModelSdxl("ponyDiffusionV6XL_v6StartWithThisOne.safetensors") == true);
     assert(AiService::isModelSdxl("sd_xl_base_1.0.safetensors") == true);
     assert(AiService::isModelSdxl("v1-5-pruned-emaonly.safetensors") == false);

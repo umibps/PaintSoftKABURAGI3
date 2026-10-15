@@ -31,7 +31,29 @@ bool AiService::isModelSdxl(const QString& modelName) {
     if (m.contains("sd15") || m.contains("sd1.5") || m.contains("v1-5") || m.contains("v1.5") || m.contains("1.5")) {
         return false;
     }
-    return m.contains("xl") || m.contains("illustrious") || m.contains("pony") || m.contains("animagine");
+    if (m.contains("xl") || m.contains("illustrious") || m.contains("ilust") || m.contains("pony") || m.contains("animagine") || m.contains("noob")) {
+        return true;
+    }
+
+    // ComfyUI .cm-info.json が同フォルダに存在する場合、BaseModel を解析
+    QString modelDir = PreferencesDialog::aiModelDirectory();
+    if (!modelDir.isEmpty()) {
+        QFileInfo fi(QDir(modelDir).filePath(modelName));
+        QString baseName = fi.completeBaseName();
+        QString jsonPath = fi.dir().filePath(baseName + ".cm-info.json");
+        if (QFile::exists(jsonPath)) {
+            QFile jf(jsonPath);
+            if (jf.open(QIODevice::ReadOnly)) {
+                QJsonObject cminfo = QJsonDocument::fromJson(jf.readAll()).object();
+                QString baseM = cminfo["BaseModel"].toString().toLower();
+                if (baseM.contains("sdxl") || baseM.contains("illustrious") || baseM.contains("pony") || baseM.contains("noob")) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 static QString getComfyUiControlNetModelName(ControlNetType type, bool isSdxl = false) {
@@ -1585,6 +1607,32 @@ void AiService::onComfyHistoryPollTimer() {
         QJsonObject histObj = QJsonDocument::fromJson(data).object();
         if (histObj.contains(m_comfyPromptId)) {
             QJsonObject pObj = histObj[m_comfyPromptId].toObject();
+            QJsonObject statusObj = pObj["status"].toObject();
+
+            // ComfyUI 実行時エラーの即時検知
+            if (statusObj["status_str"].toString() == "error") {
+                m_comfyPollTimer->stop();
+                disconnectComfyWebSocket();
+
+                QString errDetails;
+                QJsonArray msgs = statusObj["messages"].toArray();
+                for (const auto& mv : msgs) {
+                    QJsonArray mArr = mv.toArray();
+                    if (mArr.size() >= 2 && mArr[0].toString() == "execution_error") {
+                        QJsonObject eObj = mArr[1].toObject();
+                        QString nodeType = eObj["node_type"].toString();
+                        QString excMsg = eObj["exception_message"].toString();
+                        QString excType = eObj["exception_type"].toString();
+                        errDetails += QString("\n・ノード: %1 (%2)\n・詳細: %3").arg(nodeType, excType, excMsg);
+                    }
+                }
+                if (errDetails.isEmpty()) {
+                    errDetails = "\n" + tr("推論ノード実行中にエラーが発生しました。");
+                }
+                emit generationFailed(tr("ComfyUI実行エラー:%1").arg(errDetails));
+                return;
+            }
+
             QJsonObject outputs = pObj["outputs"].toObject();
             QStringList imageFilenames;
             for (auto it = outputs.begin(); it != outputs.end(); ++it) {
