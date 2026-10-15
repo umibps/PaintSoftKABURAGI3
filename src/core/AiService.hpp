@@ -42,6 +42,11 @@ enum class ControlNetType {
     ReferenceOnly = 5  // リファレンス (reference_only)
 };
 
+struct GgmlDevice {
+    QString id;
+    QString description;
+};
+
 struct AiGenerateParams {
     ApiBackend backend = ApiBackend::LocalComfyUI;
     QString serverUrl = "http://127.0.0.1:8188";
@@ -115,6 +120,9 @@ public:
 
     // 背景透過ユーティリティ（外周・4隅からFloodFillし、境界を滑らかにフェザリング透過）
     static QImage removeBackground(const QImage& source, int tolerance = 25);
+
+    // 組み込み推論エンジン(sd.exe)が利用可能な計算デバイス検出
+    static std::vector<GgmlDevice> detectEmbeddedDevices(const QString& embeddedExePath = QString());
 
     // ユーティリティ & パーサー (テストやモックにも利用可能)
     static QString imageToBase64Png(const QImage& img);

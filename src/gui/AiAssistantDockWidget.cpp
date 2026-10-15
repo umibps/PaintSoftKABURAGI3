@@ -555,6 +555,7 @@ void AiAssistantDockWidget::onBackendChanged() {
     if (m_isLoadingSettings) return;
 
     updateBackendUiState();
+    detectAvailableDevices();
     onFetchModelsClicked();
     saveSettings();
 }
@@ -714,12 +715,42 @@ void AiAssistantDockWidget::onFetchModelsClicked() {
 
 void AiAssistantDockWidget::detectAvailableDevices() {
     if (!m_comboDevice) return;
+    QString current = m_comboDevice->currentData().toString();
     m_comboDevice->clear();
-    m_comboDevice->addItem(tr("CUDA (NVIDIA GPU - 推奨)"), "cuda");
-    m_comboDevice->addItem(tr("ROCm (AMD GPU)"), "rocm");
-    m_comboDevice->addItem(tr("OpenVINO (Intel CPU/GPU/NPU)"), "openvino");
-    m_comboDevice->addItem(tr("CPU (低速)"), "cpu");
-    m_comboDevice->setCurrentIndex(0);
+
+    // 組み込み推論エンジン(sd.exe)の実機デバイス検出を試行
+    auto embeddedDevices = AiService::detectEmbeddedDevices();
+    if (!embeddedDevices.empty()) {
+        for (const auto& dev : embeddedDevices) {
+            QString label = QString("%1 (%2)").arg(dev.id, dev.description);
+            m_comboDevice->addItem(label, dev.id);
+        }
+    } else {
+        // フォールバック
+        m_comboDevice->addItem(tr("CUDA (NVIDIA GPU - 推奨)"), "cuda");
+        m_comboDevice->addItem(tr("ROCm (AMD GPU)"), "rocm");
+        m_comboDevice->addItem(tr("OpenVINO (Intel CPU/GPU/NPU)"), "openvino");
+    }
+
+    // 常にCPUオプションを確実に追加
+    bool hasCpu = false;
+    for (int i = 0; i < m_comboDevice->count(); ++i) {
+        if (m_comboDevice->itemData(i).toString().compare("cpu", Qt::CaseInsensitive) == 0) {
+            hasCpu = true;
+            break;
+        }
+    }
+    if (!hasCpu) {
+        m_comboDevice->addItem(tr("CPU (安全・確実)"), "cpu");
+    }
+
+    if (!current.isEmpty()) {
+        int idx = m_comboDevice->findData(current);
+        if (idx >= 0) m_comboDevice->setCurrentIndex(idx);
+        else m_comboDevice->setCurrentIndex(0);
+    } else {
+        m_comboDevice->setCurrentIndex(0);
+    }
 }
 
 QStringList AiAssistantDockWidget::scanUpscaleModels() const {

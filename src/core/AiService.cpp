@@ -15,9 +15,11 @@
 #include <QHttpPart>
 #include <QDebug>
 #include <QWebSocket>
-#include <QUuid>
 #include <QRegularExpression>
+#include <QThread>
 #include <queue>
+#include "PreferencesDialog.hpp"
+#include "AiComponentDownloader.hpp"
 
 namespace Kaburagi {
 
@@ -928,6 +930,18 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
     args << "--vae-tiling";
     args << "--fa";
 
+    // 計算デバイス (GPU / CPU)
+    QString dev = params.computeDevice.trimmed();
+    if (dev.compare("cpu", Qt::CaseInsensitive) == 0) {
+        args << "--backend" << "cpu";
+        int cpuThreads = std::clamp(QThread::idealThreadCount() - 2, 2, 32);
+        args << "-t" << QString::number(cpuThreads);
+    } else if (dev.startsWith("vulkan", Qt::CaseInsensitive)) {
+        args << "--backend" << dev.toLower();
+    } else if (dev.compare("cuda", Qt::CaseInsensitive) == 0 || dev.compare("rocm", Qt::CaseInsensitive) == 0) {
+        args << "--backend" << "vulkan0";
+    }
+
     // 入力画像 (img2img)
     if (!params.initImage.isNull()) {
         QString tempInitPath = QDir::temp().filePath(QString("kaburagi_embed_init_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
@@ -1038,6 +1052,15 @@ void AiService::onEmbeddedProcessFinished(int exitCode) {
     }
     if (!errLines.isEmpty()) {
         errDetail = "\n\n" + tr("詳細:") + "\n" + errLines.join("\n");
+    }
+
+    if (m_embeddedProcessLog.contains("cannot make enough memory", Qt::CaseInsensitive) ||
+        m_embeddedProcessLog.contains("workspace capacity check", Qt::CaseInsensitive) ||
+        m_embeddedProcessLog.contains("out of memory", Qt::CaseInsensitive) ||
+        m_embeddedProcessLog.contains("budget", Qt::CaseInsensitive)) {
+        errDetail += "\n\n" + tr("💡 【原因と解決策】\n"
+                                 "GPUのVRAM容量が不足しています。リモートデスクトップ接続中や内蔵GPU環境ではGPUメモリが大幅に制限されます。\n"
+                                 "AIアシスタントの「使用デバイス」を『CPU』に変更して再試行してください。");
     }
 
     emit generationFailed(tr("組み込み推論エンジンの実行に失敗しました (終了コード: %1)%2").arg(exitCode).arg(errDetail));
@@ -1570,6 +1593,46 @@ void AiService::onEmbeddedProcessReadyRead() {
             }
         }
     }
+}
+
+std::vector<GgmlDevice> AiService::detectEmbeddedDevices(const QString& embeddedExePath) {
+    std::vector<GgmlDevice> devices;
+    QString exe = embeddedExePath;
+    if (exe.isEmpty()) {
+        exe = PreferencesDialog::embeddedEnginePath();
+    }
+    if (exe.isEmpty() || !QFile::exists(exe)) {
+        exe = AiComponentDownloader::getLocalFilePath(ComponentType::EmbeddedSdExe);
+    }
+    if (exe.isEmpty() || !QFile::exists(exe)) {
+        return devices;
+    }
+
+    QProcess proc;
+    proc.start(exe, { "--list-devices" });
+    if (!proc.waitForFinished(5000)) {
+        proc.kill();
+        return devices;
+    }
+
+    QString output = QString::fromUtf8(proc.readAllStandardOutput());
+    if (output.isEmpty()) {
+        output = QString::fromUtf8(proc.readAllStandardError());
+    }
+
+    QStringList lines = output.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        int tabIdx = line.indexOf('\t');
+        if (tabIdx > 0) {
+            QString id = line.left(tabIdx).trimmed();
+            QString desc = line.mid(tabIdx + 1).trimmed();
+            if (!id.isEmpty()) {
+                devices.push_back({ id, desc });
+            }
+        }
+    }
+
+    return devices;
 }
 
 } // namespace Kaburagi
