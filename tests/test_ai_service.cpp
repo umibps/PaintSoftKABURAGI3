@@ -946,9 +946,20 @@ void testSketchToLineartAndBrightnessToAlpha() {
     QJsonObject comfyJson = AiService::buildComfyUiPromptJson(comfyParams);
     assert(!comfyJson.isEmpty());
     // initImage があるため KSampler に VAEEncode 経由で繋がっていること
-    assert(comfyJson.contains("3")); // KSampler
-    QJsonObject ksamplerInputs = comfyJson["3"].toObject()["inputs"].toObject();
+    assert(comfyJson.contains("prompt"));
+    QJsonObject promptObj = comfyJson["prompt"].toObject();
+    assert(promptObj.contains("3")); // KSampler
+    QJsonObject ksamplerInputs = promptObj["3"].toObject()["inputs"].toObject();
     assert(ksamplerInputs["denoise"].toDouble() == 1.0);
+
+    // 2b. batchCount > 1 の時に RepeatLatentBatch (Node 12) が挿入されることの検証
+    comfyParams.batchCount = 4;
+    QJsonObject batchComfy = AiService::buildComfyUiPromptJson(comfyParams, "init.png", "cn.png");
+    QJsonObject batchPrompt = batchComfy["prompt"].toObject();
+    assert(batchPrompt.contains("12"));
+    assert(batchPrompt["12"].toObject()["class_type"].toString() == "RepeatLatentBatch");
+    assert(batchPrompt["12"].toObject()["inputs"].toObject()["amount"].toInt() == 4);
+    assert(batchPrompt["3"].toObject()["inputs"].toObject()["latent_image"].toArray()[0].toString() == "12");
 
     // 3. AiAssistantDockWidget でのモード切り替え検証
     AiAssistantDockWidget dock;

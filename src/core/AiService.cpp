@@ -627,7 +627,21 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
         node11["inputs"] = node11Inputs;
         prompt["11"] = node11;
 
-        latentNodeId = "11";
+        if (params.batchCount > 1) {
+            // Node 12: RepeatLatentBatch (img2img/線画化モードで複数枚バッチ生成を有効化)
+            QJsonObject node12;
+            node12["class_type"] = "RepeatLatentBatch";
+            QJsonObject node12Inputs;
+            QJsonArray latentLink; latentLink.append("11"); latentLink.append(0);
+            node12Inputs["samples"] = latentLink;
+            node12Inputs["amount"] = std::clamp(params.batchCount, 1, 8);
+            node12["inputs"] = node12Inputs;
+            prompt["12"] = node12;
+
+            latentNodeId = "12";
+        } else {
+            latentNodeId = "11";
+        }
     } else {
         // Node 5: EmptyLatentImage
         QJsonObject node5;
