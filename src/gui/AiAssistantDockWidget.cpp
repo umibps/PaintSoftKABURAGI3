@@ -1467,6 +1467,12 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
         return whiteCanvas;
     }
 
+    // 「自動着彩 / カラーラフ」モードでは、各パーツが別レイヤーで色分け（下塗り）されていることが多いため、
+    // キャンバス全体の可視レイヤー合成画像（compositeBuffer）をベース画像として渡す
+    if (mode == AiMode::Colorization) {
+        return m_document->compositeBuffer().toQImage();
+    }
+
     auto activeLayer = m_document->activeLayer();
     // 「ラフ清書」モードにおいて、前回のAI生成レイヤーがアクティブになっている場合は元のラフレイヤーを探して優先参照
     if (mode == AiMode::RoughToClean && activeLayer) {
