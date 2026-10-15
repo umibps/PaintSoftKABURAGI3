@@ -984,40 +984,65 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
     // 3. ControlNet 有効時のモデル不足チェック
     if (m_chkControlNet && m_chkControlNet->isChecked() && m_chkControlNet->isEnabled()) {
         ControlNetType cnType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
-        if (cnType != ControlNetType::ReferenceOnly && !AiComponentDownloader::isComponentInstalled(ComponentType::ControlNetLineart)) {
-            QStringList cnModels = scanLocalControlNetModels();
-            if (cnModels.isEmpty()) {
-                auto info = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetLineart);
-                auto reply = QMessageBox::question(
+        if (cnType != ControlNetType::ReferenceOnly) {
+            QString cnModelPath = AiService::findControlNetModelPath(cnType);
+            if (cnModelPath.isEmpty()) {
+                ComponentType compType = AiComponentDownloader::fromControlNetType(cnType);
+                auto info = AiComponentDownloader::getComponentInfo(compType);
+                auto reply = QMessageBox::warning(
                     this,
-                    tr("ControlNet モデルのダウンロード確認"),
-                    tr("ControlNet 線画抽出モデルが見つかりません。\n\n"
-                       "モデルファイルをダウンロードしますか？\n\n"
+                    tr("ControlNet モデルが見つかりません"),
+                    tr("選択された ControlNet モデルが見つかりません。\n\n"
+                       "このまま生成すると、ControlNet（線の維持や構図の反映）が適用されません。\n"
+                       "対応するモデルファイルをダウンロードしますか？\n\n"
                        "・モデル名: %1\n"
-                       "・サイズ目安: 約 %2 MB\n\n"
-                       "※ 「はい」を選択すると保存先フォルダの選択画面が開きます。\n"
-                       "※ 「いいえ」を選択した場合、ControlNet なしで生成を続行します。")
+                       "・ファイル名: %2\n"
+                       "・サイズ目安: 約 %3 MB\n\n"
+                       "※ 「はい」を選択すると保存先フォルダの選択画面が開き、ダウンロードを開始します。\n"
+                       "※ 「いいえ」を選択した場合、ControlNet なしで画像生成を続行します。\n"
+                       "※ 「キャンセル」を選択した場合、生成を中止します。")
                     .arg(info.name)
+                    .arg(info.fileName)
                     .arg(info.estimatedSizeBytes / (1024 * 1024)),
-                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
                     QMessageBox::Yes
                 );
 
-                if (reply == QMessageBox::Yes) {
+                if (reply == QMessageBox::Cancel) {
+                    return false;
+                } else if (reply == QMessageBox::Yes) {
+                    QString defaultDir = info.targetDirectory;
+                    if (!QDir(defaultDir).exists()) {
+                        QDir().mkpath(defaultDir);
+                    }
                     QString chosenDir = QFileDialog::getExistingDirectory(
                         this,
                         tr("ControlNet モデルの保存先フォルダを選択"),
-                        info.targetDirectory,
+                        defaultDir,
                         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
                     );
                     if (!chosenDir.isEmpty()) {
                         AiComponentDownloader downloader(this);
-                        if (downloader.downloadComponentWithDialog(ComponentType::ControlNetLineart, this, chosenDir)) {
+                        if (downloader.downloadComponentWithDialog(compType, this, chosenDir)) {
                             PreferencesDialog::setAiControlNetDirectory(chosenDir);
-                            m_lblStatus->setText(tr("ControlNet モデルをダウンロードしました"));
+                            m_lblStatus->setText(tr("ControlNet モデルをダウンロードしました: %1").arg(info.fileName));
                             refreshLocalModels();
+                        } else {
+                            if (downloader.isUserCancelled()) {
+                                m_lblStatus->setText(tr("ダウンロードがキャンセルされました"));
+                            } else {
+                                m_lblStatus->setText(tr("ダウンロード失敗: %1").arg(downloader.errorMessage()));
+                            }
+                            return false;
                         }
+                    } else {
+                        m_lblStatus->setText(tr("保存先フォルダの指定がキャンセルされました"));
+                        return false;
                     }
+                } else {
+                    // 「いいえ」の場合：ControlNet をオフにして続行
+                    m_chkControlNet->setChecked(false);
+                    m_lblStatus->setText(tr("ControlNet なしで生成を続行します"));
                 }
             }
         }

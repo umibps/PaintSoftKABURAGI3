@@ -90,19 +90,62 @@ ComponentInfo AiComponentDownloader::getComponentInfo(ComponentType type) {
         break;
 
     case ComponentType::ControlNetLineart:
-        info.name = "ControlNet 線画抽出モデル (Lineart)";
-        info.fileName = "control_v11p_sd15_lineart.pth";
+    case ComponentType::ControlNetDepth:
+    case ComponentType::ControlNetOpenpose:
+    case ComponentType::ControlNetScribble:
+    case ComponentType::ControlNetCanny:
         {
             QString cDir = PreferencesDialog::aiControlNetDirectory();
-            if (!cDir.isEmpty()) {
+            if (!cDir.isEmpty() && QDir(cDir).exists()) {
                 info.targetDirectory = cDir;
             } else {
-                info.targetDirectory = appData + "/models/ControlNet";
+                QString mDir = PreferencesDialog::aiModelDirectory();
+                if (!mDir.isEmpty()) {
+                    QDir md(mDir);
+                    if (md.exists("ControlNet")) info.targetDirectory = md.filePath("ControlNet");
+                    else if (md.exists("controlnet")) info.targetDirectory = md.filePath("controlnet");
+                    else {
+                        QDir parentDir = md;
+                        if (parentDir.cdUp() && (parentDir.exists("ControlNet") || parentDir.exists("controlnet"))) {
+                            info.targetDirectory = parentDir.exists("ControlNet") ? parentDir.filePath("ControlNet") : parentDir.filePath("controlnet");
+                        } else {
+                            info.targetDirectory = md.filePath("ControlNet");
+                        }
+                    }
+                } else {
+                    info.targetDirectory = appData + "/models/ControlNet";
+                }
+            }
+
+            info.estimatedSizeBytes = 1450ULL * 1024 * 1024; // 約1.45GB
+
+            if (type == ComponentType::ControlNetLineart) {
+                info.name = "ControlNet 線画抽出モデル (Lineart)";
+                info.fileName = "control_v11p_sd15_lineart.pth";
+                info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_lineart.pth";
+                info.description = "キャンバスの線画から構図を保って清書・着色するためのモデルです。";
+            } else if (type == ComponentType::ControlNetDepth) {
+                info.name = "ControlNet 深度推定モデル (Depth)";
+                info.fileName = "control_v11f1p_sd15_depth.pth";
+                info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11f1p_sd15_depth.pth";
+                info.description = "立体感や奥行きを維持して画像を生成するためのモデルです。";
+            } else if (type == ComponentType::ControlNetOpenpose) {
+                info.name = "ControlNet 人体ポーズモデル (Openpose)";
+                info.fileName = "control_v11p_sd15_openpose.pth";
+                info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_openpose.pth";
+                info.description = "キャラクターのポーズや骨格姿勢を精密に制御するためのモデルです。";
+            } else if (type == ComponentType::ControlNetScribble) {
+                info.name = "ControlNet ラフ・落書きモデル (Scribble)";
+                info.fileName = "control_v11p_sd15_scribble.pth";
+                info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_scribble.pth";
+                info.description = "大まかな落書きや手書きスケッチからイラストを生成するためのモデルです。";
+            } else if (type == ComponentType::ControlNetCanny) {
+                info.name = "ControlNet エッジ抽出モデル (Canny)";
+                info.fileName = "control_v11p_sd15_canny.pth";
+                info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_canny.pth";
+                info.description = "画像の輪郭線や境界を正確に維持して生成するためのモデルです。";
             }
         }
-        info.downloadUrl = "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_lineart.pth";
-        info.estimatedSizeBytes = 1450ULL * 1024 * 1024; // 約1.45GB
-        info.description = "キャンバスの線画から構図を保って清書・着色するためのモデルです。";
         break;
 
     case ComponentType::BaseSdModel:
@@ -179,9 +222,53 @@ QString AiComponentDownloader::resolveLatestDownloadUrl(ComponentType type) {
     return getComponentInfo(type).downloadUrl;
 }
 
+ComponentType AiComponentDownloader::fromControlNetType(ControlNetType cnType) {
+    switch (cnType) {
+    case ControlNetType::Lineart: return ComponentType::ControlNetLineart;
+    case ControlNetType::Depth: return ComponentType::ControlNetDepth;
+    case ControlNetType::Openpose: return ComponentType::ControlNetOpenpose;
+    case ControlNetType::Scribble: return ComponentType::ControlNetScribble;
+    case ControlNetType::Canny: return ComponentType::ControlNetCanny;
+    default: return ComponentType::ControlNetLineart;
+    }
+}
+
+bool AiComponentDownloader::hasComponentForControlNetType(ControlNetType cnType) {
+    switch (cnType) {
+    case ControlNetType::Lineart:
+    case ControlNetType::Depth:
+    case ControlNetType::Openpose:
+    case ControlNetType::Scribble:
+    case ControlNetType::Canny:
+        return true;
+    default:
+        return false;
+    }
+}
+
 QString AiComponentDownloader::getLocalFilePath(ComponentType type) {
     ComponentInfo info = getComponentInfo(type);
     QString appDir = QCoreApplication::applicationDirPath();
+
+    // ControlNet モデルの場合、AiService::findControlNetModelPath を利用
+    if (type == ComponentType::ControlNetLineart ||
+        type == ComponentType::ControlNetDepth ||
+        type == ComponentType::ControlNetOpenpose ||
+        type == ComponentType::ControlNetScribble ||
+        type == ComponentType::ControlNetCanny) {
+        ControlNetType cnType = ControlNetType::Lineart;
+        if (type == ComponentType::ControlNetDepth) cnType = ControlNetType::Depth;
+        else if (type == ComponentType::ControlNetOpenpose) cnType = ControlNetType::Openpose;
+        else if (type == ComponentType::ControlNetScribble) cnType = ControlNetType::Scribble;
+        else if (type == ComponentType::ControlNetCanny) cnType = ControlNetType::Canny;
+
+        QString found = AiService::findControlNetModelPath(cnType);
+        if (!found.isEmpty()) {
+            return found;
+        }
+        return info.targetDirectory + "/" + info.fileName;
+    }
+
     if (type == ComponentType::EmbeddedSdExe) {
         QString pref = PreferencesDialog::embeddedEnginePath();
         if (!pref.isEmpty() && QFile::exists(pref)) return pref;

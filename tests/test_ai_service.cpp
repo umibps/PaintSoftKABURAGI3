@@ -435,6 +435,38 @@ void testAiComponentDownloader() {
 
     auto infoCn = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetLineart);
     assert(infoCn.fileName == "control_v11p_sd15_lineart.pth");
+    assert(infoCn.downloadUrl.contains("lineart"));
+    assert(infoCn.estimatedSizeBytes > 0);
+
+    // Test all ControlNet component mappings and metadata
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Lineart) == ComponentType::ControlNetLineart);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Depth) == ComponentType::ControlNetDepth);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Openpose) == ComponentType::ControlNetOpenpose);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Scribble) == ComponentType::ControlNetScribble);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Canny) == ComponentType::ControlNetCanny);
+
+    assert(AiComponentDownloader::hasComponentForControlNetType(ControlNetType::Lineart));
+    assert(AiComponentDownloader::hasComponentForControlNetType(ControlNetType::Depth));
+    assert(AiComponentDownloader::hasComponentForControlNetType(ControlNetType::Openpose));
+    assert(AiComponentDownloader::hasComponentForControlNetType(ControlNetType::Scribble));
+    assert(AiComponentDownloader::hasComponentForControlNetType(ControlNetType::Canny));
+    assert(!AiComponentDownloader::hasComponentForControlNetType(ControlNetType::ReferenceOnly));
+
+    auto infoDepth = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetDepth);
+    assert(infoDepth.fileName == "control_v11f1p_sd15_depth.pth");
+    assert(infoDepth.downloadUrl.contains("depth"));
+
+    auto infoOpenpose = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetOpenpose);
+    assert(infoOpenpose.fileName == "control_v11p_sd15_openpose.pth");
+    assert(infoOpenpose.downloadUrl.contains("openpose"));
+
+    auto infoScribble = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetScribble);
+    assert(infoScribble.fileName == "control_v11p_sd15_scribble.pth");
+    assert(infoScribble.downloadUrl.contains("scribble"));
+
+    auto infoCanny = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetCanny);
+    assert(infoCanny.fileName == "control_v11p_sd15_canny.pth");
+    assert(infoCanny.downloadUrl.contains("canny"));
 
     QString pathSd = AiComponentDownloader::getLocalFilePath(ComponentType::EmbeddedSdExe);
     assert(pathSd.endsWith("sd.exe"));

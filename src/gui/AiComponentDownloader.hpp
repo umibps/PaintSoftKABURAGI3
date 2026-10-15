@@ -6,6 +6,8 @@
 #include <QNetworkReply>
 #include <QFile>
 
+#include "AiService.hpp"
+
 class QWidget;
 
 namespace Kaburagi {
@@ -15,6 +17,10 @@ enum class ComponentType {
     UpscaleModelAnime6B,   // R-ESRGAN 4x+ Anime6B
     UpscaleModelRealEsrgan,// RealESRGAN_x4plus
     ControlNetLineart,     // ControlNet lineart
+    ControlNetDepth,       // ControlNet depth
+    ControlNetOpenpose,    // ControlNet openpose
+    ControlNetScribble,    // ControlNet scribble
+    ControlNetCanny,       // ControlNet canny
     BaseSdModel            // 標準ベースモデル (v1-5-pruned-emaonly.safetensors)
 };
 
@@ -42,6 +48,8 @@ public:
     static QString getLocalFilePath(ComponentType type);
     static bool isComponentInstalled(ComponentType type);
     static QString resolveLatestDownloadUrl(ComponentType type);
+    static ComponentType fromControlNetType(ControlNetType cnType);
+    static bool hasComponentForControlNetType(ControlNetType cnType);
 
     // プログレスダイアログを表示してモーダルダウンロードを実行 (成功で true)
     // customTargetDir が指定されている場合、そのディレクトリに保存

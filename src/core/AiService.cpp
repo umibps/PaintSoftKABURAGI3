@@ -18,6 +18,7 @@
 #include <QRegularExpression>
 #include <QThread>
 #include <QCoreApplication>
+#include <QStandardPaths>
 #include <queue>
 #include "PreferencesDialog.hpp"
 #include "AiComponentDownloader.hpp"
@@ -71,11 +72,30 @@ QString AiService::findControlNetModelPath(ControlNetType type, const QString& e
         searchDirs << mDir.filePath("ControlNet");
         searchDirs << mDir.filePath("controlnet");
         searchDirs << modelDir;
+        QDir parentDir = mDir;
+        if (parentDir.cdUp()) {
+            searchDirs << parentDir.filePath("ControlNet");
+            searchDirs << parentDir.filePath("controlnet");
+        }
+    }
+    QString comfyPath = PreferencesDialog::comfyUiLaunchPath();
+    if (!comfyPath.isEmpty()) {
+        QFileInfo cfi(comfyPath);
+        QDir cDir = cfi.absoluteDir();
+        searchDirs << cDir.filePath("models/controlnet");
+        searchDirs << cDir.filePath("models/ControlNet");
+        searchDirs << cDir.filePath("Data/Models/controlnet");
+        searchDirs << cDir.filePath("Data/Models/ControlNet");
     }
     QString appDir = QCoreApplication::applicationDirPath();
     searchDirs << appDir + "/models/ControlNet";
     searchDirs << appDir + "/models/controlnet";
     searchDirs << appDir + "/models";
+    QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (!appData.isEmpty()) {
+        searchDirs << appData + "/models/ControlNet";
+        searchDirs << appData + "/models/controlnet";
+    }
 
     for (const auto& dirPath : searchDirs) {
         QDir dir(dirPath);
