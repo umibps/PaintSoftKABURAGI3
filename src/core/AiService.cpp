@@ -61,19 +61,19 @@ QString AiService::findControlNetModelPath(ControlNetType type, bool isSdxl, con
     if (isSdxl) {
         switch (type) {
         case ControlNetType::Lineart:
-            patterns << "*anytest*" << "*anyline*" << "*lineart*xl*" << "*xl*lineart*" << "*line*sdxl*" << "*sdxl*line*";
+            patterns << "*anytest*" << "*anyline*" << "*control*lineart*xl*" << "*controlnet*lineart*xl*" << "*control*xl*lineart*" << "*controlnet*xl*lineart*" << "*lineart*xl*" << "*xl*lineart*";
             break;
         case ControlNetType::Depth:
-            patterns << "*depth*xl*" << "*xl*depth*" << "*depth*sdxl*" << "*sdxl*depth*";
+            patterns << "*control*depth*xl*" << "*controlnet*depth*xl*" << "*control*xl*depth*" << "*controlnet*xl*depth*" << "*depth*xl*" << "*xl*depth*";
             break;
         case ControlNetType::Openpose:
-            patterns << "*openpose*xl*" << "*xl*openpose*" << "*openpose*sdxl*" << "*sdxl*openpose*";
+            patterns << "*control*openpose*xl*" << "*controlnet*openpose*xl*" << "*control*xl*openpose*" << "*controlnet*xl*openpose*" << "*openpose*xl*" << "*xl*openpose*";
             break;
         case ControlNetType::Scribble:
-            patterns << "*scribble*xl*" << "*xl*scribble*" << "*scribble*sdxl*" << "*sdxl*scribble*";
+            patterns << "*control*scribble*xl*" << "*controlnet*scribble*xl*" << "*control*xl*scribble*" << "*controlnet*xl*scribble*" << "*scribble*xl*" << "*xl*scribble*";
             break;
         case ControlNetType::Canny:
-            patterns << "*canny*xl*" << "*xl*canny*" << "*canny*sdxl*" << "*sdxl*canny*";
+            patterns << "*control*canny*xl*" << "*controlnet*canny*xl*" << "*control*xl*canny*" << "*controlnet*xl*canny*" << "*canny*xl*" << "*xl*canny*";
             break;
         default:
             return QString();
@@ -81,19 +81,19 @@ QString AiService::findControlNetModelPath(ControlNetType type, bool isSdxl, con
     } else {
         switch (type) {
         case ControlNetType::Lineart:
-            patterns << "*sd15*lineart*" << "*lineart*sd15*" << "*v11*lineart*" << "*lineart*";
+            patterns << "*sd15*lineart*" << "*lineart*sd15*" << "*v11*lineart*" << "*control*lineart*" << "*controlnet*lineart*" << "*lineart*";
             break;
         case ControlNetType::Depth:
-            patterns << "*sd15*depth*" << "*depth*sd15*" << "*v11*depth*" << "*depth*";
+            patterns << "*sd15*depth*" << "*depth*sd15*" << "*v11*depth*" << "*control*depth*" << "*controlnet*depth*" << "*depth*";
             break;
         case ControlNetType::Openpose:
-            patterns << "*sd15*openpose*" << "*openpose*sd15*" << "*v11*openpose*" << "*openpose*";
+            patterns << "*sd15*openpose*" << "*openpose*sd15*" << "*v11*openpose*" << "*control*openpose*" << "*controlnet*openpose*" << "*openpose*";
             break;
         case ControlNetType::Scribble:
-            patterns << "*sd15*scribble*" << "*scribble*sd15*" << "*v11*scribble*" << "*scribble*";
+            patterns << "*sd15*scribble*" << "*scribble*sd15*" << "*v11*scribble*" << "*control*scribble*" << "*controlnet*scribble*" << "*scribble*";
             break;
         case ControlNetType::Canny:
-            patterns << "*sd15*canny*" << "*canny*sd15*" << "*v11*canny*" << "*canny*";
+            patterns << "*sd15*canny*" << "*canny*sd15*" << "*v11*canny*" << "*control*canny*" << "*controlnet*canny*" << "*canny*";
             break;
         default:
             return QString();
@@ -113,7 +113,7 @@ QString AiService::findControlNetModelPath(ControlNetType type, bool isSdxl, con
         QDir mDir(modelDir);
         searchDirs << mDir.filePath("ControlNet");
         searchDirs << mDir.filePath("controlnet");
-        searchDirs << modelDir;
+        // 注意: modelDir そのものは画像生成ベースモデル(Checkpoint)のフォルダであるため、ControlNet探索対象には含めない
         QDir parentDir = mDir;
         if (parentDir.cdUp()) {
             searchDirs << parentDir.filePath("ControlNet");
@@ -151,6 +151,10 @@ QString AiService::findControlNetModelPath(ControlNetType type, bool isSdxl, con
                 if (isSdxl) {
                     // SDXL探索時: SD 1.5専用モデル（sd15, v11p, v1-5）は除外
                     if (lower.contains("sd15") || lower.contains("sd1.5") || lower.contains("v11p")) {
+                        continue;
+                    }
+                    // 単なるベースモデルやLoRAの誤検出を防止 (ControlNet特有のキーワードを含むことを確認)
+                    if (!lower.contains("control") && !lower.contains("cn") && !lower.contains("anytest") && !lower.contains("anyline") && !lower.contains("adapter")) {
                         continue;
                     }
                 } else {
@@ -1303,8 +1307,8 @@ void AiService::onEmbeddedProcessFinished(int exitCode) {
     } else if (m_embeddedProcessLog.contains("not in model metadata", Qt::CaseInsensitive) ||
                m_embeddedProcessLog.contains("model metadata validation failed", Qt::CaseInsensitive)) {
         errDetail += "\n\n" + tr("💡 【原因と解決策】\n"
-                                 "ベースモデルと ControlNet モデルの世代（SD 1.5 / SDXL）が一致していません。\n"
-                                 "現在選択されているベースモデルが SDXL系（AnimagineXL、Illustrious等）の場合、SD 1.5用の ControlNetモデルは使用できません。\n"
+                                 "組み込み推論エンジン(sd.exe)は SD 1.5 世代の ControlNet のみに対応しており、SDXL 世代モデルでの ControlNet 制御には非対応です。\n"
+                                 "SDXLモデル（AnimagineXL、Illustrious等）で ControlNet（線画抽出・アタリ制御）を行う場合は、バックエンドを『ComfyUI』または『WebUI』に変更するか、\n"
                                  "AIアシスタントの「モデル」一覧から SD 1.5系のモデル（meinamix、v1-5-pruned、aniverse、dreamshaper 等）を選択して再試行してください。");
     }
 

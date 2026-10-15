@@ -1018,6 +1018,36 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
         if (cnType != ControlNetType::ReferenceOnly) {
             QString currentModel = m_comboModel ? m_comboModel->currentText().trimmed() : QString();
             bool isSdxl = AiService::isModelSdxl(currentModel);
+
+            // 組み込み推論エンジン(sd.exe)使用時: sd.exe は SD 1.5 の ControlNet のみに対応しており、SDXL ControlNet には非対応
+            if (m_radioEmbedded && m_radioEmbedded->isChecked() && isSdxl) {
+                QMessageBox msgBox(this);
+                msgBox.setWindowTitle(tr("組み込み推論エンジン(sd.exe)の制限"));
+                msgBox.setIcon(QMessageBox::Warning);
+                msgBox.setText(tr("組み込み推論エンジン(sd.exe)は、SDXL 世代モデル（%1）での ControlNet（線画抽出・アタリ制御）に対応していません。\n\n"
+                                  "※ sd.exe の内部 ControlNet モジュールは SD 1.5 世代専用です。\n\n"
+                                  "【おすすめの対処方法】\n"
+                                  "① 『ComfyUI』バックエンドを使用する（SDXL ControlNet に完全対応しています）。\n"
+                                  "② 組み込みエンジンのまま生成する場合は、「モデル」一覧から SD 1.5系のモデル（meinamix、aniverse、dreamshaper 等）を選択する。")
+                               .arg(currentModel.isEmpty() ? tr("(未選択)") : currentModel));
+                QPushButton* btnSwitchComfy = msgBox.addButton(tr("ComfyUIに切り替える"), QMessageBox::ActionRole);
+                QPushButton* btnKeepAndDisableCn = msgBox.addButton(tr("ControlNetをOFFにして続行"), QMessageBox::ActionRole);
+                QPushButton* btnCancel = msgBox.addButton(tr("キャンセル"), QMessageBox::RejectRole);
+                msgBox.setDefaultButton(btnSwitchComfy);
+                msgBox.exec();
+
+                if (msgBox.clickedButton() == btnSwitchComfy) {
+                    m_radioComfyUi->setChecked(true);
+                    onBackendChanged();
+                    // ComfyUI に切り替わったため、そのまま SDXL 用 ControlNet の探索・ダウンロードへ進む
+                } else if (msgBox.clickedButton() == btnKeepAndDisableCn) {
+                    m_chkControlNet->setChecked(false);
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+
             QString cnModelPath = AiService::findControlNetModelPath(cnType, isSdxl);
             if (cnModelPath.isEmpty()) {
                 ComponentType compType = AiComponentDownloader::fromControlNetType(cnType, isSdxl);

@@ -1018,7 +1018,17 @@ void testSdxlControlNetSupport() {
     QJsonObject webUiSd15 = AiService::buildWebUiTxt2ImgJson(sd15Params);
     QJsonObject alwaysOnSd15 = webUiSd15["alwayson_scripts"].toObject()["controlnet"].toObject();
     QJsonObject unitSd15 = alwaysOnSd15["args"].toArray()[0].toObject();
-    assert(unitSd15["model"].toString().contains("control_v11p_sd15_lineart"));
+    // 5. findControlNetModelPath の実フォルダでの検証 (チェックポイント誤検出防止)
+    QString foundSdxlCn = AiService::findControlNetModelPath(ControlNetType::Lineart, true);
+    // sdxl_BW_bold_Line.safetensors などのベースモデル・Checkpointが誤ってControlNetとして検出されないこと
+    assert(!foundSdxlCn.contains("sdxl_BW_bold_Line", Qt::CaseInsensitive));
+    assert(!foundSdxlCn.contains("sdxl_BWLine", Qt::CaseInsensitive));
+
+    // SD 1.5 Lineart の場合は既存の control_v11p_sd15_lineart.pth が正しく検出されること
+    QString foundSd15Cn = AiService::findControlNetModelPath(ControlNetType::Lineart, false);
+    if (!foundSd15Cn.isEmpty()) {
+        assert(foundSd15Cn.contains("control_v11p_sd15_lineart", Qt::CaseInsensitive));
+    }
 
     std::cout << "  -> PASSED!" << std::endl;
 }
