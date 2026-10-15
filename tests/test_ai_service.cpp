@@ -600,6 +600,17 @@ static void testUpscaleModelDirectoryPreference() {
 static void testAiSettingsPersistenceAndThumbnailStyle() {
     std::cout << "[TEST] 13. AI Settings Persistence (Backend, Model, Geometry) & Thumbnail Red Border..." << std::endl;
 
+    // 既存設定の退避
+    QSettings origSettings("KABURAGI", "PaintSoft KABURAGI");
+    origSettings.beginGroup("AiAssistant");
+    QMap<QString, QVariant> backup;
+    for (const QString& key : origSettings.childKeys()) {
+        backup[key] = origSettings.value(key);
+    }
+    origSettings.endGroup();
+
+    QString testModelName = "v1-5-pruned-emaonly-fp16.safetensors";
+
     // 1. 設定保存
     {
         AiAssistantDockWidget dock1;
@@ -607,14 +618,18 @@ static void testAiSettingsPersistenceAndThumbnailStyle() {
         dock1.setGeometry(150, 200, 480, 680);
 
         // ラジオボタンを組み込み(Embedded)に切り替え
-        QRadioButton* radioEmbedded = dock1.findChild<QRadioButton*>();
-        // 全ラジオボタン探索
         const auto radios = dock1.findChildren<QRadioButton*>();
         for (auto* r : radios) {
             if (r->text().contains("組み込み")) {
                 r->setChecked(true);
                 break;
             }
+        }
+
+        // 実在するモデル名があればそれを使用
+        QStringList realModels = dock1.scanLocalModels();
+        if (!realModels.isEmpty()) {
+            testModelName = realModels.first();
         }
 
         // モデル選択コンボボックス
@@ -630,8 +645,10 @@ static void testAiSettingsPersistenceAndThumbnailStyle() {
             comboModel = combos[0];
         }
         if (comboModel) {
-            comboModel->addItem("custom_saved_model_v2.safetensors");
-            comboModel->setCurrentText("custom_saved_model_v2.safetensors");
+            if (comboModel->findText(testModelName) == -1) {
+                comboModel->addItem(testModelName);
+            }
+            comboModel->setCurrentText(testModelName);
         }
 
         dock1.saveSettings();
@@ -657,13 +674,13 @@ static void testAiSettingsPersistenceAndThumbnailStyle() {
         QComboBox* comboModel = nullptr;
         const auto combos = dock2.findChildren<QComboBox*>();
         for (auto* c : combos) {
-            if (c->currentText().contains("custom_saved_model_v2.safetensors")) {
+            if (c->currentText().contains(testModelName)) {
                 comboModel = c;
                 break;
             }
         }
         assert(comboModel != nullptr);
-        assert(comboModel->currentText() == "custom_saved_model_v2.safetensors");
+        assert(comboModel->currentText() == testModelName);
 
         // フローティングとジオメトリが復元されているか
         assert(dock2.isFloating() == true);
@@ -677,6 +694,21 @@ static void testAiSettingsPersistenceAndThumbnailStyle() {
         assert(ss.contains("#d32f2f") || ss.contains("red") || ss.contains("#e53935"));
         assert(ss.contains("border"));
     }
+
+    // 元の設定の復元
+    QSettings restoreSettings("KABURAGI", "PaintSoft KABURAGI");
+    restoreSettings.remove("AiAssistant");
+    restoreSettings.beginGroup("AiAssistant");
+    for (auto it = backup.begin(); it != backup.end(); ++it) {
+        if (it.key() == "modelName" && it.value().toString() == "custom_saved_model_v2.safetensors") {
+            // ダミー値だった場合は実在するモデル名にしてクリーンアップ
+            restoreSettings.setValue("modelName", testModelName);
+        } else {
+            restoreSettings.setValue(it.key(), it.value());
+        }
+    }
+    restoreSettings.endGroup();
+    restoreSettings.sync();
 
     std::cout << "  -> PASSED!" << std::endl;
 }

@@ -670,10 +670,8 @@ void AiAssistantDockWidget::refreshLocalModels(const QString& preferredModel) {
         int idx = m_comboModel->findText(current);
         if (idx != -1) {
             m_comboModel->setCurrentIndex(idx);
-        } else if (!current.isEmpty()) {
-            m_comboModel->addItem(current);
-            m_comboModel->setCurrentIndex(m_comboModel->count() - 1);
         } else {
+            // 保存されていたモデルが実在しない場合は実在する先頭モデルを選択
             m_comboModel->setCurrentIndex(0);
         }
         m_lblStatus->setText(tr("ローカルフォルダから %1 件のモデルを検出").arg(localModels.size()));
@@ -885,6 +883,25 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
                 m_lblStatus->setText(tr("組み込みエンジンがないため処理を中断しました"));
                 return false;
             }
+        }
+
+        // 組み込みエンジンで指定されたモデルファイルが存在するか確認
+        QString modelName = m_comboModel ? m_comboModel->currentText().trimmed() : QString();
+        QString modelDir = PreferencesDialog::aiModelDirectory();
+        QString fullModelPath = QDir(modelDir).filePath(modelName);
+        if (modelName.isEmpty() || !QFile::exists(fullModelPath)) {
+            QMessageBox::warning(
+                this,
+                tr("モデルファイル未検出"),
+                tr("指定されたモデルファイルが見つかりません。\n\n"
+                   "・モデル名: %1\n"
+                   "・保存フォルダ: %2\n\n"
+                   "「使用モデル」欄で実在するモデルを選択するか、「環境設定」でモデル保存フォルダを確認してください。")
+                .arg(modelName.isEmpty() ? tr("(未選択)") : modelName)
+                .arg(modelDir.isEmpty() ? tr("(未設定)") : modelDir)
+            );
+            m_lblStatus->setText(tr("⚠️ モデルファイルが見つかりません: %1").arg(modelName));
+            return false;
         }
     }
 
