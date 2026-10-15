@@ -291,6 +291,42 @@ void testCanvasIntegration() {
     uint32_t pxUndone = doc->activeLayer()->tileManager().getPixel(60, 60);
     assert(pxUndone != pxIn);
 
+    // 3. RoughToClean mode: 2nd generation layer fallback & white background test
+    auto roughLayer = doc->addRasterLayer("ラフ");
+    // Draw black pixel on transparent rough layer
+    roughLayer->tileManager().setPixel(10, 10, 0xFF000000); // opaque black
+    doc->setActiveLayerIndex(doc->layers().size() - 1);
+
+    auto dock = win.aiAssistantDock();
+    dock->setDocument(doc);
+    // Switch to RoughToClean mode
+    dock->setMode(AiMode::RoughToClean);
+
+    // 1st run image: should be white background with black pixel at (10, 10)
+    QImage init1 = dock->getInitImageForCurrentMode();
+    assert(!init1.isNull());
+    assert(init1.pixelColor(0, 0) == Qt::white); // Transparent converted to white!
+    assert(init1.pixelColor(10, 10) == Qt::black);
+
+    // Now insert AI layer as new layer (active layer becomes the AI layer)
+    QImage dummyAiImg(400, 300, QImage::Format_RGB32);
+    dummyAiImg.fill(Qt::blue);
+    QJsonObject dummyAiParams; dummyAiParams["prompt"] = "test";
+    win.onAiApplyAsNewLayer(dummyAiImg, dummyAiParams);
+    assert(doc->activeLayer()->hasAiParameters());
+
+    // 2nd run: Even though active layer is the AI layer, getInitImageForCurrentMode and Canvas source should bypass it and get roughLayer!
+    QImage init2 = dock->getInitImageForCurrentMode();
+    assert(!init2.isNull());
+    assert(init2.pixelColor(0, 0) == Qt::white);
+    assert(init2.pixelColor(10, 10) == Qt::black);
+
+    QString err2;
+    QImage cnImg2 = dock->getImageFromSource(static_cast<int>(AiImageSource::ActiveLayer), "", &err2);
+    assert(!cnImg2.isNull());
+    assert(cnImg2.pixelColor(0, 0) == Qt::white);
+    assert(cnImg2.pixelColor(10, 10) == Qt::black);
+
     std::cout << "  -> PASSED!" << std::endl;
 }
 

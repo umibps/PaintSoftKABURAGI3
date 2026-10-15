@@ -540,7 +540,7 @@ void AiAssistantDockWidget::updateBackendUiState() {
         m_editServerUrl->setEnabled(false);
         m_editServerUrl->setText(tr("(サーバー不要 - 直接推論)"));
         m_editApiKey->setEnabled(false);
-        m_chkControlNet->setEnabled(false);
+        m_chkControlNet->setEnabled(true);
         if (m_chkIpAdapter) m_chkIpAdapter->setEnabled(false);
     } else if (m_radioCloud && m_radioCloud->isChecked()) {
         m_editServerUrl->setEnabled(false);
@@ -558,6 +558,19 @@ void AiAssistantDockWidget::onBackendChanged() {
     detectAvailableDevices();
     onFetchModelsClicked();
     saveSettings();
+}
+
+void AiAssistantDockWidget::setMode(AiMode mode) {
+    if (m_comboMode) {
+        int idx = m_comboMode->findData(static_cast<int>(mode));
+        if (idx >= 0) {
+            m_comboMode->setCurrentIndex(idx);
+        } else {
+            updateUiForMode(mode);
+        }
+    } else {
+        updateUiForMode(mode);
+    }
 }
 
 void AiAssistantDockWidget::onModeChanged(int index) {
@@ -1153,12 +1166,20 @@ void AiAssistantDockWidget::onGenerateClicked() {
 
     int64_t inputSeed = m_spinSeed->value();
     if (inputSeed < 0) {
-        // -1 の場合は実際に使用する乱数シードを生成して決定し、UIの表示も変更
+        // -1 の場合は毎回新しい乱数シードを生成（スピンボックスを上書きせずランダム状態を維持）
         int64_t actualSeed = static_cast<int64_t>(QRandomGenerator::global()->bounded(1ll, 2147483647ll));
         params.seed = actualSeed;
-        m_spinSeed->setValue(static_cast<int>(actualSeed));
+        m_spinSeed->setToolTip(tr("ランダム生成 (前回使用シード: %1)\n固定したい場合はこの数値を入力してください").arg(actualSeed));
     } else {
         params.seed = inputSeed;
+    }
+
+    // 元の描画レイヤー（非AIレイヤー）を記憶（2回目以降の再生成時の参照追跡用）
+    if (m_document && m_document->activeLayer()) {
+        auto act = m_document->activeLayer();
+        if (!act->hasAiParameters() && !act->name().contains("AI Generated", Qt::CaseInsensitive)) {
+            m_lastSourceLayerName = act->name();
+        }
     }
 
     // 指定された解像度を使用 (64の倍数にアライン)
@@ -1240,8 +1261,54 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
     }
 
     auto activeLayer = m_document->activeLayer();
+    // 「ラフ清書」モードにおいて、前回のAI生成レイヤーがアクティブになっている場合は元のラフレイヤーを探して優先参照
+    if (mode == AiMode::RoughToClean && activeLayer) {
+        if (activeLayer->hasAiParameters() || activeLayer->name().contains("AI Generated", Qt::CaseInsensitive)) {
+            std::shared_ptr<Layer> fallbackLayer;
+            if (!m_lastSourceLayerName.isEmpty()) {
+                for (const auto& l : m_document->layers()) {
+                    if (l && l->name() == m_lastSourceLayerName && !l->hasAiParameters() && !l->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                        fallbackLayer = l;
+                        break;
+                    }
+                }
+            }
+            if (!fallbackLayer) {
+                for (const auto& l : m_document->layers()) {
+                    if (l && (l->name().contains("ラフ", Qt::CaseInsensitive) || l->name().contains("rough", Qt::CaseInsensitive))) {
+                        fallbackLayer = l;
+                        break;
+                    }
+                }
+            }
+            if (!fallbackLayer) {
+                for (auto it = m_document->layers().rbegin(); it != m_document->layers().rend(); ++it) {
+                    if (*it && !(*it)->hasAiParameters() && !(*it)->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                        fallbackLayer = *it;
+                        break;
+                    }
+                }
+            }
+            if (fallbackLayer) {
+                activeLayer = fallbackLayer;
+            }
+        }
+    }
+
     if (activeLayer) {
-        return activeLayer->tileManager().toQImage();
+        QImage img = activeLayer->tileManager().toQImage();
+        if (!img.isNull()) {
+            // 透明背景のレイヤーの場合、白背景に合成してアルファ抜けによる黒潰れを防止
+            if (img.hasAlphaChannel()) {
+                QImage solid(img.size(), QImage::Format_RGB32);
+                solid.fill(Qt::white);
+                QPainter p(&solid);
+                p.drawImage(0, 0, img);
+                p.end();
+                return solid;
+            }
+            return img;
+        }
     }
     return m_document->compositeBuffer().toQImage();
 }
@@ -1330,6 +1397,35 @@ QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString&
             if (outError) *outError = tr("キャンバスが開かれていません。");
             return QImage();
         }
+        // 「ラフ清書」モードでキャンバス全体を参照する場合、
+        // 前回のAI生成レイヤーが表示されているとラフが隠れてしまうため、
+        // AI生成レイヤーを自動的に除外して白背景＋ラフを描画合成する
+        AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
+        if (mode == AiMode::RoughToClean) {
+            bool hasVisibleAiLayer = false;
+            for (const auto& l : m_document->layers()) {
+                if (l && l->isVisible() && (l->hasAiParameters() || l->name().contains("AI Generated", Qt::CaseInsensitive))) {
+                    hasVisibleAiLayer = true;
+                    break;
+                }
+            }
+            if (hasVisibleAiLayer) {
+                QImage baseCanvas(m_document->width(), m_document->height(), QImage::Format_RGB32);
+                baseCanvas.fill(Qt::white);
+                QPainter p(&baseCanvas);
+                for (const auto& l : m_document->layers()) {
+                    if (l && l->isVisible() && !l->hasAiParameters() && !l->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                        QImage lImg = l->tileManager().toQImage();
+                        if (!lImg.isNull()) {
+                            p.setOpacity(l->opacity());
+                            p.drawImage(0, 0, lImg);
+                        }
+                    }
+                }
+                p.end();
+                return baseCanvas;
+            }
+        }
         return m_document->compositeBuffer().toQImage();
     }
     case AiImageSource::ActiveLayer: {
@@ -1338,9 +1434,54 @@ QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString&
             return QImage();
         }
         auto activeLayer = m_document->activeLayer();
+        AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
+        // 「ラフ清書」モードにおいて、前回のAI生成レイヤーがアクティブになっている場合は元のラフレイヤーを探して優先参照
+        if (mode == AiMode::RoughToClean && activeLayer) {
+            if (activeLayer->hasAiParameters() || activeLayer->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                std::shared_ptr<Layer> fallbackLayer;
+                if (!m_lastSourceLayerName.isEmpty()) {
+                    for (const auto& l : m_document->layers()) {
+                        if (l && l->name() == m_lastSourceLayerName && !l->hasAiParameters() && !l->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                            fallbackLayer = l;
+                            break;
+                        }
+                    }
+                }
+                if (!fallbackLayer) {
+                    for (const auto& l : m_document->layers()) {
+                        if (l && (l->name().contains("ラフ", Qt::CaseInsensitive) || l->name().contains("rough", Qt::CaseInsensitive))) {
+                            fallbackLayer = l;
+                            break;
+                        }
+                    }
+                }
+                if (!fallbackLayer) {
+                    for (auto it = m_document->layers().rbegin(); it != m_document->layers().rend(); ++it) {
+                        if (*it && !(*it)->hasAiParameters() && !(*it)->name().contains("AI Generated", Qt::CaseInsensitive)) {
+                            fallbackLayer = *it;
+                            break;
+                        }
+                    }
+                }
+                if (fallbackLayer) {
+                    activeLayer = fallbackLayer;
+                }
+            }
+        }
         if (activeLayer) {
             QImage img = activeLayer->tileManager().toQImage();
-            if (!img.isNull()) return img;
+            if (!img.isNull()) {
+                // 透明背景のレイヤーの場合、白背景に合成してアルファ抜けによる黒潰れを防止
+                if (img.hasAlphaChannel()) {
+                    QImage solid(img.size(), QImage::Format_RGB32);
+                    solid.fill(Qt::white);
+                    QPainter p(&solid);
+                    p.drawImage(0, 0, img);
+                    p.end();
+                    return solid;
+                }
+                return img;
+            }
         }
         return m_document->compositeBuffer().toQImage();
     }

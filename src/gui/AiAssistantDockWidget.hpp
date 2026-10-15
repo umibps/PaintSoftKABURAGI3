@@ -59,6 +59,8 @@ public:
     void resetToDefaults();
     void loadParametersFromLayer(const std::shared_ptr<Layer>& layer);
     QImage getImageFromSource(int sourceIndex, const QString& filePath, QString* outError = nullptr);
+    void setMode(AiMode mode);
+    QImage getInitImageForCurrentMode();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -109,7 +111,6 @@ private:
     void updateBackendUiState();
     void detectAvailableDevices();
     bool ensureRequirementsReady();
-    QImage getInitImageForCurrentMode();
     QImage getMaskImageForCurrentMode();
 
 private:
@@ -194,6 +195,7 @@ private:
     int m_selectedIndex = -1;
     bool m_updatingResolution = false;
     bool m_isLoadingSettings = false;
+    QString m_lastSourceLayerName;
 };
 
 } // namespace Kaburagi
