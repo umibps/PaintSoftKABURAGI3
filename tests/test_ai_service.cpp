@@ -906,6 +906,62 @@ void testThreeDOpenPoseExtraction() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testSketchToLineartAndBrightnessToAlpha() {
+    std::cout << "[TEST] 17. SketchToLineart & BrightnessToAlpha..." << std::endl;
+
+    // 1. convertBrightnessToAlpha の検証
+    QImage src(10, 10, QImage::Format_RGB32);
+    src.fill(Qt::white); // 全面白
+    src.setPixelColor(0, 0, Qt::black); // (0,0) は黒
+    src.setPixelColor(1, 1, QColor(128, 128, 128)); // (1,1) はグレー
+
+    QImage lineartAlpha = AiService::convertBrightnessToAlpha(src);
+    assert(!lineartAlpha.isNull());
+    assert(lineartAlpha.format() == QImage::Format_ARGB32_Premultiplied);
+
+    // 白ピクセル -> 完全透明 (alpha == 0)
+    QColor whiteResult = lineartAlpha.pixelColor(5, 5);
+    assert(whiteResult.alpha() == 0);
+
+    // 黒ピクセル -> 完全不透明黒 (alpha == 255, rgb == 0,0,0)
+    QColor blackResult = lineartAlpha.pixelColor(0, 0);
+    assert(blackResult.alpha() == 255);
+    assert(blackResult.red() == 0 && blackResult.green() == 0 && blackResult.blue() == 0);
+
+    // グレーピクセル -> 半透明 (alpha ~ 127)
+    QColor grayResult = lineartAlpha.pixelColor(1, 1);
+    assert(grayResult.alpha() >= 120 && grayResult.alpha() <= 135);
+
+    // 2. ComfyUI JSON Building での SketchToLineart モード検証
+    AiGenerateParams comfyParams;
+    comfyParams.backend = ApiBackend::LocalComfyUI;
+    comfyParams.mode = AiMode::SketchToLineart;
+    comfyParams.denoisingStrength = 1.0f;
+    comfyParams.initImage = src;
+    comfyParams.enableControlNet = true;
+    comfyParams.controlNetType = ControlNetType::Lineart;
+    comfyParams.controlNetWeight = 1.0f;
+    comfyParams.controlNetImage = src;
+
+    QJsonObject comfyJson = AiService::buildComfyUiPromptJson(comfyParams);
+    assert(!comfyJson.isEmpty());
+    // initImage があるため KSampler に VAEEncode 経由で繋がっていること
+    assert(comfyJson.contains("3")); // KSampler
+    QJsonObject ksamplerInputs = comfyJson["3"].toObject()["inputs"].toObject();
+    assert(ksamplerInputs["denoise"].toDouble() == 1.0);
+
+    // 3. AiAssistantDockWidget でのモード切り替え検証
+    AiAssistantDockWidget dock;
+    dock.setMode(AiMode::SketchToLineart);
+    QImage initImg = dock.getInitImageForCurrentMode();
+    assert(!initImg.isNull());
+    // 白紙画像であること (ピクセルがすべて白)
+    assert(initImg.pixelColor(0, 0) == Qt::white);
+    assert(initImg.pixelColor(initImg.width() / 2, initImg.height() / 2) == Qt::white);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -927,6 +983,7 @@ int main(int argc, char* argv[]) {
     testPromptHistory();
     testLlmPromptRefinement();
     testThreeDOpenPoseExtraction();
+    testSketchToLineartAndBrightnessToAlpha();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

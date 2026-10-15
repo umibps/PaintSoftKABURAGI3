@@ -30,7 +30,8 @@ enum class AiMode {
     Inpaint = 1,          // 選択範囲インペイント (img2img with mask)
     Colorization = 2,     // 自動着色・カラーラフ生成 (img2img / ControlNet)
     SeamlessTexture = 3,  // テクスチャ・シームレスパターン生成 (txt2img tiling)
-    BackgroundAndNew = 4  // 背景・新規生成 (txt2img)
+    BackgroundAndNew = 4, // 背景・新規生成 (txt2img)
+    SketchToLineart = 5   // ラフから線画生成 (Sketch2Lineart / 白紙ベース+ControlNet)
 };
 
 enum class ControlNetType {
@@ -120,6 +121,9 @@ public:
 
     // 背景透過ユーティリティ（外周・4隅からFloodFillし、境界を滑らかにフェザリング透過）
     static QImage removeBackground(const QImage& source, int tolerance = 25);
+
+    // 線画用透明化ユーティリティ（白を透明、黒を主線に変換する「輝度を透明度に変換」処理）
+    static QImage convertBrightnessToAlpha(const QImage& source, const QColor& lineColor = Qt::black);
 
     // 組み込み推論エンジン(sd.exe)が利用可能な計算デバイス検出
     static std::vector<GgmlDevice> detectEmbeddedDevices(const QString& embeddedExePath = QString());

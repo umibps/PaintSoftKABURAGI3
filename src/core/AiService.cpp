@@ -288,6 +288,40 @@ QImage AiService::removeBackground(const QImage& source, int tolerance) {
     return result;
 }
 
+QImage AiService::convertBrightnessToAlpha(const QImage& source, const QColor& lineColor) {
+    if (source.isNull()) return QImage();
+
+    QImage img = source.convertToFormat(QImage::Format_ARGB32);
+    int width = img.width();
+    int height = img.height();
+
+    QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
+    int lr = lineColor.red();
+    int lg = lineColor.green();
+    int lb = lineColor.blue();
+
+    for (int y = 0; y < height; ++y) {
+        const QRgb* srcLine = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        QRgb* dstLine = reinterpret_cast<QRgb*>(result.scanLine(y));
+        for (int x = 0; x < width; ++x) {
+            QRgb p = srcLine[x];
+            // ITU-R BT.601 輝度計算
+            int brightness = static_cast<int>(0.299 * qRed(p) + 0.587 * qGreen(p) + 0.114 * qBlue(p));
+            // 白(255) -> アルファ0(完全透明), 黒(0) -> アルファ255(完全不透明)
+            int alpha = std::clamp(255 - brightness, 0, 255);
+            alpha = (alpha * qAlpha(p)) / 255;
+            if (alpha <= 0) {
+                dstLine[x] = 0;
+            } else {
+                // Premultiplied ARGB32
+                dstLine[x] = qRgba((lr * alpha) / 255, (lg * alpha) / 255, (lb * alpha) / 255, alpha);
+            }
+        }
+    }
+
+    return result;
+}
+
 static QString mapSamplerToComfyUi(const QString& sampler) {
     QString s = sampler.toLower().trimmed();
     if (s.contains("euler a") || s.contains("euler_a") || s.contains("ancestral")) return "euler_ancestral";
@@ -529,7 +563,7 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     QString latentNodeId = "5";
     int latentOutIndex = 0;
 
-    bool isImg2Img = (params.mode == AiMode::RoughToClean || params.mode == AiMode::Inpaint || params.mode == AiMode::Colorization) && !params.initImage.isNull();
+    bool isImg2Img = (params.mode == AiMode::RoughToClean || params.mode == AiMode::Inpaint || params.mode == AiMode::Colorization || params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
 
     if (isImg2Img && !uploadedInitImage.isEmpty()) {
         // Node 10: LoadImage
@@ -891,7 +925,8 @@ void AiService::executeGenerate(const AiGenerateParams& params) {
     if (params.backend == ApiBackend::LocalWebUI) {
         bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                           params.mode == AiMode::Inpaint ||
-                          params.mode == AiMode::Colorization) && !params.initImage.isNull();
+                          params.mode == AiMode::Colorization ||
+                          params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
 
         QUrl url(urlStr + (isImg2Img ? "/sdapi/v1/img2img" : "/sdapi/v1/txt2img"));
         QNetworkRequest request(url);
@@ -929,7 +964,8 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
 
     bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                       params.mode == AiMode::Inpaint ||
-                      params.mode == AiMode::Colorization) && !params.initImage.isNull();
+                      params.mode == AiMode::Colorization ||
+                      params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
     bool hasControlNet = params.enableControlNet && !params.controlNetImage.isNull();
 
     auto postPromptJson = [this, params, urlStr](const QString& uploadedInit, const QString& uploadedCn) {
@@ -1152,7 +1188,9 @@ void AiService::onEmbeddedProcessFinished(int exitCode) {
             QFile::remove(filePath);
             processedPaths.insert(filePath);
             if (!img.isNull()) {
-                if (m_currentParams.removeBackground) {
+                if (m_currentParams.mode == AiMode::SketchToLineart && m_currentParams.removeBackground) {
+                    img = convertBrightnessToAlpha(img);
+                } else if (m_currentParams.removeBackground) {
                     img = removeBackground(img);
                 }
                 results.append(img);
@@ -1408,7 +1446,11 @@ void AiService::onGenerateReplyFinished() {
 
     if (m_currentParams.removeBackground) {
         for (auto& im : results) {
-            im = removeBackground(im);
+            if (m_currentParams.mode == AiMode::SketchToLineart) {
+                im = convertBrightnessToAlpha(im);
+            } else {
+                im = removeBackground(im);
+            }
         }
     }
 
@@ -1513,7 +1555,11 @@ void AiService::downloadComfyUiImages(const QStringList& imageFilenames) {
                 } else {
                     if (m_currentParams.removeBackground) {
                         for (auto& im : *collectedImages) {
-                            im = removeBackground(im);
+                            if (m_currentParams.mode == AiMode::SketchToLineart) {
+                                im = convertBrightnessToAlpha(im);
+                            } else {
+                                im = removeBackground(im);
+                            }
                         }
                     }
                     emit generationProgress(100, tr("生成完了！"));

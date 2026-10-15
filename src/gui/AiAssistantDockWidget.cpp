@@ -173,6 +173,7 @@ void AiAssistantDockWidget::setupUi() {
     auto layMode = new QVBoxLayout(grpMode);
     m_comboMode = new QComboBox(grpMode);
     m_comboMode->addItem(tr("ラフ清書 / アタリ補正 (Rough to Clean)"), static_cast<int>(AiMode::RoughToClean));
+    m_comboMode->addItem(tr("ラフから線画生成 (Sketch2Lineart)"), static_cast<int>(AiMode::SketchToLineart));
     m_comboMode->addItem(tr("選択範囲インペイント (Inpaint)"), static_cast<int>(AiMode::Inpaint));
     m_comboMode->addItem(tr("自動着彩 / カラーラフ (Colorization)"), static_cast<int>(AiMode::Colorization));
     m_comboMode->addItem(tr("テクスチャ・シームレス (Seamless Pattern)"), static_cast<int>(AiMode::SeamlessTexture));
@@ -586,6 +587,23 @@ void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
         m_comboControlNetType->setCurrentIndex(0); // Lineart
         if (!m_isLoadingSettings && m_editPrompt) {
             m_editPrompt->setPlainText("clean lineart, masterpiece, high quality");
+        }
+        break;
+    case AiMode::SketchToLineart:
+        m_spinDenoising->setValue(1.0);
+        m_chkControlNet->setChecked(true);
+        m_comboControlNetType->setCurrentIndex(0); // Lineart
+        m_spinControlNetWeight->setValue(1.0);
+        if (m_chkRemoveBackground) {
+            m_chkRemoveBackground->setChecked(true); // 自動線画透明化 (背景を透明に)
+        }
+        if (!m_isLoadingSettings) {
+            if (m_editPrompt) {
+                m_editPrompt->setPlainText("masterpiece, best quality, monochrome, greyscale, lineart, white background, clean lineart");
+            }
+            if (m_editNegativePrompt) {
+                m_editNegativePrompt->setPlainText("sketch, rough, draft, color, colored, watercolor, shading, lowres, worst quality, low quality, normal quality, blurry, artifacts");
+            }
         }
         break;
     case AiMode::Inpaint:
@@ -1176,6 +1194,16 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.prompt = m_editPrompt->toPlainText().trimmed();
     params.negativePrompt = m_editNegativePrompt->toPlainText().trimmed();
 
+    if (params.mode == AiMode::SketchToLineart) {
+        if (!params.prompt.contains("lineart", Qt::CaseInsensitive)) {
+            params.prompt = "clean lineart, monochrome, greyscale, white background, " + params.prompt;
+        }
+        if (!params.negativePrompt.contains("sketch", Qt::CaseInsensitive)) {
+            if (!params.negativePrompt.isEmpty()) params.negativePrompt += ", ";
+            params.negativePrompt += "sketch, rough, draft, color, colored, shading";
+        }
+    }
+
     // プロンプト履歴に自動記録
     PromptHistoryDialog::addHistoryItem(params.prompt, params.negativePrompt, m_lastLlmPrompt);
 
@@ -1281,6 +1309,20 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
     AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
     if (mode == AiMode::BackgroundAndNew || mode == AiMode::SeamlessTexture) {
         return QImage(); // txt2img
+    }
+
+    // 「ラフから線画生成」モードでは、下絵の汚れや筆跡に引っ張られないよう、
+    // ベース画像として真っ白な白紙画像を渡し、ControlNet(Lineart)のみで線を描画させる
+    if (mode == AiMode::SketchToLineart) {
+        int w = m_spinWidth ? m_spinWidth->value() : 512;
+        int h = m_spinHeight ? m_spinHeight->value() : 512;
+        w = (w / 64) * 64;
+        h = (h / 64) * 64;
+        if (w < 64) w = 512;
+        if (h < 64) h = 512;
+        QImage whiteCanvas(w, h, QImage::Format_RGB32);
+        whiteCanvas.fill(Qt::white);
+        return whiteCanvas;
     }
 
     auto activeLayer = m_document->activeLayer();
@@ -1420,11 +1462,11 @@ QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString&
             if (outError) *outError = tr("キャンバスが開かれていません。");
             return QImage();
         }
-        // 「ラフ清書」モードでキャンバス全体を参照する場合、
+        // 「ラフ清書」「ラフから線画生成」モードでキャンバス全体を参照する場合、
         // 前回のAI生成レイヤーが表示されているとラフが隠れてしまうため、
         // AI生成レイヤーを自動的に除外して白背景＋ラフを描画合成する
         AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
-        if (mode == AiMode::RoughToClean) {
+        if (mode == AiMode::RoughToClean || mode == AiMode::SketchToLineart) {
             bool hasVisibleAiLayer = false;
             for (const auto& l : m_document->layers()) {
                 if (l && l->isVisible() && (l->hasAiParameters() || l->name().contains("AI Generated", Qt::CaseInsensitive))) {
@@ -1458,8 +1500,8 @@ QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString&
         }
         auto activeLayer = m_document->activeLayer();
         AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
-        // 「ラフ清書」モードにおいて、前回のAI生成レイヤーがアクティブになっている場合は元のラフレイヤーを探して優先参照
-        if (mode == AiMode::RoughToClean && activeLayer) {
+        // 「ラフ清書」「ラフから線画生成」モードにおいて、前回のAI生成レイヤーがアクティブになっている場合は元のラフレイヤーを探して優先参照
+        if ((mode == AiMode::RoughToClean || mode == AiMode::SketchToLineart) && activeLayer) {
             if (activeLayer->hasAiParameters() || activeLayer->name().contains("AI Generated", Qt::CaseInsensitive)) {
                 std::shared_ptr<Layer> fallbackLayer;
                 if (!m_lastSourceLayerName.isEmpty()) {
