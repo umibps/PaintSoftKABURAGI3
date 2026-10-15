@@ -81,6 +81,12 @@ void AiAssistantDockWidget::moveEvent(QMoveEvent* event) {
 
 void AiAssistantDockWidget::setDocument(Document* doc) {
     m_document = doc;
+    if (m_comboResolution) {
+        QSize sz = m_comboResolution->currentData().toSize();
+        if (sz.width() == -1) {
+            onResolutionPresetChanged(m_comboResolution->currentIndex());
+        }
+    }
 }
 
 void AiAssistantDockWidget::setCanvasWidget(CanvasWidget* canvas) {
@@ -153,6 +159,12 @@ void AiAssistantDockWidget::setupUi() {
     connect(m_comboModel, &QComboBox::currentTextChanged, this, [this](const QString&) {
         if (!m_isLoadingSettings) {
             saveSettings();
+        }
+        if (m_comboResolution) {
+            QSize sz = m_comboResolution->currentData().toSize();
+            if (sz.width() == -1) {
+                onResolutionPresetChanged(m_comboResolution->currentIndex());
+            }
         }
     });
     m_btnFetchModels = new QPushButton(tr("更新"), grpConn);
@@ -580,8 +592,23 @@ void AiAssistantDockWidget::onModeChanged(int index) {
 }
 
 void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
+    auto selectCanvasAspectResolution = [this]() {
+        if (!m_comboResolution) return;
+        for (int i = 0; i < m_comboResolution->count(); ++i) {
+            if (m_comboResolution->itemData(i).toSize() == QSize(-1, -1)) {
+                if (m_comboResolution->currentIndex() != i) {
+                    m_comboResolution->setCurrentIndex(i);
+                } else {
+                    onResolutionPresetChanged(i);
+                }
+                break;
+            }
+        }
+    };
+
     switch (mode) {
     case AiMode::RoughToClean:
+        selectCanvasAspectResolution();
         m_spinDenoising->setValue(0.55);
         m_chkControlNet->setChecked(true);
         m_comboControlNetType->setCurrentIndex(0); // Lineart
@@ -590,6 +617,7 @@ void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
         }
         break;
     case AiMode::SketchToLineart:
+        selectCanvasAspectResolution();
         m_spinDenoising->setValue(1.0);
         m_chkControlNet->setChecked(true);
         m_comboControlNetType->setCurrentIndex(0); // Lineart
@@ -607,9 +635,11 @@ void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
         }
         break;
     case AiMode::Inpaint:
+        selectCanvasAspectResolution();
         m_spinDenoising->setValue(0.75);
         break;
     case AiMode::Colorization:
+        selectCanvasAspectResolution();
         m_spinDenoising->setValue(0.65);
         m_chkControlNet->setChecked(true);
         m_comboControlNetType->setCurrentIndex(0); // Lineart
@@ -859,22 +889,42 @@ void AiAssistantDockWidget::onResolutionPresetChanged(int index) {
         m_spinHeight->blockSignals(false);
     } else if (sz.width() == -1) {
         // キャンバス比率追従
-        if (m_document) {
-            float aspect = static_cast<float>(m_document->width()) / std::max(1, m_document->height());
-            int w = 512, h = 512;
-            if (aspect >= 1.0f) {
-                w = 512;
-                h = std::clamp(static_cast<int>(512.0f / aspect), 256, 1024);
-            } else {
-                h = 512;
-                w = std::clamp(static_cast<int>(512.0f * aspect), 256, 1024);
-            }
-            w = (w / 64) * 64;
-            h = (h / 64) * 64;
+        QString currentModel = m_comboModel ? m_comboModel->currentText().trimmed() : QString();
+        bool isSdxl = AiService::isModelSdxl(currentModel);
+
+        if (m_document && m_document->width() > 0 && m_document->height() > 0) {
+            float aspect = static_cast<float>(m_document->width()) / static_cast<float>(m_document->height());
+
+            // 目標の総画素数（面積）: SDXLは約100万画素 (1024x1024)、SD 1.5は約26万画素 (512x512)
+            double targetArea = isSdxl ? (1024.0 * 1024.0) : (512.0 * 512.0);
+
+            // アスペクト比を維持して幅と高さを計算
+            int w = static_cast<int>(std::round(std::sqrt(targetArea * aspect)));
+            int h = static_cast<int>(std::round(std::sqrt(targetArea / aspect)));
+
+            // 64の倍数にスナップ
+            w = ((w + 32) / 64) * 64;
+            h = ((h + 32) / 64) * 64;
+
+            // クランプ (SDXLなら256〜2048、SD 1.5なら256〜1024)
+            int minDim = 256;
+            int maxDim = isSdxl ? 2048 : 1024;
+            w = std::clamp(w, minDim, maxDim);
+            h = std::clamp(h, minDim, maxDim);
+
             m_spinWidth->blockSignals(true);
             m_spinHeight->blockSignals(true);
             m_spinWidth->setValue(w);
             m_spinHeight->setValue(h);
+            m_spinWidth->blockSignals(false);
+            m_spinHeight->blockSignals(false);
+        } else {
+            // キャンバスがまだ開いていない場合のフォールバック
+            int defSz = isSdxl ? 1024 : 512;
+            m_spinWidth->blockSignals(true);
+            m_spinHeight->blockSignals(true);
+            m_spinWidth->setValue(defSz);
+            m_spinHeight->setValue(defSz);
             m_spinWidth->blockSignals(false);
             m_spinHeight->blockSignals(false);
         }
@@ -1281,6 +1331,11 @@ void AiAssistantDockWidget::onGenerateClicked() {
         if (!act->hasAiParameters() && !act->name().contains("AI Generated", Qt::CaseInsensitive)) {
             m_lastSourceLayerName = act->name();
         }
+    }
+
+    // キャンバス比率追従が選択されている場合は最新のキャンバスサイズと同期
+    if (m_comboResolution && m_comboResolution->currentData().toSize() == QSize(-1, -1)) {
+        onResolutionPresetChanged(m_comboResolution->currentIndex());
     }
 
     // 指定された解像度を使用 (64の倍数にアライン)

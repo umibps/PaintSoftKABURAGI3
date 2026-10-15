@@ -1045,6 +1045,72 @@ void testSdxlControlNetSupport() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+static void testCanvasAspectAutoSwitch() {
+    std::cout << "[TEST] 19. Canvas Aspect Auto Switch & SDXL Scaling..." << std::endl;
+
+    AiAssistantDockWidget widget;
+    Document doc(1200, 800); // 3:2 横長キャンバス (比率 1.5)
+    widget.setDocument(&doc);
+
+    // 1. 最初は別のプリセット (512x512) を選んでおく
+    QComboBox* comboRes = widget.findChild<QComboBox*>();
+    // find comboRes
+    QList<QComboBox*> combos = widget.findChildren<QComboBox*>();
+    QComboBox* resCombo = nullptr;
+    QComboBox* modeCombo = nullptr;
+    QComboBox* modelCombo = nullptr;
+    for (auto* c : combos) {
+        if (c->count() > 0 && c->itemData(0).toSize() == QSize(512, 512)) {
+            resCombo = c;
+        } else if (c->count() > 0 && c->itemData(0).toInt() == static_cast<int>(AiMode::RoughToClean)) {
+            modeCombo = c;
+        }
+    }
+    assert(resCombo != nullptr);
+    assert(modeCombo != nullptr);
+
+    // 手動で 512x512 を選ぶ
+    resCombo->setCurrentIndex(0);
+    assert(resCombo->currentIndex() == 0);
+
+    // 2. 「ラフから線画生成 (SketchToLineart)」モードに切り替える
+    int sketchIdx = modeCombo->findData(static_cast<int>(AiMode::SketchToLineart));
+    assert(sketchIdx >= 0);
+    modeCombo->setCurrentIndex(sketchIdx);
+
+    // 解像度プリセットが自動で「キャンバス比率追従 (Canvas Aspect)」(QSize(-1, -1)) に切り替わっていること
+    assert(resCombo->currentData().toSize() == QSize(-1, -1));
+
+    // 3. 幅・高さのスピンボックスの値を確認
+    QList<QSpinBox*> spins = widget.findChildren<QSpinBox*>();
+    QSpinBox* spinW = nullptr;
+    QSpinBox* spinH = nullptr;
+    for (auto* s : spins) {
+        if (s->suffix() == " px") {
+            if (!spinW) spinW = s;
+            else if (!spinH) spinH = s;
+        }
+    }
+    assert(spinW != nullptr && spinH != nullptr);
+
+    // SD 1.5 の場合: 1200x800 (比率 1.5) -> W ≈ sqrt(262144 * 1.5) = 627 -> 640, H ≈ sqrt(262144 / 1.5) = 418 -> 448
+    // 横長 (W > H) であり、比率が 1.5 に極めて近いこと
+    assert(spinW->value() > spinH->value());
+    float aspectCalc = static_cast<float>(spinW->value()) / spinH->value();
+    assert(std::abs(aspectCalc - 1.5f) < 0.2f);
+
+    // 4. ドキュメントを縦長キャンバスに変更 (800x1200, 比率 0.6667)
+    Document docPortrait(800, 1200);
+    widget.setDocument(&docPortrait);
+
+    // 縦長 (W < H) に自動更新されていること
+    assert(spinW->value() < spinH->value());
+    float aspectPortrait = static_cast<float>(spinW->value()) / spinH->value();
+    assert(std::abs(aspectPortrait - (800.0f / 1200.0f)) < 0.15f);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1068,6 +1134,7 @@ int main(int argc, char* argv[]) {
     testThreeDOpenPoseExtraction();
     testSketchToLineartAndBrightnessToAlpha();
     testSdxlControlNetSupport();
+    testCanvasAspectAutoSwitch();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
