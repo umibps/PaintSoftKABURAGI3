@@ -6,6 +6,7 @@
 #include <iostream>
 #include "Document.hpp"
 #include "LayerPanelWidget.hpp"
+#include "CanvasWidget.hpp"
 
 using namespace Kaburagi;
 
@@ -172,6 +173,97 @@ int main(int argc, char** argv) {
 
         delete ctxMenu;
         std::cout << "[PASS] Context menu contains all requested actions and functions properly!" << std::endl;
+    }
+
+    // --- Test scrollToLayer ---
+    std::cout << "[TEST] Testing scrollToLayer centering..." << std::endl;
+    {
+        panel.scrollToLayer(5, true);
+        app.processEvents();
+        std::cout << "[PASS] scrollToLayer executed successfully!" << std::endl;
+    }
+
+    // --- Test LayerSelectTool & Shift+Ctrl+Click on CanvasWidget ---
+    std::cout << "[TEST] Testing CanvasWidget Layer Selection..." << std::endl;
+    {
+        Document testDoc(400, 400, 350.0);
+        // testDoc starts with:
+        // index 0: "背景" (white, 0xFFFFFFFF)
+        // index 1: "レイヤー 1" (transparent)
+
+        auto l2 = testDoc.addRasterLayer("レイヤー 2"); // index 2
+        auto l1 = testDoc.getLayer(1);
+
+        // Draw red pixel on Layer 1 at (100, 100)
+        l1->tileManager().setPixel(100, 100, 0xFFFF0000);
+
+        // Draw blue pixel on Layer 2 at (100, 100) and (200, 200)
+        l2->tileManager().setPixel(100, 100, 0xFF0000FF);
+        l2->tileManager().setPixel(200, 200, 0xFF0000FF);
+
+        CanvasWidget canvas;
+        canvas.setDocument(&testDoc);
+        canvas.resize(400, 400);
+        canvas.show();
+        app.processEvents();
+
+        int selectedLayerIndex = -1;
+        QObject::connect(&canvas, &CanvasWidget::layerSelectedFromCanvas, [&](int idx) {
+            selectedLayerIndex = idx;
+        });
+
+        // 1. ToolType::LayerSelect active: click at (100, 100)
+        // Both Layer 2 and Layer 1 have drawing, but Layer 2 is topmost -> selects Layer 2 (index 2)
+        canvas.setCurrentTool(ToolType::LayerSelect);
+        testDoc.setActiveLayerIndex(0); // reset active to background
+        selectedLayerIndex = -1;
+
+        QMouseEvent clickEv1(QEvent::MouseButtonPress, QPointF(100, 100), QPointF(100, 100), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(&canvas, &clickEv1);
+        app.processEvents();
+
+        assert(selectedLayerIndex == 2);
+        assert(testDoc.activeLayerIndex() == 2);
+        std::cout << "[PASS] LayerSelectTool selects topmost drawing layer (Layer 2) at overlapping pixel!" << std::endl;
+
+        // 2. Hide Layer 2 -> clicking at (100, 100) should now select Layer 1 (index 1)
+        l2->setVisible(false);
+        testDoc.setActiveLayerIndex(0);
+        selectedLayerIndex = -1;
+
+        app.sendEvent(&canvas, &clickEv1);
+        app.processEvents();
+
+        assert(selectedLayerIndex == 1);
+        assert(testDoc.activeLayerIndex() == 1);
+        std::cout << "[PASS] LayerSelectTool skips hidden Layer 2 and selects visible Layer 1!" << std::endl;
+
+        // Re-enable Layer 2
+        l2->setVisible(true);
+
+        // 3. Click at empty area (300, 300) -> selects background layer (index 0)
+        selectedLayerIndex = -1;
+        QMouseEvent clickEvEmpty(QEvent::MouseButtonPress, QPointF(300, 300), QPointF(300, 300), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(&canvas, &clickEvEmpty);
+        app.processEvents();
+
+        assert(selectedLayerIndex == 0);
+        assert(testDoc.activeLayerIndex() == 0);
+        std::cout << "[PASS] LayerSelectTool selects background layer on empty area!" << std::endl;
+
+        // 4. Test Shift+Ctrl+Click on normal layer with another tool active (e.g. Pen)
+        canvas.setCurrentTool(ToolType::Pen);
+        testDoc.setActiveLayerIndex(1); // Layer 1 is a normal/raster layer
+        selectedLayerIndex = -1;
+
+        QMouseEvent clickCtrlShift(QEvent::MouseButtonPress, QPointF(200, 200), QPointF(200, 200),
+                                   Qt::LeftButton, Qt::LeftButton, Qt::ControlModifier | Qt::ShiftModifier);
+        app.sendEvent(&canvas, &clickCtrlShift);
+        app.processEvents();
+
+        assert(selectedLayerIndex == 2);
+        assert(testDoc.activeLayerIndex() == 2);
+        std::cout << "[PASS] Shift+Ctrl+Click on normal layer triggers layer selection to Layer 2!" << std::endl;
     }
 
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;

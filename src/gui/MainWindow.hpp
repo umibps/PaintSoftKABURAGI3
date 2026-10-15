@@ -193,6 +193,7 @@ private:
     VectorPolygonSettingsWidget* m_vectorPolygonSettings = nullptr;
     VectorPressureSettingsWidget* m_vectorPressureSettings = nullptr;
     TransformSettingsWidget* m_transformSettings = nullptr;
+    QWidget* m_layerSelectSettings = nullptr;
     AdjustmentSettingsWidget* m_adjustmentSettings = nullptr;
     TextSettingsWidget* m_textSettings = nullptr;
     PanelSettingsWidget* m_panelSettings = nullptr;

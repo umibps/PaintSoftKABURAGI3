@@ -582,6 +582,26 @@ void SaiToolButton::paintEvent(QPaintEvent* /*event*/) {
         painter.drawRect(QRectF(-6.5, 4, 2.5, 2.5));
         break;
     }
+    case ToolType::LayerSelect: {
+        // レイヤー選択 (重なる2枚のレイヤーシートと選択矢印カーソル)
+        painter.translate(c);
+        // 背景側レイヤー
+        painter.setPen(QPen(QColor(130, 150, 175), 1.0));
+        painter.setBrush(QColor(210, 225, 245, 190));
+        painter.drawRect(QRectF(-6.0, -6.5, 9.5, 7.5));
+        // 手前側アクティブレイヤー
+        painter.setPen(QPen(QColor(30, 70, 160), 1.2));
+        painter.setBrush(QColor(255, 255, 255, 240));
+        painter.drawRect(QRectF(-2.5, -3.5, 9.5, 7.5));
+        // 選択を表す黒い矢印ポインタ (白フチ付き)
+        QPolygonF cursorArrow;
+        cursorArrow << QPointF(-4.5, 0.0) << QPointF(-4.5, 7.0) << QPointF(-2.0, 4.5)
+                    << QPointF(-0.5, 7.5) << QPointF(1.0, 6.5) << QPointF(-0.5, 3.8) << QPointF(2.0, 3.8);
+        painter.setPen(QPen(Qt::white, 1.0));
+        painter.setBrush(QColor(25, 25, 25));
+        painter.drawPolygon(cursorArrow);
+        break;
+    }
     case ToolType::AdjustmentBrightnessContrast: {
         // 明るさ・コントラスト (半分白、半分黒の円)
         painter.translate(c);
@@ -764,6 +784,7 @@ static QString defaultToolName(ToolType type, int slotIndex = -1) {
     case ToolType::ColorSelect: return QString::fromUtf8("色域選択");
     case ToolType::Pipette: return QString::fromUtf8("スポイト");
     case ToolType::Transform: return QString::fromUtf8("変形");
+    case ToolType::LayerSelect: return QString::fromUtf8("レイヤー選択");
     default: return QString();
     }
 }
@@ -838,7 +859,7 @@ void ToolBoxWidget::setupCommonTools() {
         });
     };
 
-    // 縦2行 (上段: 矩形選択、楕円選択、投げ縄、自動選択、下段: 色域選択、スポイト、変形)
+    // 縦2行 (上段: 矩形選択、楕円選択、投げ縄、自動選択、下段: 色域選択、スポイト、変形、レイヤー選択)
     addCommonBtn(ToolType::RectSelect, "矩形選択", 0, 0);
     addCommonBtn(ToolType::EllipseSelect, "楕円選択", 0, 1);
     addCommonBtn(ToolType::LassoSelect, "投げ縄", 0, 2);
@@ -847,6 +868,7 @@ void ToolBoxWidget::setupCommonTools() {
     addCommonBtn(ToolType::ColorSelect, "色域選択", 1, 0);
     addCommonBtn(ToolType::Pipette, "スポイト", 1, 1);
     addCommonBtn(ToolType::Transform, "変形", 1, 2);
+    addCommonBtn(ToolType::LayerSelect, "レイヤー選択", 1, 3);
 }
 
 void ToolBoxWidget::addToolToTable(ToolType tool, const QString& label, int row, int col) {
@@ -893,7 +915,7 @@ void ToolBoxWidget::updateToolTableForLayer(LayerType type) {
         m_currentTool == ToolType::Pipette || m_currentTool == ToolType::RectSelect ||
         m_currentTool == ToolType::EllipseSelect || m_currentTool == ToolType::LassoSelect ||
         m_currentTool == ToolType::MagicWand || m_currentTool == ToolType::ColorSelect ||
-        m_currentTool == ToolType::Transform)) {
+        m_currentTool == ToolType::Transform || m_currentTool == ToolType::LayerSelect)) {
         currentToolValid = true;
     }
 

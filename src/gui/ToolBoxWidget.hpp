@@ -67,7 +67,8 @@ enum class ToolType {
     LassoSelect,
     MagicWand,
     ColorSelect,
-    Transform
+    Transform,
+    LayerSelect
 };
 
 struct ToolSlotItem {

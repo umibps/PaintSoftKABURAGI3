@@ -120,6 +120,7 @@ static QString toolTypeName(ToolType tool) {
     case ToolType::MagicWand: return "MagicWand";
     case ToolType::Gradient: return "Gradient";
     case ToolType::CompositeBrush: return "CompositeBrush";
+    case ToolType::LayerSelect: return "LayerSelect";
     default: return "Unknown";
     }
 }
@@ -853,6 +854,19 @@ void MainWindow::setupLayout() {
     m_panelSettings = new PanelSettingsWidget(this);
     m_threeDSettings = new ThreeDSettingsWidget(this);
 
+    m_layerSelectSettings = new QWidget(this);
+    auto lsl = new QVBoxLayout(m_layerSelectSettings);
+    lsl->setContentsMargins(6, 6, 6, 6);
+    lsl->setSpacing(6);
+    auto lblLayerSelectTitle = new QLabel(QString::fromUtf8("【レイヤー選択】"), m_layerSelectSettings);
+    lblLayerSelectTitle->setStyleSheet("font-weight: bold; color: #222; font-size: 11px;");
+    auto lblLayerSelectDesc = new QLabel(QString::fromUtf8("キャンバス上の描画をクリックすると、そのピクセルに描画がある最上位のレイヤーをアクティブにし、レイヤー一覧で中央にスクロールします。\n\n💡 通常レイヤー作業中も [Shift + Ctrl + 左クリック] で直接レイヤーを選択できます。"), m_layerSelectSettings);
+    lblLayerSelectDesc->setWordWrap(true);
+    lblLayerSelectDesc->setStyleSheet("color: #444; font-size: 11px; line-height: 1.4;");
+    lsl->addWidget(lblLayerSelectTitle);
+    lsl->addWidget(lblLayerSelectDesc);
+    lsl->addStretch();
+
     class DynamicStackedWidget : public QStackedWidget {
     public:
         using QStackedWidget::QStackedWidget;
@@ -896,6 +910,7 @@ void MainWindow::setupLayout() {
     m_toolSettingsStack->addWidget(m_textSettings);                    // index 21: テキスト設定
     m_toolSettingsStack->addWidget(m_panelSettings);                   // index 22: コマ設定
     m_toolSettingsStack->addWidget(m_threeDSettings);                  // index 23: 3Dモデル設定
+    m_toolSettingsStack->addWidget(m_layerSelectSettings);             // index 24: レイヤー選択設定
 
     m_toolSettingsStack->setMinimumWidth(0);
     auto settingsScrollArea = new QScrollArea(m_toolSplitter);
@@ -966,6 +981,19 @@ void MainWindow::setupLayout() {
     connect(m_navigator, &NavigatorWidget::flipHorizontallyTriggered, m_canvasWidget, &CanvasWidget::toggleFlipHorizontally);
     connect(m_navigator, &NavigatorWidget::resetTransformTriggered, m_canvasWidget, &CanvasWidget::resetTransform);
     connect(m_navigator, &NavigatorWidget::viewCenterChanged, m_canvasWidget, &CanvasWidget::setViewCenter);
+
+    // キャンバス上のレイヤー選択 (レイヤー選択ツール / Shift+Ctrl+クリック)
+    connect(m_canvasWidget, &CanvasWidget::layerSelectedFromCanvas, this, [this](int layerIndex) {
+        if (m_layerPanel) {
+            m_layerPanel->scrollToLayer(layerIndex, true);
+        }
+        if (m_document) {
+            auto layer = m_document->getLayer(layerIndex);
+            if (layer) {
+                statusBar()->showMessage(tr("レイヤー「%1」を選択しました").arg(layer->name()), 2500);
+            }
+        }
+    });
 
     // 左右反転トグルボタン・アクションの同期
     connect(m_canvasWidget, &CanvasWidget::transformChanged, this, [this](double, double, bool flipped, const QPointF&, const QSizeF&) {
@@ -1694,6 +1722,7 @@ void MainWindow::initDefaultToolConfigs() {
     m_toolConfigs[ToolType::LassoSelect]        = { 10.0f, 0.0f,  1.0f, BlendMode::Normal, false, false, false, 100, 0, 0, 30, false, 5, 100, 0, false };
     m_toolConfigs[ToolType::ColorSelect]        = { 10.0f, 0.0f,  1.0f, BlendMode::Normal, false, false, false, 100, 0, 0, 30, false, 5, 100, 0, false };
     m_toolConfigs[ToolType::MagicWand]          = { 10.0f, 0.0f,  1.0f, BlendMode::Normal, false, false, false, 100, 0, 0, 30, false, 5, 100, 0, false };
+    m_toolConfigs[ToolType::LayerSelect]        = { 10.0f, 0.0f,  1.0f, BlendMode::Normal, false, false, false, 100, 0, 0, 30, false, 5, 100, 0, false };
 }
 
 void MainWindow::saveCurrentToolConfig() {
@@ -3732,6 +3761,8 @@ void MainWindow::onToolChanged(ToolType tool) {
             m_toolSettingsStack->setCurrentWidget(m_gradientSettings);
         } else if (tool == ToolType::Transform) {
             m_toolSettingsStack->setCurrentWidget(m_transformSettings);
+        } else if (tool == ToolType::LayerSelect) {
+            m_toolSettingsStack->setCurrentWidget(m_layerSelectSettings);
         } else if (tool == ToolType::Text || tool == ToolType::TextBalloon) {
             m_toolSettingsStack->setCurrentWidget(m_textSettings);
         } else if (tool == ToolType::PanelFrame || tool == ToolType::PanelSplit) {

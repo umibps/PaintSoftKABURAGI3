@@ -71,6 +71,7 @@ public:
     void updateScrollBarPosition();
     void setScrollBarPosition(bool onLeft);
     QMenu* createContextMenu(const QPoint& pos);
+    void scrollToLayer(int index, bool center = true);
 
 signals:
     void loadAiParametersRequested(const std::shared_ptr<Layer>& layer);

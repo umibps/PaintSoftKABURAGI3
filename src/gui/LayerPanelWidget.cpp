@@ -1138,6 +1138,24 @@ void LayerPanelWidget::updateThumbnails() {
     }
 }
 
+void LayerPanelWidget::scrollToLayer(int index, bool center) {
+    if (!m_document || !m_layerListWidget) return;
+    int count = static_cast<int>(m_document->layers().size());
+    int targetRow = count - 1 - index;
+    if (targetRow >= 0 && targetRow < m_layerListWidget->count()) {
+        auto item = m_layerListWidget->item(targetRow);
+        if (item) {
+            auto hint = center ? QAbstractItemView::PositionAtCenter : QAbstractItemView::EnsureVisible;
+            m_layerListWidget->scrollToItem(item, hint);
+            QTimer::singleShot(0, this, [this, item, hint]() {
+                if (m_layerListWidget && item) {
+                    m_layerListWidget->scrollToItem(item, hint);
+                }
+            });
+        }
+    }
+}
+
 void LayerPanelWidget::onActiveLayerChanged(int index) {
     if (!m_document) return;
     int count = static_cast<int>(m_document->layers().size());

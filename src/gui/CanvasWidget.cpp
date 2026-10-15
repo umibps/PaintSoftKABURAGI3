@@ -125,6 +125,9 @@ void CanvasWidget::updateCursorForActiveLayer() {
                m_currentTool == ToolType::VectorLineEdit || m_currentTool == ToolType::VectorColorChange) {
         setCursor(Qt::ArrowCursor);
         m_showBrushOutline = false;
+    } else if (m_currentTool == ToolType::LayerSelect) {
+        setCursor(Qt::ArrowCursor);
+        m_showBrushOutline = false;
     } else if (m_currentTool == ToolType::Transform) {
         m_showBrushOutline = false;
         updateTransformCursor(m_transformHoverHandle, QGuiApplication::keyboardModifiers());
@@ -3436,6 +3439,67 @@ void CanvasWidget::autoSelect(const QPointF& docPos) {
     update();
 }
 
+void CanvasWidget::selectLayerAtPixel(const QPointF& docPt) {
+    if (!m_document) return;
+
+    int px = static_cast<int>(std::floor(docPt.x()));
+    int py = static_cast<int>(std::floor(docPt.y()));
+
+    if (px < 0 || px >= m_document->width() || py < 0 || py >= m_document->height()) {
+        return;
+    }
+
+    const auto& layers = m_document->layers();
+    int foundIndex = -1;
+
+    for (int i = static_cast<int>(layers.size()) - 1; i >= 0; --i) {
+        const auto& layer = layers[i];
+        if (!layer) continue;
+        if (!layer->isVisible() || !layer->effectiveVisible()) continue;
+        if (layer->type() == LayerType::Group) continue;
+        if (layer->type() == LayerType::Adjustment) continue;
+
+        // クリッピングマスクのチェック: 親ベースレイヤーが透明ならクリップされて見えない
+        if (layer->isClippingMask()) {
+            auto baseLayer = m_document->findClippingBaseLayer(i);
+            if (baseLayer) {
+                uint32_t basePixel = baseLayer->tileManager().getPixel(px, py);
+                if (((basePixel >> 24) & 0xFF) == 0) {
+                    continue;
+                }
+            }
+        }
+
+        uint32_t argb = layer->tileManager().getPixel(px, py);
+        uint8_t a = static_cast<uint8_t>((argb >> 24) & 0xFF);
+        if (a > 0) {
+            foundIndex = i;
+            break;
+        }
+    }
+
+    if (foundIndex >= 0) {
+        auto targetLayer = layers[foundIndex];
+        if (targetLayer) {
+            auto parent = targetLayer->parentGroup();
+            bool expandedAny = false;
+            while (parent) {
+                if (!parent->isExpanded()) {
+                    parent->setExpanded(true);
+                    expandedAny = true;
+                }
+                parent = parent->parentGroup();
+            }
+            if (expandedAny) {
+                emit m_document->layerListChanged();
+            }
+        }
+
+        m_document->setActiveLayerIndex(foundIndex);
+        emit layerSelectedFromCanvas(foundIndex);
+    }
+}
+
 void CanvasWidget::executeColorSelection(const QPointF& docPos) {
     if (!m_document) return;
 
@@ -3574,6 +3638,17 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
 
 void CanvasWidget::tabletEvent(QTabletEvent* event) {
     auto activeL = m_document ? m_document->activeLayer() : nullptr;
+
+    bool isCtrlShift = (event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) == (Qt::ControlModifier | Qt::ShiftModifier);
+    bool isNormalLayerCtrlShift = (activeL && activeL->type() == LayerType::Raster && isCtrlShift);
+    if (m_currentTool == ToolType::LayerSelect || isNormalLayerCtrlShift) {
+        if (event->type() == QEvent::TabletPress) {
+            QPointF docPt = viewToDoc(event->position());
+            selectLayerAtPixel(docPt);
+        }
+        event->accept();
+        return;
+    }
 
     bool isRightClick = (event->button() == Qt::RightButton) || (event->buttons() & Qt::RightButton);
     if ((isRightClick || m_isRightClickEyedropper) && m_rightClickEyedropperEnabled && m_document && activeL && activeL->type() == LayerType::Raster && isRasterDrawingTool(m_currentTool)) {
@@ -3770,6 +3845,17 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         QPointF docPt = viewToDoc(event->position());
         m_cursorDocPos = docPt;
+
+        // レイヤー選択ツール、または通常レイヤーにおける Shift + Ctrl + 左クリック判定
+        bool isCtrlShift = (event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) == (Qt::ControlModifier | Qt::ShiftModifier);
+        auto activeL = m_document ? m_document->activeLayer() : nullptr;
+        bool isNormalLayerCtrlShift = (activeL && activeL->type() == LayerType::Raster && isCtrlShift);
+
+        if (m_currentTool == ToolType::LayerSelect || isNormalLayerCtrlShift) {
+            selectLayerAtPixel(docPt);
+            event->accept();
+            return;
+        }
 
         if (m_currentTool == ToolType::Transform) {
             if (!m_isTransforming) {
@@ -3974,7 +4060,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
             return;
         }
 
-        auto activeL = m_document ? m_document->activeLayer() : nullptr;
+        activeL = m_document ? m_document->activeLayer() : nullptr;
         if (activeL && activeL->type() == LayerType::Group) {
             m_isMovingLayer = true;
             m_layerMoveStartDocPos = docPt;
@@ -4918,6 +5004,13 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
+    if (m_currentTool == ToolType::LayerSelect) {
+        setCursor(Qt::ArrowCursor);
+        m_showBrushOutline = false;
+        event->accept();
+        return;
+    }
+
     if (m_currentTool == ToolType::TextBalloon || m_currentTool == ToolType::Text) {
         if (m_isCreatingBalloon) {
             m_balloonCurrentPos = m_cursorDocPos;
@@ -5320,6 +5413,11 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
         m_isPanning3D = false;
         m_isZooming3D = false;
         updateCursorForActiveLayer();
+        event->accept();
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton && m_currentTool == ToolType::LayerSelect) {
         event->accept();
         return;
     }
@@ -6712,7 +6810,8 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
                           m_currentTool == ToolType::VectorEllipse ||
                           m_currentTool == ToolType::VectorCircle ||
                           m_currentTool == ToolType::VectorPolygon ||
-                          m_currentTool == ToolType::Transform);
+                          m_currentTool == ToolType::Transform ||
+                          m_currentTool == ToolType::LayerSelect);
     if (m_showBrushOutline && !m_isPanning && !isGroup && !isSpecialTool) {
         painter.setRenderHint(QPainter::Antialiasing, true);
 

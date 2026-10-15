@@ -514,11 +514,13 @@ public:
     void testStrokeBegin(const QPointF& docPos, float pressure = 1.0f) { strokeBegin(docPos, pressure); }
     void testStrokeMove(const QPointF& docPos, float pressure = 1.0f) { strokeMove(docPos, pressure); }
     void testStrokeEnd() { strokeEnd(); }
+    void selectLayerAtPixel(const QPointF& docPt);
 
 signals:
     void transformChanged(double zoom, double angleDeg, bool flipped, const QPointF& docCenterVisible, const QSizeF& viewportSize);
     void colorPicked(const QColor& color);
     void textItemSelected(const TextBalloonItem& item);
+    void layerSelectedFromCanvas(int layerIndex);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
