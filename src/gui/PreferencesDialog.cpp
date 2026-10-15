@@ -83,6 +83,18 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
 
     layGeneral->addWidget(canvasGroup);
 
+    // 5. タッチ操作設定 (Touch Operation Settings)
+    auto touchGroup = new QGroupBox(tr("Touch Operation Settings"), tabGeneral);
+    auto touchForm = new QFormLayout(touchGroup);
+
+    m_comboTouchAction = new QComboBox(this);
+    m_comboTouchAction->addItem(tr("ブラシを描画 (現状の仕様)"), static_cast<int>(TouchAction::Draw));
+    m_comboTouchAction->addItem(tr("移動、拡大縮小、回転"), static_cast<int>(TouchAction::PanZoomRotate));
+    m_comboTouchAction->addItem(tr("何もしない"), static_cast<int>(TouchAction::None));
+    touchForm->addRow(tr("タッチ入力の動作:"), m_comboTouchAction);
+
+    layGeneral->addWidget(touchGroup);
+
     layGeneral->addStretch();
     tabWidget->addTab(tabGeneral, tr("General"));
 
@@ -499,6 +511,18 @@ bool PreferencesDialog::isRightClickEyedropperEnabled() {
     return settings.value("Preferences/rightClickEyedropper", true).toBool();
 }
 
+PreferencesDialog::TouchAction PreferencesDialog::touchAction() {
+    QSettings settings = getSettings();
+    int val = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::Draw)).toInt();
+    if (val < 0 || val > 2) return TouchAction::Draw;
+    return static_cast<TouchAction>(val);
+}
+
+void PreferencesDialog::setTouchAction(TouchAction action) {
+    QSettings settings = getSettings();
+    settings.setValue("Preferences/touchAction", static_cast<int>(action));
+}
+
 QString PreferencesDialog::effectiveLanguage() {
     QString lang = language();
     if (lang == "system") {
@@ -761,6 +785,14 @@ void PreferencesDialog::loadSettings() {
 
     m_chkRightClickEyedropper->setChecked(settings.value("Preferences/rightClickEyedropper", true).toBool());
 
+    int touchVal = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::Draw)).toInt();
+    int tIdx = m_comboTouchAction->findData(touchVal);
+    if (tIdx >= 0) {
+        m_comboTouchAction->setCurrentIndex(tIdx);
+    } else {
+        m_comboTouchAction->setCurrentIndex(0);
+    }
+
     // モニタープロファイル読み込み
     QString monPath = settings.value("display/monitorProfilePath", DisplayFilterManager::instance().monitorProfilePath()).toString();
     m_editMonitorProfilePath->setText(monPath);
@@ -829,6 +861,7 @@ void PreferencesDialog::saveSettings() {
     }
 
     settings.setValue("Preferences/rightClickEyedropper", m_chkRightClickEyedropper->isChecked());
+    settings.setValue("Preferences/touchAction", m_comboTouchAction->currentData().toInt());
 
     // モニタープロファイル保存
     QString monPath = m_editMonitorProfilePath->text().trimmed();

@@ -957,6 +957,7 @@ void MainWindow::setupLayout() {
 
     m_canvasWidget = new CanvasWidget(this);
     m_canvasWidget->setRightClickEyedropperEnabled(PreferencesDialog::isRightClickEyedropperEnabled());
+    m_canvasWidget->setTouchAction(PreferencesDialog::touchAction());
     m_canvasWidget->setDocument(m_document);
     m_canvasWidget->setTextSettingsWidget(m_textSettings);
     m_canvasWidget->setPanelSettingsWidget(m_panelSettings);
@@ -3100,6 +3101,7 @@ void MainWindow::onPreferences() {
         }
         if (m_canvasWidget) {
             m_canvasWidget->setRightClickEyedropperEnabled(PreferencesDialog::isRightClickEyedropperEnabled());
+            m_canvasWidget->setTouchAction(PreferencesDialog::touchAction());
         }
         if (m_aiAssistantDock) {
             m_aiAssistantDock->refreshLocalModels();

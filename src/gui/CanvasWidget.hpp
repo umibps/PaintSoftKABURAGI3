@@ -19,6 +19,7 @@
 #include "VectorLayer.hpp"
 #include "TransformSettingsWidget.hpp"
 #include "core/BlendModes.hpp"
+#include "PreferencesDialog.hpp"
 
 namespace Kaburagi {
 
@@ -53,6 +54,7 @@ public:
     void fitToView();
     void setViewCenter(const QPointF& docCenter);
     void panByScreenDelta(double dx, double dy);
+    QPointF panOffset() const { return m_panOffset; }
 
     QPointF viewToDoc(const QPointF& viewPos) const;
     QPointF docToView(const QPointF& docPos) const;
@@ -108,6 +110,11 @@ public:
     bool isRasterDrawingTool(ToolType tool) const;
     bool isRasterBrushTool(ToolType tool) const;
     void drawStraightLine(const QPointF& startPos, const QPointF& endPos);
+
+    // タッチ操作設定
+    using TouchAction = PreferencesDialog::TouchAction;
+    void setTouchAction(TouchAction action) { m_touchAction = action; }
+    TouchAction touchAction() const { return m_touchAction; }
 
     // ブラシ散布設定
     void setBrushScatter(bool s) { m_brushScatter = s; }
@@ -1109,6 +1116,7 @@ private:
     QPointF evaluateMLS(const QPointF& pt, const std::vector<QPointF>& origPts, const std::vector<QPointF>& curPts) const;
     bool m_rightClickEyedropperEnabled = true;
     bool m_isRightClickEyedropper = false;
+    TouchAction m_touchAction = TouchAction::Draw;
 };
 
 } // namespace Kaburagi

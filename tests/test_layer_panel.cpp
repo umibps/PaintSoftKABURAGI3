@@ -310,6 +310,63 @@ int main(int argc, char** argv) {
         QColor midPixel2 = testDoc.samplePixel(150, 100);
         assert(midPixel2.alpha() > 0);
         std::cout << "[PASS] Continuous Shift+Click straight line drawing works!" << std::endl;
+
+        // 6. Test Touch Action Preferences and canvas response
+        std::cout << "[TEST] Testing Touch Action Preferences (Draw, PanZoomRotate, None)..." << std::endl;
+
+        // Verify PreferencesDialog persistence
+        PreferencesDialog::setTouchAction(PreferencesDialog::TouchAction::Draw);
+        assert(PreferencesDialog::touchAction() == PreferencesDialog::TouchAction::Draw);
+
+        PreferencesDialog::setTouchAction(PreferencesDialog::TouchAction::PanZoomRotate);
+        assert(PreferencesDialog::touchAction() == PreferencesDialog::TouchAction::PanZoomRotate);
+
+        PreferencesDialog::setTouchAction(PreferencesDialog::TouchAction::None);
+        assert(PreferencesDialog::touchAction() == PreferencesDialog::TouchAction::None);
+        std::cout << "[PASS] PreferencesDialog touchAction getters and setters work!" << std::endl;
+
+        // Test CanvasWidget with TouchAction::None
+        canvas.setTouchAction(CanvasWidget::TouchAction::None);
+        assert(canvas.touchAction() == CanvasWidget::TouchAction::None);
+
+        // Synthesized mouse event should be blocked when TouchAction::None
+        QPointF testPt(200, 200);
+        QMouseEvent synthClickNone(QEvent::MouseButtonPress, testPt, testPt, testPt,
+                                   Qt::LeftButton, Qt::LeftButton, Qt::NoModifier, Qt::MouseEventSynthesizedByQt);
+        app.sendEvent(&canvas, &synthClickNone);
+        app.processEvents();
+        assert(!canvas.isDrawing());
+        std::cout << "[PASS] TouchAction::None blocks synthesized mouse press (no drawing)!" << std::endl;
+
+        // Test CanvasWidget with TouchAction::PanZoomRotate
+        canvas.setTouchAction(CanvasWidget::TouchAction::PanZoomRotate);
+        assert(canvas.touchAction() == CanvasWidget::TouchAction::PanZoomRotate);
+
+        QMouseEvent synthClickPan(QEvent::MouseButtonPress, testPt, testPt, testPt,
+                                  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier, Qt::MouseEventSynthesizedByQt);
+        app.sendEvent(&canvas, &synthClickPan);
+        app.processEvents();
+        assert(!canvas.isDrawing());
+        std::cout << "[PASS] TouchAction::PanZoomRotate blocks synthesized mouse press (no drawing)!" << std::endl;
+
+        // Test CanvasWidget with TouchAction::Draw (default)
+        canvas.setTouchAction(CanvasWidget::TouchAction::Draw);
+        assert(canvas.touchAction() == CanvasWidget::TouchAction::Draw);
+
+        QMouseEvent synthClickDraw(QEvent::MouseButtonPress, testPt, testPt, testPt,
+                                   Qt::LeftButton, Qt::LeftButton, Qt::NoModifier, Qt::MouseEventSynthesizedByQt);
+        app.sendEvent(&canvas, &synthClickDraw);
+        app.processEvents();
+        assert(canvas.isDrawing());
+        QMouseEvent synthReleaseDraw(QEvent::MouseButtonRelease, testPt, testPt, testPt,
+                                     Qt::LeftButton, Qt::NoButton, Qt::NoModifier, Qt::MouseEventSynthesizedByQt);
+        app.sendEvent(&canvas, &synthReleaseDraw);
+        app.processEvents();
+        assert(!canvas.isDrawing());
+        std::cout << "[PASS] TouchAction::Draw allows synthesized mouse press and draws with brush!" << std::endl;
+
+        // Restore TouchAction setting
+        PreferencesDialog::setTouchAction(PreferencesDialog::TouchAction::Draw);
     }
 
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;

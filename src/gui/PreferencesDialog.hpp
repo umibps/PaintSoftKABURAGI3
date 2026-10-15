@@ -21,6 +21,12 @@ public:
         Left = 1
     };
 
+    enum class TouchAction {
+        Draw = 0,           // ブラシを描画 (現状の仕様)
+        PanZoomRotate = 1,  // 移動、拡大縮小、回転
+        None = 2            // 何もしない
+    };
+
     explicit PreferencesDialog(QWidget* parent = nullptr);
     ~PreferencesDialog() override = default;
 
@@ -52,6 +58,8 @@ public:
     static QString iccProfilePath();
     static void setIccProfilePath(const QString& path);
     static bool isRightClickEyedropperEnabled();
+    static TouchAction touchAction();
+    static void setTouchAction(TouchAction action);
 
     void accept() override;
 
@@ -64,6 +72,7 @@ private:
     QComboBox* m_layerScrollPosCombo = nullptr;
     QComboBox* m_comboLanguage = nullptr;
     QCheckBox* m_chkRightClickEyedropper = nullptr;
+    QComboBox* m_comboTouchAction = nullptr;
 
     QLineEdit* m_editAiModelDir = nullptr;
     QPushButton* m_btnBrowseAiModelDir = nullptr;

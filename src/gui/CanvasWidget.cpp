@@ -29,6 +29,8 @@ CanvasWidget::CanvasWidget(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::BlankCursor); // GIMP風 ブラシサイズ輪郭カーソルを表示するため標準カーソルを非表示
 
+    m_touchAction = PreferencesDialog::touchAction();
+
     connect(&DisplayFilterManager::instance(), &DisplayFilterManager::filterChanged, this, QOverload<>::of(&QWidget::update));
 
     // GIMPスタイル マーチングアンツ（アリの行進）用タイマー (120ms間隔)
@@ -3867,6 +3869,11 @@ void CanvasWidget::leaveEvent(QEvent* /*event*/) {
 }
 
 void CanvasWidget::mousePressEvent(QMouseEvent* event) {
+    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+        event->accept();
+        return;
+    }
+
     // 1. キャンバス回転: Shift + 中ボタン、または (Space または Alt) + Shift + 左ボタン
     bool isShift = (event->modifiers() & Qt::ShiftModifier);
     bool isAlt = (event->modifiers() & Qt::AltModifier);
@@ -4672,6 +4679,11 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
+    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+        event->accept();
+        return;
+    }
+
     m_cursorDocPos = viewToDoc(event->position());
 
     if (m_isRotating) {
@@ -5488,6 +5500,11 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+        event->accept();
+        return;
+    }
+
     if (event->button() == Qt::RightButton && m_isRightClickEyedropper) {
         m_isRightClickEyedropper = false;
         event->accept();
@@ -6283,43 +6300,99 @@ void CanvasWidget::keyReleaseEvent(QKeyEvent* event) {
 }
 
 bool CanvasWidget::event(QEvent* event) {
-    // マルチタッチ (Android & ペンタブレット) 処理
+    // タッチ入力処理
     if (event->type() == QEvent::TouchBegin || event->type() == QEvent::TouchUpdate || event->type() == QEvent::TouchEnd) {
+        // 1. 「何もしない」設定の場合
+        if (m_touchAction == TouchAction::None) {
+            event->accept();
+            return true;
+        }
+
         QTouchEvent* touch = static_cast<QTouchEvent*>(event);
         const auto& points = touch->points();
 
-        if (points.size() == 2) {
-            // 2本指によるピンチズーム・回転・パン
-            auto p1 = points[0];
-            auto p2 = points[1];
+        // 2. 「移動、拡大縮小、回転」設定の場合
+        if (m_touchAction == TouchAction::PanZoomRotate) {
+            if (points.size() == 1 && event->type() == QEvent::TouchUpdate) {
+                // 1本指によるキャンバスの移動（パン）
+                auto p = points[0];
+                QPointF delta = p.position() - p.lastPosition();
+                if (delta.manhattanLength() > 0.0) {
+                    panByScreenDelta(delta.x(), delta.y());
+                }
+            } else if (points.size() >= 2 && event->type() == QEvent::TouchUpdate) {
+                // 2本指以上によるパン・ピンチズーム・ピンチ回転
+                auto p1 = points[0];
+                auto p2 = points[1];
 
-            QPointF curCenter = (p1.position() + p2.position()) * 0.5;
-            QPointF prevCenter = (p1.pressPosition() + p2.pressPosition()) * 0.5;
-            m_panOffset += (curCenter - prevCenter) * 0.1;
+                // パン（移動）
+                QPointF curCenter = (p1.position() + p2.position()) * 0.5;
+                QPointF lastCenter = (p1.lastPosition() + p2.lastPosition()) * 0.5;
+                QPointF deltaCenter = curCenter - lastCenter;
+                if (deltaCenter.manhattanLength() > 0.0) {
+                    panByScreenDelta(deltaCenter.x(), deltaCenter.y());
+                }
 
-            qreal prevDist = std::hypot(p1.pressPosition().x() - p2.pressPosition().x(), p1.pressPosition().y() - p2.pressPosition().y());
-            qreal curDist = std::hypot(p1.position().x() - p2.position().x(), p1.position().y() - p2.position().y());
-            if (prevDist > 10.0) {
-                m_zoom = std::clamp(m_zoom * (curDist / prevDist), 0.05, 4.0);
+                // ピンチズーム（拡大縮小）
+                qreal lastDist = std::hypot(p1.lastPosition().x() - p2.lastPosition().x(), p1.lastPosition().y() - p2.lastPosition().y());
+                qreal curDist = std::hypot(p1.position().x() - p2.position().x(), p1.position().y() - p2.position().y());
+                if (lastDist > 1.0 && curDist > 1.0) {
+                    double scaleFactor = curDist / lastDist;
+                    setZoom(m_zoom * scaleFactor);
+                }
+
+                // ピンチ回転
+                QPointF lastVec = p2.lastPosition() - p1.lastPosition();
+                QPointF curVec = p2.position() - p1.position();
+                if (lastVec.manhattanLength() > 2.0 && curVec.manhattanLength() > 2.0) {
+                    double prevAngle = std::atan2(lastVec.y(), lastVec.x()) * 180.0 / M_PI;
+                    double curAngle = std::atan2(curVec.y(), curVec.x()) * 180.0 / M_PI;
+                    double deltaAngle = curAngle - prevAngle;
+                    while (deltaAngle > 180.0) deltaAngle -= 360.0;
+                    while (deltaAngle < -180.0) deltaAngle += 360.0;
+                    setRotationAngle(m_rotationAngle + deltaAngle);
+                }
             }
-
-            // 2本指によるピンチ回転
-            QPointF prevVec = p2.pressPosition() - p1.pressPosition();
-            QPointF curVec = p2.position() - p1.position();
-            if (prevVec.manhattanLength() > 10.0 && curVec.manhattanLength() > 10.0) {
-                double prevAngle = std::atan2(prevVec.y(), prevVec.x()) * 180.0 / M_PI;
-                double curAngle = std::atan2(curVec.y(), curVec.x()) * 180.0 / M_PI;
-                double delta = curAngle - prevAngle;
-                while (delta > 180.0) delta -= 360.0;
-                while (delta < -180.0) delta += 360.0;
-                m_rotationAngle = std::fmod(m_rotationAngle + delta * 0.5, 360.0);
-                if (m_rotationAngle < 0) m_rotationAngle += 360.0;
-            }
-
-            update();
-            notifyTransformChanged();
+            event->accept();
             return true;
         }
+
+        // 3. 「ブラシを描画 (現状の仕様)」設定の場合 (TouchAction::Draw)
+        if (points.size() == 2) {
+            if (event->type() == QEvent::TouchUpdate) {
+                // 2本指によるピンチズーム・回転・パン
+                auto p1 = points[0];
+                auto p2 = points[1];
+
+                QPointF curCenter = (p1.position() + p2.position()) * 0.5;
+                QPointF lastCenter = (p1.lastPosition() + p2.lastPosition()) * 0.5;
+                QPointF deltaCenter = curCenter - lastCenter;
+                if (deltaCenter.manhattanLength() > 0.0) {
+                    panByScreenDelta(deltaCenter.x(), deltaCenter.y());
+                }
+
+                qreal lastDist = std::hypot(p1.lastPosition().x() - p2.lastPosition().x(), p1.lastPosition().y() - p2.lastPosition().y());
+                qreal curDist = std::hypot(p1.position().x() - p2.position().x(), p1.position().y() - p2.position().y());
+                if (lastDist > 1.0 && curDist > 1.0) {
+                    double scaleFactor = curDist / lastDist;
+                    setZoom(m_zoom * scaleFactor);
+                }
+
+                QPointF lastVec = p2.lastPosition() - p1.lastPosition();
+                QPointF curVec = p2.position() - p1.position();
+                if (lastVec.manhattanLength() > 2.0 && curVec.manhattanLength() > 2.0) {
+                    double prevAngle = std::atan2(lastVec.y(), lastVec.x()) * 180.0 / M_PI;
+                    double curAngle = std::atan2(curVec.y(), curVec.x()) * 180.0 / M_PI;
+                    double deltaAngle = curAngle - prevAngle;
+                    while (deltaAngle > 180.0) deltaAngle -= 360.0;
+                    while (deltaAngle < -180.0) deltaAngle += 360.0;
+                    setRotationAngle(m_rotationAngle + deltaAngle);
+                }
+            }
+            event->accept();
+            return true;
+        }
+        // 1本指は QWidget::event(event) に流すことで、Qtがマウスイベント（ブラシ描画）として処理する
     }
     return QWidget::event(event);
 }
