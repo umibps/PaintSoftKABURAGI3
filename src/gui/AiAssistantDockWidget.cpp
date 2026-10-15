@@ -571,6 +571,9 @@ void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
         m_spinDenoising->setValue(0.55);
         m_chkControlNet->setChecked(true);
         m_comboControlNetType->setCurrentIndex(0); // Lineart
+        if (!m_isLoadingSettings && m_editPrompt) {
+            m_editPrompt->setPlainText("clean lineart, masterpiece, high quality");
+        }
         break;
     case AiMode::Inpaint:
         m_spinDenoising->setValue(0.75);

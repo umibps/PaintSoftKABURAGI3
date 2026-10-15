@@ -17,11 +17,80 @@
 #include <QWebSocket>
 #include <QRegularExpression>
 #include <QThread>
+#include <QCoreApplication>
 #include <queue>
 #include "PreferencesDialog.hpp"
 #include "AiComponentDownloader.hpp"
 
 namespace Kaburagi {
+
+static QString getComfyUiControlNetModelName(ControlNetType type) {
+    switch (type) {
+    case ControlNetType::Lineart: return "control_v11p_sd15_lineart.pth";
+    case ControlNetType::Depth: return "control_v11f1p_sd15_depth.pth";
+    case ControlNetType::Openpose: return "control_v11p_sd15_openpose.pth";
+    case ControlNetType::Scribble: return "control_v11p_sd15_scribble.pth";
+    case ControlNetType::Canny: return "control_v11p_sd15_canny.pth";
+    default: return "";
+    }
+}
+
+QString AiService::findControlNetModelPath(ControlNetType type, const QString& explicitDir) {
+    QStringList patterns;
+    switch (type) {
+    case ControlNetType::Lineart:
+        patterns << "*lineart*";
+        break;
+    case ControlNetType::Depth:
+        patterns << "*depth*";
+        break;
+    case ControlNetType::Openpose:
+        patterns << "*openpose*";
+        break;
+    case ControlNetType::Scribble:
+        patterns << "*scribble*";
+        break;
+    case ControlNetType::Canny:
+        patterns << "*canny*";
+        break;
+    default:
+        return QString();
+    }
+
+    QStringList searchDirs;
+    if (!explicitDir.isEmpty() && QDir(explicitDir).exists()) {
+        searchDirs << explicitDir;
+    }
+    QString prefCnDir = PreferencesDialog::aiControlNetDirectory();
+    if (!prefCnDir.isEmpty() && QDir(prefCnDir).exists()) {
+        searchDirs << prefCnDir;
+    }
+    QString modelDir = PreferencesDialog::aiModelDirectory();
+    if (!modelDir.isEmpty()) {
+        QDir mDir(modelDir);
+        searchDirs << mDir.filePath("ControlNet");
+        searchDirs << mDir.filePath("controlnet");
+        searchDirs << modelDir;
+    }
+    QString appDir = QCoreApplication::applicationDirPath();
+    searchDirs << appDir + "/models/ControlNet";
+    searchDirs << appDir + "/models/controlnet";
+    searchDirs << appDir + "/models";
+
+    for (const auto& dirPath : searchDirs) {
+        QDir dir(dirPath);
+        if (!dir.exists()) continue;
+        for (const auto& pattern : patterns) {
+            QStringList filters;
+            filters << pattern + ".safetensors" << pattern + ".pth" << pattern + ".bin" << pattern + ".gguf";
+            QStringList files = dir.entryList(filters, QDir::Files, QDir::Name);
+            if (!files.isEmpty()) {
+                return dir.filePath(files.first());
+            }
+        }
+    }
+    return QString();
+}
 
 AiService::AiService(QObject* parent)
     : QObject(parent)
@@ -272,8 +341,9 @@ QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
     if (params.enableControlNet && !params.controlNetImage.isNull()) {
         QJsonObject unit;
         unit["enabled"] = true;
-        unit["weight"] = params.controlNetWeight;
-        unit["image"] = imageToBase64Png(params.controlNetImage);
+        QString b64 = imageToBase64Png(params.controlNetImage);
+        unit["image"] = b64;
+        unit["input_image"] = b64;
 
         switch (params.controlNetType) {
         case ControlNetType::Lineart:
@@ -355,7 +425,7 @@ QJsonObject AiService::buildWebUiImg2ImgJson(const AiGenerateParams& params) {
     return json;
 }
 
-QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage) {
+QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage, const QString& uploadedControlNetImage) {
     QJsonObject prompt;
 
     // Node 4: CheckpointLoaderSimple
@@ -393,6 +463,47 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     node7Inputs["clip"] = clipLink;
     node7["inputs"] = node7Inputs;
     prompt["7"] = node7;
+
+    // ControlNet Nodes
+    QString positiveNodeId = "6";
+    int positiveOutIndex = 0;
+    if (params.enableControlNet && !uploadedControlNetImage.isEmpty()) {
+        QString cnModel = getComfyUiControlNetModelName(params.controlNetType);
+        if (!cnModel.isEmpty()) {
+            // Node 20: ControlNetLoader
+            QJsonObject node20;
+            node20["class_type"] = "ControlNetLoader";
+            QJsonObject node20Inputs;
+            node20Inputs["control_net_name"] = cnModel;
+            node20["inputs"] = node20Inputs;
+            prompt["20"] = node20;
+
+            // Node 21: LoadImage (ControlNet Image)
+            QJsonObject node21;
+            node21["class_type"] = "LoadImage";
+            QJsonObject node21Inputs;
+            node21Inputs["image"] = uploadedControlNetImage;
+            node21["inputs"] = node21Inputs;
+            prompt["21"] = node21;
+
+            // Node 22: ControlNetApply
+            QJsonObject node22;
+            node22["class_type"] = "ControlNetApply";
+            QJsonObject node22Inputs;
+            QJsonArray condLink; condLink.append("6"); condLink.append(0);
+            QJsonArray cnLink; cnLink.append("20"); cnLink.append(0);
+            QJsonArray cnImgLink; cnImgLink.append("21"); cnImgLink.append(0);
+            node22Inputs["conditioning"] = condLink;
+            node22Inputs["control_net"] = cnLink;
+            node22Inputs["image"] = cnImgLink;
+            node22Inputs["strength"] = params.controlNetWeight;
+            node22["inputs"] = node22Inputs;
+            prompt["22"] = node22;
+
+            positiveNodeId = "22";
+            positiveOutIndex = 0;
+        }
+    }
 
     // Latent source
     QString latentNodeId = "5";
@@ -445,7 +556,7 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     node3Inputs["denoise"] = isImg2Img ? params.denoisingStrength : 1.0;
 
     QJsonArray modelLink; modelLink.append("4"); modelLink.append(0);
-    QJsonArray posLink; posLink.append("6"); posLink.append(0);
+    QJsonArray posLink; posLink.append(positiveNodeId); posLink.append(positiveOutIndex);
     QJsonArray negLink; negLink.append("7"); negLink.append(0);
     QJsonArray latLink; latLink.append(latentNodeId); latLink.append(latentOutIndex);
 
@@ -799,9 +910,24 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
     bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                       params.mode == AiMode::Inpaint ||
                       params.mode == AiMode::Colorization) && !params.initImage.isNull();
+    bool hasControlNet = params.enableControlNet && !params.controlNetImage.isNull();
 
-    if (isImg2Img) {
-        emit generationProgress(10, tr("初期画像をComfyUIへアップロード中..."));
+    auto postPromptJson = [this, params, urlStr](const QString& uploadedInit, const QString& uploadedCn) {
+        QUrl pUrl(urlStr + "/prompt");
+        QNetworkRequest pReq(pUrl);
+        pReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+        QJsonObject pBody;
+        pBody["prompt"] = buildComfyUiPromptJson(params, uploadedInit, uploadedCn);
+        if (!m_comfyClientId.isEmpty()) {
+            pBody["client_id"] = m_comfyClientId;
+        }
+        m_currentReply = m_netManager->post(pReq, QJsonDocument(pBody).toJson(QJsonDocument::Compact));
+        connect(m_currentReply, &QNetworkReply::finished, this, &AiService::onGenerateReplyFinished);
+        emit generationProgress(20, tr("ComfyUIワークフローをキューに追加中..."));
+    };
+
+    auto uploadImageToComfy = [this, params, urlStr](const QImage& img, const QString& filename, std::function<void(const QString&)> onSuccess) {
         QUrl uploadUrl(urlStr + "/upload/image");
         QNetworkRequest req(uploadUrl);
 
@@ -809,13 +935,13 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
 
         QHttpPart imagePart;
         imagePart.setHeader(QNetworkRequest::ContentDispositionHeader,
-            QVariant("form-data; name=\"image\"; filename=\"kaburagi_init.png\""));
+            QVariant(QString("form-data; name=\"image\"; filename=\"%1\"").arg(filename)));
         imagePart.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("image/png"));
 
         QByteArray imgBytes;
         QBuffer buffer(&imgBytes);
         buffer.open(QIODevice::WriteOnly);
-        params.initImage.save(&buffer, "PNG");
+        img.save(&buffer, "PNG");
         imagePart.setBody(imgBytes);
         multiPart->append(imagePart);
 
@@ -827,7 +953,7 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
         m_currentReply = m_netManager->post(req, multiPart);
         multiPart->setParent(m_currentReply);
 
-        connect(m_currentReply, &QNetworkReply::finished, this, [this, params, urlStr]() {
+        connect(m_currentReply, &QNetworkReply::finished, this, [this, params, filename, onSuccess]() {
             if (!m_currentReply) return;
             QNetworkReply* reply = m_currentReply;
             m_currentReply = nullptr;
@@ -844,40 +970,40 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
 
             QJsonObject upJson = QJsonDocument::fromJson(reply->readAll()).object();
             QString uploadedName = upJson["name"].toString();
-            if (uploadedName.isEmpty()) uploadedName = "kaburagi_init.png";
+            if (uploadedName.isEmpty()) uploadedName = filename;
+            onSuccess(uploadedName);
+        });
+    };
 
-            // prompt POST
-            QUrl pUrl(urlStr + "/prompt");
-            QNetworkRequest pReq(pUrl);
-            pReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-
-            QJsonObject pBody;
-            pBody["prompt"] = buildComfyUiPromptJson(params, uploadedName);
-            if (!m_comfyClientId.isEmpty()) {
-                pBody["client_id"] = m_comfyClientId;
-            }
-            m_currentReply = m_netManager->post(pReq, QJsonDocument(pBody).toJson(QJsonDocument::Compact));
-            connect(m_currentReply, &QNetworkReply::finished, this, &AiService::onGenerateReplyFinished);
-            emit generationProgress(20, tr("ComfyUIワークフローをキューに追加中..."));
+    if (isImg2Img && hasControlNet) {
+        emit generationProgress(10, tr("初期画像をComfyUIへアップロード中..."));
+        uploadImageToComfy(params.initImage, "kaburagi_init.png", [this, params, hasControlNet, uploadImageToComfy, postPromptJson](const QString& initName) {
+            emit generationProgress(15, tr("ControlNet参照画像をComfyUIへアップロード中..."));
+            uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [initName, postPromptJson](const QString& cnName) {
+                postPromptJson(initName, cnName);
+            });
         });
         return;
     }
 
-    // txt2img
-    QUrl url(urlStr + "/prompt");
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-
-    QJsonObject jsonBody;
-    jsonBody["prompt"] = buildComfyUiPromptJson(params);
-    if (!m_comfyClientId.isEmpty()) {
-        jsonBody["client_id"] = m_comfyClientId;
+    if (isImg2Img) {
+        emit generationProgress(10, tr("初期画像をComfyUIへアップロード中..."));
+        uploadImageToComfy(params.initImage, "kaburagi_init.png", [postPromptJson](const QString& initName) {
+            postPromptJson(initName, QString());
+        });
+        return;
     }
-    QByteArray data = QJsonDocument(jsonBody).toJson(QJsonDocument::Compact);
 
-    m_currentReply = m_netManager->post(request, data);
-    connect(m_currentReply, &QNetworkReply::finished, this, &AiService::onGenerateReplyFinished);
-    emit generationProgress(15, tr("ComfyUIワークフローをキューに追加中..."));
+    if (hasControlNet) {
+        emit generationProgress(10, tr("ControlNet参照画像をComfyUIへアップロード中..."));
+        uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [postPromptJson](const QString& cnName) {
+            postPromptJson(QString(), cnName);
+        });
+        return;
+    }
+
+    // txt2img (ControlNetなし)
+    postPromptJson(QString(), QString());
 }
 
 void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
@@ -958,6 +1084,22 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
         if (params.maskImage.save(tempMaskPath, "PNG")) {
             m_embeddedTempFiles.append(tempMaskPath);
             args << "--mask" << tempMaskPath;
+        }
+    }
+
+    // ControlNet
+    if (params.enableControlNet && !params.controlNetImage.isNull()) {
+        QString cnModelPath = findControlNetModelPath(params.controlNetType, params.modelDirectory);
+        if (!cnModelPath.isEmpty()) {
+            QString tempCnPath = QDir::temp().filePath(QString("kaburagi_embed_cn_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
+            if (params.controlNetImage.save(tempCnPath, "PNG")) {
+                m_embeddedTempFiles.append(tempCnPath);
+                args << "--control-net" << cnModelPath;
+                args << "--control-image" << tempCnPath;
+                args << "--control-strength" << QString::number(params.controlNetWeight);
+            }
+        } else {
+            qWarning() << "[AiService] ControlNet is enabled, but no matching model found for type" << static_cast<int>(params.controlNetType);
         }
     }
 
