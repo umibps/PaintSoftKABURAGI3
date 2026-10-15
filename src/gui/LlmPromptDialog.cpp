@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QSettings>
 #include <QMessageBox>
+#include <QScrollArea>
 
 namespace Kaburagi {
 
@@ -20,7 +21,8 @@ LlmPromptDialog::LlmPromptDialog(QWidget* parent)
     , m_llmService(new LlmPromptService(this))
 {
     setWindowTitle(tr("LLM プロンプト生成アシスタント"));
-    resize(620, 680);
+    resize(640, 700);
+    setMinimumSize(480, 420);
     setModal(true);
 
     setupUi();
@@ -101,12 +103,24 @@ void LlmPromptDialog::onModeChanged() {
 }
 
 void LlmPromptDialog::setupUi() {
-    auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(12, 12, 12, 12);
+    auto dialogLayout = new QVBoxLayout(this);
+    dialogLayout->setContentsMargins(8, 8, 8, 8);
+    dialogLayout->setSpacing(6);
+
+    // スクロールエリア
+    auto scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    auto scrollContent = new QWidget(scrollArea);
+    auto mainLayout = new QVBoxLayout(scrollContent);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
     mainLayout->setSpacing(8);
 
     // 1. モード選択
-    auto grpMode = new QGroupBox(tr("作業モード"), this);
+    auto grpMode = new QGroupBox(tr("作業モード"), scrollContent);
     auto layMode = new QHBoxLayout(grpMode);
     m_radioModeCreate = new QRadioButton(tr("✨ 新規プロンプト考案"), grpMode);
     m_radioModeRefine = new QRadioButton(tr("🔄 前回の画像・プロンプトから修正・改善"), grpMode);
@@ -119,7 +133,7 @@ void LlmPromptDialog::setupUi() {
     connect(m_radioModeRefine, &QRadioButton::toggled, this, &LlmPromptDialog::onModeChanged);
 
     // 2. LLM バックエンド接続設定
-    auto grpBackend = new QGroupBox(tr("LLM 接続設定"), this);
+    auto grpBackend = new QGroupBox(tr("LLM 接続設定"), scrollContent);
     auto layBackend = new QVBoxLayout(grpBackend);
 
     auto gridRadio = new QGridLayout();
@@ -163,7 +177,7 @@ void LlmPromptDialog::setupUi() {
     mainLayout->addWidget(grpBackend);
 
     // 3-1. Mode 1: 新規プロンプト考案
-    m_widgetCreateMode = new QWidget(this);
+    m_widgetCreateMode = new QWidget(scrollContent);
     auto layCreate = new QVBoxLayout(m_widgetCreateMode);
     layCreate->setContentsMargins(0, 0, 0, 0);
     auto grpIdea = new QGroupBox(tr("描きたい内容・アイデア (日本語可)"), m_widgetCreateMode);
@@ -176,7 +190,7 @@ void LlmPromptDialog::setupUi() {
     mainLayout->addWidget(m_widgetCreateMode);
 
     // 3-2. Mode 2: 前回の画像・プロンプトから修正・改善
-    m_widgetRefineMode = new QWidget(this);
+    m_widgetRefineMode = new QWidget(scrollContent);
     auto layRefine = new QVBoxLayout(m_widgetRefineMode);
     layRefine->setContentsMargins(0, 0, 0, 0);
     auto grpRefine = new QGroupBox(tr("前回の画像・プロンプトからの改善・修正指示"), m_widgetRefineMode);
@@ -211,7 +225,7 @@ void LlmPromptDialog::setupUi() {
 
     // 画風・適用オプション
     auto formOptions = new QFormLayout();
-    m_comboStyle = new QComboBox(this);
+    m_comboStyle = new QComboBox(scrollContent);
     m_comboStyle->addItem(tr("指定なし（自由）"));
     m_comboStyle->addItem(tr("アニメ・美麗イラスト調 (Anime / Masterpiece)"));
     m_comboStyle->addItem(tr("美麗デジタルアート (Digital Painting)"));
@@ -221,7 +235,7 @@ void LlmPromptDialog::setupUi() {
     m_comboStyle->addItem(tr("レトロコミック・アメコミ調 (Retro Comic)"));
     m_comboStyle->addItem(tr("ドット絵・ピクセルアート (Pixel Art)"));
 
-    m_comboApplyMode = new QComboBox(this);
+    m_comboApplyMode = new QComboBox(scrollContent);
     m_comboApplyMode->addItem(tr("現在のプロンプトを上書き"));
     m_comboApplyMode->addItem(tr("現在のプロンプトの末尾に追加"));
 
@@ -231,17 +245,17 @@ void LlmPromptDialog::setupUi() {
 
     // 4. アクション & ステータス
     auto layAction = new QVBoxLayout();
-    m_btnGenerate = new QPushButton(tr("✨ LLM でプロンプトを考案・最適化"), this);
+    m_btnGenerate = new QPushButton(tr("✨ LLM でプロンプトを考案・最適化"), scrollContent);
     m_btnGenerate->setStyleSheet("QPushButton { font-weight: bold; background-color: #6a1b9a; color: white; padding: 8px; font-size: 13px; } QPushButton:hover { background-color: #7b1fa2; }");
     connect(m_btnGenerate, &QPushButton::clicked, this, &LlmPromptDialog::onGenerateClicked);
     layAction->addWidget(m_btnGenerate);
 
-    m_progressBar = new QProgressBar(this);
+    m_progressBar = new QProgressBar(scrollContent);
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
     m_progressBar->setTextVisible(true);
     m_progressBar->setVisible(false);
-    m_lblStatus = new QLabel(tr("準備完了"), this);
+    m_lblStatus = new QLabel(tr("準備完了"), scrollContent);
     m_lblStatus->setAlignment(Qt::AlignCenter);
 
     layAction->addWidget(m_progressBar);
@@ -249,7 +263,7 @@ void LlmPromptDialog::setupUi() {
     mainLayout->addLayout(layAction);
 
     // 5. 生成結果プレビュー
-    auto grpResult = new QGroupBox(tr("生成結果 (英語タグ)"), this);
+    auto grpResult = new QGroupBox(tr("生成結果 (英語タグ)"), scrollContent);
     auto layResult = new QVBoxLayout(grpResult);
 
     layResult->addWidget(new QLabel(tr("プロンプト (Positive):"), grpResult));
@@ -264,8 +278,12 @@ void LlmPromptDialog::setupUi() {
 
     mainLayout->addWidget(grpResult);
 
-    // 6. 下部ダイアログボタン
+    scrollArea->setWidget(scrollContent);
+    dialogLayout->addWidget(scrollArea, 1);
+
+    // 6. 下部ダイアログボタン (常時固定フッター)
     auto layBottom = new QHBoxLayout();
+    layBottom->setContentsMargins(4, 4, 4, 4);
     auto btnCancel = new QPushButton(tr("閉じる"), this);
     connect(btnCancel, &QPushButton::clicked, this, &QDialog::reject);
 
@@ -277,7 +295,7 @@ void LlmPromptDialog::setupUi() {
     layBottom->addStretch();
     layBottom->addWidget(btnCancel);
     layBottom->addWidget(m_btnApply);
-    mainLayout->addLayout(layBottom);
+    dialogLayout->addLayout(layBottom);
 
     onBackendChanged();
 }
