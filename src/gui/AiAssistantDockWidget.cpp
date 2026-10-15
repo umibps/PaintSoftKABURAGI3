@@ -1055,7 +1055,30 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
                 } else {
                     // 「いいえ」の場合：ControlNet をオフにして続行
                     m_chkControlNet->setChecked(false);
-                    m_lblStatus->setText(tr("ControlNet なしで生成を続行します"));
+                }
+            }
+
+            // 組み込み推論エンジン使用時、SDXLベースモデルとSD 1.5用ControlNetの不一致を事前検出
+            if (!cnModelPath.isEmpty() && m_radioEmbedded && m_radioEmbedded->isChecked()) {
+                QString currentModel = m_comboModel ? m_comboModel->currentText().toLower() : QString();
+                bool isBaseSdxl = currentModel.contains("xl") || currentModel.contains("illustrious");
+                QString cnLower = QFileInfo(cnModelPath).fileName().toLower();
+                bool isCnSd15 = cnLower.contains("sd15") || cnLower.contains("v11") || cnLower.contains("sd1.5");
+                bool isCnSdxl = cnLower.contains("sdxl") || (cnLower.contains("xl") && !cnLower.contains("sd15"));
+
+                if (isBaseSdxl && isCnSd15 && !isCnSdxl) {
+                    QMessageBox::warning(
+                        this,
+                        tr("モデル世代の不一致 (SDXL vs SD 1.5)"),
+                        tr("選択されているベースモデル（%1）は SDXL 世代ですが、\n"
+                           "ControlNet モデル（%2）は SD 1.5 専用です。\n\n"
+                           "組み込み推論エンジン(sd.exe)では内部構造が異なるモデル同士を組み合わせることはできません。\n\n"
+                           "【対処方法】\n"
+                           "「モデル」一覧から SD 1.5系のモデル（meinamix、v1-5-pruned、aniverse、dreamshaper 等）を選択して再試行してください。")
+                        .arg(m_comboModel->currentText())
+                        .arg(QFileInfo(cnModelPath).fileName())
+                    );
+                    return false;
                 }
             }
         }

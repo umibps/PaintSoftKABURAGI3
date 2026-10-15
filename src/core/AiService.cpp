@@ -1223,6 +1223,12 @@ void AiService::onEmbeddedProcessFinished(int exitCode) {
         errDetail += "\n\n" + tr("💡 【原因と解決策】\n"
                                  "GPUのVRAM容量が不足しています。リモートデスクトップ接続中や内蔵GPU環境ではGPUメモリが大幅に制限されます。\n"
                                  "AIアシスタントの「使用デバイス」を『CPU』に変更して再試行してください。");
+    } else if (m_embeddedProcessLog.contains("not in model metadata", Qt::CaseInsensitive) ||
+               m_embeddedProcessLog.contains("model metadata validation failed", Qt::CaseInsensitive)) {
+        errDetail += "\n\n" + tr("💡 【原因と解決策】\n"
+                                 "ベースモデルと ControlNet モデルの世代（SD 1.5 / SDXL）が一致していません。\n"
+                                 "現在選択されているベースモデルが SDXL系（AnimagineXL、Illustrious等）の場合、SD 1.5用の ControlNetモデルは使用できません。\n"
+                                 "AIアシスタントの「モデル」一覧から SD 1.5系のモデル（meinamix、v1-5-pruned、aniverse、dreamshaper 等）を選択して再試行してください。");
     }
 
     emit generationFailed(tr("組み込み推論エンジンの実行に失敗しました (終了コード: %1)%2").arg(exitCode).arg(errDetail));
