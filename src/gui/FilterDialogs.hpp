@@ -194,5 +194,39 @@ private:
     std::vector<std::vector<QPair<float, QColor>>> m_presets;
 };
 
+/**
+ * @brief 色を透明度に (Color to Alpha) 設定ダイアログ (GIMP互換)
+ */
+class ColorToAlphaDialog : public FilterBaseDialog {
+    Q_OBJECT
+public:
+    ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+
+    QColor targetColor() const { return m_targetColor; }
+    void setTargetColor(const QColor& color);
+
+    float transparencyThreshold() const;
+    float opacityThreshold() const;
+
+protected:
+    void applyFilterToImage(const QImage& src, QImage& out) override;
+    QString filterName() const override { return tr("Color to Alpha"); }
+
+private slots:
+    void onPickColorClicked();
+    void onFromFgColorClicked();
+
+private:
+    QColor m_targetColor = Qt::white;
+    QPushButton* m_btnColor = nullptr;
+    QPushButton* m_btnFromFg = nullptr;
+    QSlider* m_sliderTransThreshold = nullptr;
+    QDoubleSpinBox* m_spinTransThreshold = nullptr;
+    QSlider* m_sliderOpacityThreshold = nullptr;
+    QDoubleSpinBox* m_spinOpacityThreshold = nullptr;
+
+    void updateColorButtonStyle();
+};
+
 } // namespace Kaburagi
 

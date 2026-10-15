@@ -124,6 +124,8 @@ public slots:
     void onFilterGradientMap();
     void onRasterizeLayer();
     void onFillLayer();
+    void onConvertBrightnessToAlpha();
+    void onColorToAlpha();
     void updateLayerMenuActions();
 
 
@@ -236,6 +238,8 @@ private:
     QAction* m_addOpaqueToSelectionAction = nullptr;
     QAction* m_rasterizeLayerAction = nullptr;
     QAction* m_fillLayerAction = nullptr;
+    QAction* m_convertBrightnessToAlphaAction = nullptr;
+    QAction* m_colorToAlphaAction = nullptr;
 
     // キャンバス変形アクション
     QAction* m_changeCanvasSizeAction = nullptr;
@@ -289,6 +293,8 @@ public:
     QAction* addOpaqueToSelectionAction() const { return m_addOpaqueToSelectionAction; }
     QAction* rasterizeLayerAction() const { return m_rasterizeLayerAction; }
     QAction* fillLayerAction() const { return m_fillLayerAction; }
+    QAction* convertBrightnessToAlphaAction() const { return m_convertBrightnessToAlphaAction; }
+    QAction* colorToAlphaAction() const { return m_colorToAlphaAction; }
     QAction* filterNoneAction() const { return m_filterNoneAction; }
     QAction* filterGrayscaleAction() const { return m_filterGrayscaleAction; }
     QAction* filterGrayscaleYiqAction() const { return m_filterGrayscaleYiqAction; }

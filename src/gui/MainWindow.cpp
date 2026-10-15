@@ -374,6 +374,11 @@ void MainWindow::createMenuBar() {
     m_fillLayerAction = layerMenu->addAction(tr("&Fill Layer with Color"), this, &MainWindow::onFillLayer);
     m_fillLayerAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
 
+    layerMenu->addSeparator();
+
+    m_convertBrightnessToAlphaAction = layerMenu->addAction(tr("Convert &Brightness to Opacity"), this, &MainWindow::onConvertBrightnessToAlpha);
+    m_colorToAlphaAction = layerMenu->addAction(tr("Color to &Alpha..."), this, &MainWindow::onColorToAlpha);
+
     connect(layerMenu, &QMenu::aboutToShow, this, &MainWindow::updateLayerMenuActions);
     updateLayerMenuActions();
 
@@ -3931,9 +3936,15 @@ void MainWindow::updateLayerMenuActions() {
         bool canRasterize = activeL && (activeL->type() == LayerType::Vector || activeL->type() == LayerType::Text);
         m_rasterizeLayerAction->setEnabled(canRasterize);
     }
+    bool canEditRaster = activeL && (activeL->type() == LayerType::Raster) && !activeL->isLocked();
     if (m_fillLayerAction) {
-        bool canFill = activeL && (activeL->type() == LayerType::Raster) && !activeL->isLocked();
-        m_fillLayerAction->setEnabled(canFill);
+        m_fillLayerAction->setEnabled(canEditRaster);
+    }
+    if (m_convertBrightnessToAlphaAction) {
+        m_convertBrightnessToAlphaAction->setEnabled(canEditRaster);
+    }
+    if (m_colorToAlphaAction) {
+        m_colorToAlphaAction->setEnabled(canEditRaster);
     }
 }
 
@@ -4081,6 +4092,28 @@ void MainWindow::onFillLayer() {
     if (m_canvasWidget) {
         m_canvasWidget->update();
     }
+}
+
+void MainWindow::onConvertBrightnessToAlpha() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    if (!activeL || activeL->type() != LayerType::Raster || activeL->isLocked()) return;
+
+    m_document->convertBrightnessToOpacity(m_document->activeLayerIndex());
+    if (m_canvasWidget) {
+        m_canvasWidget->update();
+    }
+    statusBar()->showMessage(tr("輝度を透明度に変換しました。"), 3000);
+}
+
+void MainWindow::onColorToAlpha() {
+    if (!m_document) return;
+    ColorToAlphaDialog dlg(m_document, m_canvasWidget, this);
+    if (!dlg.hasTargets()) {
+        QMessageBox::information(this, tr("Color to Alpha"), tr("No editable raster layer selected for Color to Alpha.\n(Please select a normal raster layer or unlock it)"));
+        return;
+    }
+    dlg.exec();
 }
 
 void MainWindow::onAiApplyAsNewLayer(const QImage& image, const QJsonObject& aiParams) {

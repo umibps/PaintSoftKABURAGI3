@@ -73,6 +73,7 @@ public:
     LayerPtr rasterizeLayer(int index);
     QPainterPath createOpaquePath(int layerIndex) const;
     void fillLayer(int index, const QColor& color);
+    void convertBrightnessToOpacity(int index, const QColor& lineColor = Qt::black);
 
     // クリッピング判定元レイヤー (ベースレイヤー) の取得
     LayerPtr findClippingBaseLayer(int layerIndex) const;

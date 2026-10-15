@@ -6,6 +6,8 @@
 #include "Layer.hpp"
 #include "VectorLayer.hpp"
 #include "TextLayer.hpp"
+#include "FilterDialogs.hpp"
+#include "FilterProcessor.hpp"
 
 using namespace Kaburagi;
 
@@ -293,7 +295,97 @@ int main(int argc, char** argv) {
     doc->undoStack()->undo();
     assert(pSelFill[15 * TileMemoryPool::TILE_WIDTH + 15] == 0xFF0000FF);
 
-    std::cout << "[PASS] Fill Layer works with/without selection and with alpha lock!" << std::endl;
+    // 14. 輝度を透明度に (Convert Brightness to Opacity)
+    std::cout << "[TEST] Testing Convert Brightness to Opacity..." << std::endl;
+    assert(win.convertBrightnessToAlphaAction() != nullptr);
+    assert(win.convertBrightnessToAlphaAction()->isEnabled());
+
+    doc->clearSelection();
+    doc->activeLayer()->setAlphaLocked(false);
+
+    // テスト用ピクセル配置: (0,0)は白(255,255,255), (10,10)は黒(0,0,0), (20,20)は灰色(128,128,128)
+    doc->activeLayer()->tileManager().setPixel(0, 0, 0xFFFFFFFF);
+    doc->activeLayer()->tileManager().setPixel(10, 10, 0xFF000000);
+    doc->activeLayer()->tileManager().setPixel(20, 20, 0xFF808080);
+
+    win.onConvertBrightnessToAlpha();
+
+    // 白 -> 完全透明 (alpha == 0)
+    uint32_t pxWhite = doc->activeLayer()->tileManager().getPixel(0, 0);
+    assert(((pxWhite >> 24) & 0xFF) == 0);
+
+    // 黒 -> 完全不透明黒 (alpha == 255, RGB == 0,0,0)
+    uint32_t pxBlack = doc->activeLayer()->tileManager().getPixel(10, 10);
+    assert(((pxBlack >> 24) & 0xFF) == 255);
+    assert((pxBlack & 0x00FFFFFF) == 0);
+
+    // 灰色 -> 半透明黒 (alpha ~ 127)
+    uint32_t pxGray = doc->activeLayer()->tileManager().getPixel(20, 20);
+    int alphaGray = (pxGray >> 24) & 0xFF;
+    assert(alphaGray >= 120 && alphaGray <= 135);
+
+    // Undo で元のピクセルに戻る
+    doc->undoStack()->undo();
+    assert(doc->activeLayer()->tileManager().getPixel(0, 0) == 0xFFFFFFFF);
+    assert(doc->activeLayer()->tileManager().getPixel(10, 10) == 0xFF000000);
+
+    // Redo で再適用
+    doc->undoStack()->redo();
+    assert(((doc->activeLayer()->tileManager().getPixel(0, 0) >> 24) & 0xFF) == 0);
+    assert(((doc->activeLayer()->tileManager().getPixel(10, 10) >> 24) & 0xFF) == 255);
+    std::cout << "[PASS] Convert Brightness to Opacity works with Undo/Redo!" << std::endl;
+
+    // 15. 色を透明度に (Color to Alpha - GIMP互換)
+    std::cout << "[TEST] Testing Color to Alpha..." << std::endl;
+    assert(win.colorToAlphaAction() != nullptr);
+    assert(win.colorToAlphaAction()->isEnabled());
+
+    // テスト画像作成: 白背景(255,255,255), 赤(255,0,0), ピンク(255,128,128)
+    QImage testImg(30, 30, QImage::Format_ARGB32);
+    testImg.fill(Qt::white);
+    testImg.setPixelColor(10, 10, QColor(255, 0, 0));       // 純赤
+    testImg.setPixelColor(20, 20, QColor(255, 128, 128));   // 薄い赤（ピンク）
+
+    // 白をターゲットにした Color to Alpha
+    QImage c2aResult = FilterProcessor::colorToAlpha(testImg, Qt::white);
+    assert(!c2aResult.isNull());
+
+    // 白 -> 完全透明
+    QColor cWhite = c2aResult.pixelColor(0, 0);
+    assert(cWhite.alpha() == 0);
+
+    // 赤 -> 完全不透明 (alpha == 255, 赤色維持)
+    QColor cRed = c2aResult.pixelColor(10, 10);
+    assert(cRed.alpha() == 255);
+    assert(cRed.red() == 255 && cRed.green() == 0 && cRed.blue() == 0);
+
+    // ピンク -> 白成分が除去されて純赤(255, 0, 0)の半透明(alpha ~ 127)に再構築される (GIMP仕様)
+    QColor cPink = c2aResult.pixelColor(20, 20);
+    assert(cPink.alpha() >= 120 && cPink.alpha() <= 135);
+    // Premultiplied ARGB32 なので、非乗算色に戻すと赤成分が最大、緑・青がゼロに近い
+    assert(cPink.red() > cPink.green() && cPink.green() <= 2);
+
+    // ダイアログ経由の適用 & Undo/Redo テスト
+    doc->activeLayer()->tileManager().fromQImage(testImg);
+    {
+        ColorToAlphaDialog dlg(doc, win.canvasWidget(), &win);
+        dlg.setTargetColor(Qt::white);
+        dlg.accept();
+    }
+
+    uint32_t dlgWhite = doc->activeLayer()->tileManager().getPixel(0, 0);
+    assert(((dlgWhite >> 24) & 0xFF) == 0);
+    uint32_t dlgRed = doc->activeLayer()->tileManager().getPixel(10, 10);
+    assert(((dlgRed >> 24) & 0xFF) == 255);
+
+    // Undo で元画像が復元される
+    doc->undoStack()->undo();
+    assert(doc->activeLayer()->tileManager().getPixel(0, 0) == 0xFFFFFFFF);
+    // Redo で再適用
+    doc->undoStack()->redo();
+    assert(((doc->activeLayer()->tileManager().getPixel(0, 0) >> 24) & 0xFF) == 0);
+
+    std::cout << "[PASS] Color to Alpha works accurately with GIMP formula and Undo/Redo!" << std::endl;
 
     std::cout << "[ALL PASS] All Layer Menu action tests passed successfully!" << std::endl;
     return 0;

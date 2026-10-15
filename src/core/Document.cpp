@@ -1,5 +1,6 @@
 #include "Document.hpp"
 #include "UndoCommands.hpp"
+#include "FilterProcessor.hpp"
 #include <algorithm>
 #include <unordered_map>
 #include <cmath>
@@ -851,6 +852,72 @@ void Document::fillLayer(int index, const QColor& color) {
 
     layer->invalidateContentBounds();
     layer->tileManager().markDirtyRect(targetRect);
+    composite(targetRect);
+}
+
+void Document::convertBrightnessToOpacity(int index, const QColor& lineColor) {
+    if (index < 0 || index >= static_cast<int>(m_layers.size())) return;
+    auto targetLayer = m_layers[index];
+    if (!targetLayer || targetLayer->type() != LayerType::Raster || targetLayer->isLocked()) return;
+
+    // 対象レイヤーの収集 (指定レイヤー + ピン留めレイヤー)
+    std::vector<int> targetIndices;
+    targetIndices.push_back(index);
+    for (size_t i = 0; i < m_layers.size(); ++i) {
+        int idx = static_cast<int>(i);
+        if (idx == index) continue;
+        const auto& l = m_layers[i];
+        if (l && l->isPinned() && l->type() == LayerType::Raster && !l->isLocked()) {
+            targetIndices.push_back(idx);
+        }
+    }
+
+    QRect targetRect = hasSelection()
+        ? selectionBounds().toAlignedRect().intersected(QRect(0, 0, m_width, m_height))
+        : QRect(0, 0, m_width, m_height);
+
+    if (targetRect.isEmpty()) return;
+
+    std::vector<MultiLayerFilterCommand::Entry> entries;
+
+    for (int idx : targetIndices) {
+        auto l = m_layers[idx];
+        if (!l) continue;
+
+        MultiLayerFilterCommand::Entry entry;
+        entry.layerIndex = idx;
+        entry.preTiles = l->tileManager().clone();
+        entry.dirtyRect = targetRect;
+
+        QImage origImg = l->tileManager().toQImage();
+        QImage converted = FilterProcessor::convertBrightnessToAlpha(origImg, lineColor);
+
+        // 選択範囲がある場合は選択範囲内のみブレンド
+        if (hasSelection()) {
+            if (selectionMaskLayer()) {
+                FilterProcessor::blendWithSelectionMask(converted, origImg,
+                                                       selectionMaskLayer().get(),
+                                                       m_width, m_height);
+            } else {
+                FilterProcessor::blendWithSelection(converted, origImg,
+                                                    selection(),
+                                                    m_width, m_height);
+            }
+        }
+
+        l->tileManager().fromQImage(converted);
+        entry.postTiles = l->tileManager().clone();
+        l->invalidateContentBounds();
+        l->tileManager().markDirtyRect(targetRect);
+
+        entries.push_back(std::move(entry));
+    }
+
+    if (m_undoStack && !m_isUndoRedoInProgress && !entries.empty()) {
+        auto cmd = new MultiLayerFilterCommand(this, tr("輝度を透明度に変換"), std::move(entries));
+        m_undoStack->push(cmd);
+    }
+
     composite(targetRect);
 }
 

@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QPushButton>
 #include <QMessageBox>
+#include <QColorDialog>
 
 namespace Kaburagi {
 
@@ -647,5 +648,147 @@ void GradientMapDialog::applyFilterToImage(const QImage& src, QImage& out) {
     out = FilterProcessor::applyGradientMap(src, stops, rev, op);
 }
 
+// ----------------------------------------------------------------------------
+// 8. ColorToAlphaDialog (色を透明度に - GIMP互換)
+// ----------------------------------------------------------------------------
+ColorToAlphaDialog::ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
+    : FilterBaseDialog(doc, canvas, tr("Color to Alpha"), parent)
+{
+    auto controls = new QWidget(this);
+    auto form = new QFormLayout(controls);
+    form->setContentsMargins(0, 0, 0, 0);
+    form->setSpacing(8);
+
+    // 1. 透明にする色の選択
+    auto layColor = new QHBoxLayout();
+    m_btnColor = new QPushButton(controls);
+    m_btnColor->setMinimumHeight(28);
+    m_btnColor->setToolTip(tr("Click to select the color to make transparent"));
+    connect(m_btnColor, &QPushButton::clicked, this, &ColorToAlphaDialog::onPickColorClicked);
+
+    m_btnFromFg = new QPushButton(tr("From &Foreground"), controls);
+    m_btnFromFg->setToolTip(tr("Set the current foreground color as the transparent color"));
+    connect(m_btnFromFg, &QPushButton::clicked, this, &ColorToAlphaDialog::onFromFgColorClicked);
+
+    layColor->addWidget(m_btnColor, 1);
+    layColor->addWidget(m_btnFromFg, 0);
+    form->addRow(tr("Color to make transparent:"), layColor);
+
+    // 2. 透明度しきい値 (0.000 ~ 1.000, デフォルト 0.000)
+    auto layTrans = new QHBoxLayout();
+    m_sliderTransThreshold = new QSlider(Qt::Horizontal, controls);
+    m_sliderTransThreshold->setRange(0, 1000);
+    m_sliderTransThreshold->setValue(0);
+
+    m_spinTransThreshold = new QDoubleSpinBox(controls);
+    m_spinTransThreshold->setRange(0.0, 1.0);
+    m_spinTransThreshold->setSingleStep(0.01);
+    m_spinTransThreshold->setDecimals(3);
+    m_spinTransThreshold->setValue(0.0);
+
+    layTrans->addWidget(m_sliderTransThreshold);
+    layTrans->addWidget(m_spinTransThreshold);
+    form->addRow(tr("Transparency threshold:"), layTrans);
+
+    // 3. 不透明度しきい値 (0.000 ~ 1.000, デフォルト 1.000)
+    auto layOp = new QHBoxLayout();
+    m_sliderOpacityThreshold = new QSlider(Qt::Horizontal, controls);
+    m_sliderOpacityThreshold->setRange(0, 1000);
+    m_sliderOpacityThreshold->setValue(1000);
+
+    m_spinOpacityThreshold = new QDoubleSpinBox(controls);
+    m_spinOpacityThreshold->setRange(0.0, 1.0);
+    m_spinOpacityThreshold->setSingleStep(0.01);
+    m_spinOpacityThreshold->setDecimals(3);
+    m_spinOpacityThreshold->setValue(1.0);
+
+    layOp->addWidget(m_sliderOpacityThreshold);
+    layOp->addWidget(m_spinOpacityThreshold);
+    form->addRow(tr("Opacity threshold:"), layOp);
+
+    // スライダーとスピンボックスの同期
+    connect(m_sliderTransThreshold, &QSlider::valueChanged, this, [this](int v) {
+        m_spinTransThreshold->blockSignals(true);
+        m_spinTransThreshold->setValue(v / 1000.0);
+        m_spinTransThreshold->blockSignals(false);
+        updatePreview();
+    });
+    connect(m_spinTransThreshold, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v) {
+        m_sliderTransThreshold->blockSignals(true);
+        m_sliderTransThreshold->setValue(static_cast<int>(v * 1000.0 + 0.5));
+        m_sliderTransThreshold->blockSignals(false);
+        updatePreview();
+    });
+
+    connect(m_sliderOpacityThreshold, &QSlider::valueChanged, this, [this](int v) {
+        m_spinOpacityThreshold->blockSignals(true);
+        m_spinOpacityThreshold->setValue(v / 1000.0);
+        m_spinOpacityThreshold->blockSignals(false);
+        updatePreview();
+    });
+    connect(m_spinOpacityThreshold, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v) {
+        m_sliderOpacityThreshold->blockSignals(true);
+        m_sliderOpacityThreshold->setValue(static_cast<int>(v * 1000.0 + 0.5));
+        m_sliderOpacityThreshold->blockSignals(false);
+        updatePreview();
+    });
+
+    updateColorButtonStyle();
+
+    setupBaseUi(controls);
+    resize(400, 200);
+
+    updatePreview();
+}
+
+void ColorToAlphaDialog::setTargetColor(const QColor& color) {
+    if (color.isValid()) {
+        m_targetColor = color;
+        updateColorButtonStyle();
+        updatePreview();
+    }
+}
+
+float ColorToAlphaDialog::transparencyThreshold() const {
+    return m_spinTransThreshold ? static_cast<float>(m_spinTransThreshold->value()) : 0.0f;
+}
+
+float ColorToAlphaDialog::opacityThreshold() const {
+    return m_spinOpacityThreshold ? static_cast<float>(m_spinOpacityThreshold->value()) : 1.0f;
+}
+
+void ColorToAlphaDialog::onPickColorClicked() {
+    QColor c = QColorDialog::getColor(m_targetColor, this, tr("Select Color to Make Transparent"));
+    if (c.isValid()) {
+        setTargetColor(c);
+    }
+}
+
+void ColorToAlphaDialog::onFromFgColorClicked() {
+    if (m_canvas) {
+        setTargetColor(m_canvas->currentColor());
+    }
+}
+
+void ColorToAlphaDialog::updateColorButtonStyle() {
+    if (!m_btnColor) return;
+    QString hex = m_targetColor.name(QColor::HexRgb).toUpper();
+    // 明度に応じて文字色を黒または白に
+    int brightness = static_cast<int>(0.299 * m_targetColor.red() + 0.587 * m_targetColor.green() + 0.114 * m_targetColor.blue());
+    QString textColor = (brightness > 128) ? "#000000" : "#ffffff";
+    m_btnColor->setText(hex);
+    m_btnColor->setStyleSheet(QString(
+        "QPushButton { background-color: %1; color: %2; font-weight: bold; border: 1px solid #777; border-radius: 4px; padding: 4px; }"
+        "QPushButton:hover { border: 2px solid #333; }"
+    ).arg(hex, textColor));
+}
+
+void ColorToAlphaDialog::applyFilterToImage(const QImage& src, QImage& out) {
+    float tLow = transparencyThreshold();
+    float tHigh = opacityThreshold();
+    out = FilterProcessor::colorToAlpha(src, m_targetColor, tLow, tHigh);
+}
+
 } // namespace Kaburagi
+
 

@@ -667,5 +667,148 @@ void FilterProcessor::blendWithSelectionMask(QImage& dst, const QImage& orig,
     }
 }
 
+// ----------------------------------------------------------------------------
+// 8. 輝度を透明度に
+// ----------------------------------------------------------------------------
+QImage FilterProcessor::convertBrightnessToAlpha(const QImage& src, const QColor& lineColor) {
+    if (src.isNull()) return src;
+
+    QImage img = src.convertToFormat(QImage::Format_ARGB32);
+    int width = img.width();
+    int height = img.height();
+
+    QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
+    int lr = lineColor.red();
+    int lg = lineColor.green();
+    int lb = lineColor.blue();
+
+    for (int y = 0; y < height; ++y) {
+        const QRgb* srcLine = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        QRgb* dstLine = reinterpret_cast<QRgb*>(result.scanLine(y));
+
+        for (int x = 0; x < width; ++x) {
+            QRgb p = srcLine[x];
+            int origA = qAlpha(p);
+            if (origA == 0) {
+                dstLine[x] = 0;
+                continue;
+            }
+
+            // ITU-R BT.601 輝度
+            int brightness = static_cast<int>(0.299 * qRed(p) + 0.587 * qGreen(p) + 0.114 * qBlue(p));
+            int alpha = std::clamp(255 - brightness, 0, 255);
+            alpha = (alpha * origA) / 255;
+
+            if (alpha <= 0) {
+                dstLine[x] = 0;
+            } else {
+                // Premultiplied ARGB32
+                dstLine[x] = qRgba((lr * alpha) / 255, (lg * alpha) / 255, (lb * alpha) / 255, alpha);
+            }
+        }
+    }
+
+    return result;
+}
+
+// ----------------------------------------------------------------------------
+// 9. 色を透明度に (GIMP gegl:color-to-alpha 準拠)
+// ----------------------------------------------------------------------------
+QImage FilterProcessor::colorToAlpha(const QImage& src, const QColor& targetColor,
+                                     float transparencyThreshold, float opacityThreshold) {
+    if (src.isNull()) return src;
+
+    QImage img = src.convertToFormat(QImage::Format_ARGB32);
+    int width = img.width();
+    int height = img.height();
+
+    QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
+
+    float r0 = targetColor.redF();
+    float g0 = targetColor.greenF();
+    float b0 = targetColor.blueF();
+
+    float tLow = std::clamp(transparencyThreshold, 0.0f, 1.0f);
+    float tHigh = std::clamp(opacityThreshold, 0.0f, 1.0f);
+    if (tHigh < tLow) std::swap(tLow, tHigh);
+
+    for (int y = 0; y < height; ++y) {
+        const QRgb* srcLine = reinterpret_cast<const QRgb*>(img.constScanLine(y));
+        QRgb* dstLine = reinterpret_cast<QRgb*>(result.scanLine(y));
+
+        for (int x = 0; x < width; ++x) {
+            QRgb p = srcLine[x];
+            int origA = qAlpha(p);
+            if (origA == 0) {
+                dstLine[x] = 0;
+                continue;
+            }
+
+            float r = qRed(p) / 255.0f;
+            float g = qGreen(p) / 255.0f;
+            float b = qBlue(p) / 255.0f;
+
+            // GIMP (GEGL) color-to-alpha: 各チャンネルの距離比率を計算
+            float dr = 0.0f;
+            if (r > r0) {
+                if (r0 < 1.0f) dr = (r - r0) / (1.0f - r0);
+            } else if (r < r0) {
+                if (r0 > 0.0f) dr = (r0 - r) / r0;
+            }
+
+            float dg = 0.0f;
+            if (g > g0) {
+                if (g0 < 1.0f) dg = (g - g0) / (1.0f - g0);
+            } else if (g < g0) {
+                if (g0 > 0.0f) dg = (g0 - g) / g0;
+            }
+
+            float db = 0.0f;
+            if (b > b0) {
+                if (b0 < 1.0f) db = (b - b0) / (1.0f - b0);
+            } else if (b < b0) {
+                if (b0 > 0.0f) db = (b0 - b) / b0;
+            }
+
+            float alphaFactor = std::max({dr, dg, db});
+
+            // しきい値の適用
+            if (alphaFactor <= tLow) {
+                alphaFactor = 0.0f;
+            } else if (alphaFactor >= tHigh) {
+                alphaFactor = 1.0f;
+            } else if (tHigh - tLow > 1e-5f) {
+                alphaFactor = (alphaFactor - tLow) / (tHigh - tLow);
+            }
+
+            float newAlphaF = (origA / 255.0f) * alphaFactor;
+            int newAlpha = std::clamp(static_cast<int>(newAlphaF * 255.0f + 0.5f), 0, 255);
+
+            if (newAlpha <= 0 || alphaFactor <= 1e-5f) {
+                dstLine[x] = 0;
+            } else {
+                // 元の色からターゲット色成分を除去して色を再構築
+                // C' = C_0 + (C - C_0) / alphaFactor
+                float newR = r0 + (r - r0) / alphaFactor;
+                float newG = g0 + (g - g0) / alphaFactor;
+                float newB = b0 + (b - b0) / alphaFactor;
+
+                newR = std::clamp(newR, 0.0f, 1.0f);
+                newG = std::clamp(newG, 0.0f, 1.0f);
+                newB = std::clamp(newB, 0.0f, 1.0f);
+
+                // Premultiplied ARGB32
+                int pr = static_cast<int>(newR * newAlpha + 0.5f);
+                int pg = static_cast<int>(newG * newAlpha + 0.5f);
+                int pb = static_cast<int>(newB * newAlpha + 0.5f);
+                dstLine[x] = qRgba(pr, pg, pb, newAlpha);
+            }
+        }
+    }
+
+    return result;
+}
+
 } // namespace Kaburagi
+
 

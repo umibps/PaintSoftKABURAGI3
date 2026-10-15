@@ -38,6 +38,13 @@ public:
                                    const std::vector<QPair<float, QColor>>& stops,
                                    bool reverse = false, float opacity = 1.0f);
 
+    // 8. 輝度を透明度に (白 -> 完全透明, 黒 -> 不透明黒, 中間輝度 -> 半透明)
+    static QImage convertBrightnessToAlpha(const QImage& src, const QColor& lineColor = Qt::black);
+
+    // 9. 色を透明度に (GIMP gegl:color-to-alpha 準拠: 指定色を透明化し残りの色を正しく再構成)
+    static QImage colorToAlpha(const QImage& src, const QColor& targetColor,
+                              float transparencyThreshold = 0.0f, float opacityThreshold = 1.0f);
+
     // 選択範囲がある場合のブレンド合成
     static void blendWithSelection(QImage& dst, const QImage& orig,
                                   const QPainterPath& selectionPath, int width, int height);

@@ -22,6 +22,7 @@
 #include <queue>
 #include "PreferencesDialog.hpp"
 #include "AiComponentDownloader.hpp"
+#include "FilterProcessor.hpp"
 
 namespace Kaburagi {
 
@@ -289,37 +290,7 @@ QImage AiService::removeBackground(const QImage& source, int tolerance) {
 }
 
 QImage AiService::convertBrightnessToAlpha(const QImage& source, const QColor& lineColor) {
-    if (source.isNull()) return QImage();
-
-    QImage img = source.convertToFormat(QImage::Format_ARGB32);
-    int width = img.width();
-    int height = img.height();
-
-    QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
-    int lr = lineColor.red();
-    int lg = lineColor.green();
-    int lb = lineColor.blue();
-
-    for (int y = 0; y < height; ++y) {
-        const QRgb* srcLine = reinterpret_cast<const QRgb*>(img.constScanLine(y));
-        QRgb* dstLine = reinterpret_cast<QRgb*>(result.scanLine(y));
-        for (int x = 0; x < width; ++x) {
-            QRgb p = srcLine[x];
-            // ITU-R BT.601 輝度計算
-            int brightness = static_cast<int>(0.299 * qRed(p) + 0.587 * qGreen(p) + 0.114 * qBlue(p));
-            // 白(255) -> アルファ0(完全透明), 黒(0) -> アルファ255(完全不透明)
-            int alpha = std::clamp(255 - brightness, 0, 255);
-            alpha = (alpha * qAlpha(p)) / 255;
-            if (alpha <= 0) {
-                dstLine[x] = 0;
-            } else {
-                // Premultiplied ARGB32
-                dstLine[x] = qRgba((lr * alpha) / 255, (lg * alpha) / 255, (lb * alpha) / 255, alpha);
-            }
-        }
-    }
-
-    return result;
+    return FilterProcessor::convertBrightnessToAlpha(source, lineColor);
 }
 
 static QString mapSamplerToComfyUi(const QString& sampler) {
