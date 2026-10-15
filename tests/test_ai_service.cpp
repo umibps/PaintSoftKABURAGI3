@@ -962,6 +962,67 @@ void testSketchToLineartAndBrightnessToAlpha() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testSdxlControlNetSupport() {
+    std::cout << "[TEST] 18. SDXL ControlNet Support & Model Resolution..." << std::endl;
+
+    // 1. isModelSdxl 判定
+    assert(AiService::isModelSdxl("animagine-xl-3.1.safetensors") == true);
+    assert(AiService::isModelSdxl("illustrious-xl-v0.1.safetensors") == true);
+    assert(AiService::isModelSdxl("ponyDiffusionV6XL_v6StartWithThisOne.safetensors") == true);
+    assert(AiService::isModelSdxl("sd_xl_base_1.0.safetensors") == true);
+    assert(AiService::isModelSdxl("v1-5-pruned-emaonly.safetensors") == false);
+    assert(AiService::isModelSdxl("meinamix_v11.safetensors") == false);
+    assert(AiService::isModelSdxl("dreamshaper_8.safetensors") == false);
+    assert(AiService::isModelSdxl("") == false);
+
+    // 2. AiComponentDownloader::fromControlNetType
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Lineart, true) == ComponentType::ControlNetSdxlLineart);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Lineart, false) == ComponentType::ControlNetSd15Lineart);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Canny, true) == ComponentType::ControlNetSdxlCanny);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Canny, false) == ComponentType::ControlNetSd15Canny);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Depth, true) == ComponentType::ControlNetSdxlDepth);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::OpenPose, true) == ComponentType::ControlNetSdxlOpenpose);
+    assert(AiComponentDownloader::fromControlNetType(ControlNetType::Scribble, true) == ComponentType::ControlNetSdxlScribble);
+
+    // SDXL Lineart Component Info
+    auto sdxlLineartInfo = AiComponentDownloader::getComponentInfo(ComponentType::ControlNetSdxlLineart);
+    assert(sdxlLineartInfo.fileName == "CN-anytest_v4-marged.safetensors");
+    assert(sdxlLineartInfo.downloadUrl.contains("huggingface.co"));
+
+    // 3. ComfyUI JSON での SDXL vs SD 1.5 ControlNet 自動切り替え
+    AiGenerateParams sdxlParams;
+    sdxlParams.backend = ApiBackend::LocalComfyUI;
+    sdxlParams.modelName = "animagine-xl-3.1.safetensors";
+    sdxlParams.enableControlNet = true;
+    sdxlParams.controlNetType = ControlNetType::Lineart;
+    sdxlParams.controlNetImage = QImage(32, 32, QImage::Format_ARGB32_Premultiplied);
+
+    QJsonObject comfySdxl = AiService::buildComfyUiPromptJson(sdxlParams);
+    assert(comfySdxl.contains("8"));
+    QString cnModelSdxl = comfySdxl["8"].toObject()["inputs"].toObject()["controlnet_name"].toString();
+    assert(cnModelSdxl == "CN-anytest_v4-marged.safetensors");
+
+    AiGenerateParams sd15Params = sdxlParams;
+    sd15Params.modelName = "v1-5-pruned-emaonly.safetensors";
+    QJsonObject comfySd15 = AiService::buildComfyUiPromptJson(sd15Params);
+    assert(comfySd15.contains("8"));
+    QString cnModelSd15 = comfySd15["8"].toObject()["inputs"].toObject()["controlnet_name"].toString();
+    assert(cnModelSd15 == "control_v11p_sd15_lineart.pth");
+
+    // 4. WebUI JSON での SDXL vs SD 1.5 ControlNet 自動切り替え
+    QJsonObject webUiSdxl = AiService::buildWebUiTxt2ImgJson(sdxlParams);
+    QJsonObject alwaysOnSdxl = webUiSdxl["alwayson_scripts"].toObject()["controlnet"].toObject();
+    QJsonObject unitSdxl = alwaysOnSdxl["args"].toArray()[0].toObject();
+    assert(unitSdxl["model"].toString().contains("anytest"));
+
+    QJsonObject webUiSd15 = AiService::buildWebUiTxt2ImgJson(sd15Params);
+    QJsonObject alwaysOnSd15 = webUiSd15["alwayson_scripts"].toObject()["controlnet"].toObject();
+    QJsonObject unitSd15 = alwaysOnSd15["args"].toArray()[0].toObject();
+    assert(unitSd15["model"].toString().contains("control_v11p_sd15_lineart"));
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -984,6 +1045,7 @@ int main(int argc, char* argv[]) {
     testLlmPromptRefinement();
     testThreeDOpenPoseExtraction();
     testSketchToLineartAndBrightnessToAlpha();
+    testSdxlControlNetSupport();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

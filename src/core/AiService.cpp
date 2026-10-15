@@ -26,37 +26,78 @@
 
 namespace Kaburagi {
 
-static QString getComfyUiControlNetModelName(ControlNetType type) {
-    switch (type) {
-    case ControlNetType::Lineart: return "control_v11p_sd15_lineart.pth";
-    case ControlNetType::Depth: return "control_v11f1p_sd15_depth.pth";
-    case ControlNetType::Openpose: return "control_v11p_sd15_openpose.pth";
-    case ControlNetType::Scribble: return "control_v11p_sd15_scribble.pth";
-    case ControlNetType::Canny: return "control_v11p_sd15_canny.pth";
-    default: return "";
+bool AiService::isModelSdxl(const QString& modelName) {
+    QString m = modelName.toLower().trimmed();
+    if (m.contains("sd15") || m.contains("sd1.5") || m.contains("v1-5") || m.contains("v1.5") || m.contains("1.5")) {
+        return false;
+    }
+    return m.contains("xl") || m.contains("illustrious") || m.contains("pony") || m.contains("animagine");
+}
+
+static QString getComfyUiControlNetModelName(ControlNetType type, bool isSdxl = false) {
+    if (isSdxl) {
+        switch (type) {
+        case ControlNetType::Lineart: return "CN-anytest_v4-marged.safetensors";
+        case ControlNetType::Depth: return "controlnet-depth-sdxl-1.0.safetensors";
+        case ControlNetType::Openpose: return "controlnet-openpose-sdxl-1.0.safetensors";
+        case ControlNetType::Scribble: return "controlnet-scribble-sdxl-1.0.safetensors";
+        case ControlNetType::Canny: return "controlnet-canny-sdxl-1.0.safetensors";
+        default: return "";
+        }
+    } else {
+        switch (type) {
+        case ControlNetType::Lineart: return "control_v11p_sd15_lineart.pth";
+        case ControlNetType::Depth: return "control_v11f1p_sd15_depth.pth";
+        case ControlNetType::Openpose: return "control_v11p_sd15_openpose.pth";
+        case ControlNetType::Scribble: return "control_v11p_sd15_scribble.pth";
+        case ControlNetType::Canny: return "control_v11p_sd15_canny.pth";
+        default: return "";
+        }
     }
 }
 
-QString AiService::findControlNetModelPath(ControlNetType type, const QString& explicitDir) {
+QString AiService::findControlNetModelPath(ControlNetType type, bool isSdxl, const QString& explicitDir) {
     QStringList patterns;
-    switch (type) {
-    case ControlNetType::Lineart:
-        patterns << "*lineart*";
-        break;
-    case ControlNetType::Depth:
-        patterns << "*depth*";
-        break;
-    case ControlNetType::Openpose:
-        patterns << "*openpose*";
-        break;
-    case ControlNetType::Scribble:
-        patterns << "*scribble*";
-        break;
-    case ControlNetType::Canny:
-        patterns << "*canny*";
-        break;
-    default:
-        return QString();
+    if (isSdxl) {
+        switch (type) {
+        case ControlNetType::Lineart:
+            patterns << "*anytest*" << "*anyline*" << "*lineart*xl*" << "*xl*lineart*" << "*line*sdxl*" << "*sdxl*line*";
+            break;
+        case ControlNetType::Depth:
+            patterns << "*depth*xl*" << "*xl*depth*" << "*depth*sdxl*" << "*sdxl*depth*";
+            break;
+        case ControlNetType::Openpose:
+            patterns << "*openpose*xl*" << "*xl*openpose*" << "*openpose*sdxl*" << "*sdxl*openpose*";
+            break;
+        case ControlNetType::Scribble:
+            patterns << "*scribble*xl*" << "*xl*scribble*" << "*scribble*sdxl*" << "*sdxl*scribble*";
+            break;
+        case ControlNetType::Canny:
+            patterns << "*canny*xl*" << "*xl*canny*" << "*canny*sdxl*" << "*sdxl*canny*";
+            break;
+        default:
+            return QString();
+        }
+    } else {
+        switch (type) {
+        case ControlNetType::Lineart:
+            patterns << "*sd15*lineart*" << "*lineart*sd15*" << "*v11*lineart*" << "*lineart*";
+            break;
+        case ControlNetType::Depth:
+            patterns << "*sd15*depth*" << "*depth*sd15*" << "*v11*depth*" << "*depth*";
+            break;
+        case ControlNetType::Openpose:
+            patterns << "*sd15*openpose*" << "*openpose*sd15*" << "*v11*openpose*" << "*openpose*";
+            break;
+        case ControlNetType::Scribble:
+            patterns << "*sd15*scribble*" << "*scribble*sd15*" << "*v11*scribble*" << "*scribble*";
+            break;
+        case ControlNetType::Canny:
+            patterns << "*sd15*canny*" << "*canny*sd15*" << "*v11*canny*" << "*canny*";
+            break;
+        default:
+            return QString();
+        }
     }
 
     QStringList searchDirs;
@@ -105,8 +146,20 @@ QString AiService::findControlNetModelPath(ControlNetType type, const QString& e
             QStringList filters;
             filters << pattern + ".safetensors" << pattern + ".pth" << pattern + ".bin" << pattern + ".gguf";
             QStringList files = dir.entryList(filters, QDir::Files, QDir::Name);
-            if (!files.isEmpty()) {
-                return dir.filePath(files.first());
+            for (const auto& file : files) {
+                QString lower = file.toLower();
+                if (isSdxl) {
+                    // SDXL探索時: SD 1.5専用モデル（sd15, v11p, v1-5）は除外
+                    if (lower.contains("sd15") || lower.contains("sd1.5") || lower.contains("v11p")) {
+                        continue;
+                    }
+                } else {
+                    // SD 1.5探索時: SDXL専用モデル（xl, sdxl）は除外
+                    if (lower.contains("sdxl") || (lower.contains("xl") && !lower.contains("sd15"))) {
+                        continue;
+                    }
+                }
+                return dir.filePath(file);
             }
         }
     }
@@ -370,26 +423,35 @@ QJsonObject AiService::buildWebUiTxt2ImgJson(const AiGenerateParams& params) {
         unit["image"] = b64;
         unit["input_image"] = b64;
 
+        bool isSdxl = isModelSdxl(params.modelName);
+        QString localFound = findControlNetModelPath(params.controlNetType, isSdxl);
+        QString localBaseName = localFound.isEmpty() ? QString() : QFileInfo(localFound).baseName();
+
         switch (params.controlNetType) {
         case ControlNetType::Lineart:
             unit["module"] = "lineart_standard (from white bg & black line)";
-            unit["model"] = "control_v11p_sd15_lineart";
+            unit["model"] = !localBaseName.isEmpty() ? localBaseName
+                           : (isSdxl ? "controlnet-sdxl-1.0-lineart" : "control_v11p_sd15_lineart");
             break;
         case ControlNetType::Depth:
             unit["module"] = "depth";
-            unit["model"] = "control_v11f1p_sd15_depth";
+            unit["model"] = !localBaseName.isEmpty() ? localBaseName
+                           : (isSdxl ? "controlnet-depth-sdxl-1.0" : "control_v11f1p_sd15_depth");
             break;
         case ControlNetType::Openpose:
             unit["module"] = "openpose_full";
-            unit["model"] = "control_v11p_sd15_openpose";
+            unit["model"] = !localBaseName.isEmpty() ? localBaseName
+                           : (isSdxl ? "controlnet-openpose-sdxl-1.0" : "control_v11p_sd15_openpose");
             break;
         case ControlNetType::Scribble:
             unit["module"] = "scribble_xdog";
-            unit["model"] = "control_v11p_sd15_scribble";
+            unit["model"] = !localBaseName.isEmpty() ? localBaseName
+                           : (isSdxl ? "controlnet-scribble-sdxl-1.0" : "control_v11p_sd15_scribble");
             break;
         case ControlNetType::Canny:
             unit["module"] = "canny";
-            unit["model"] = "control_v11p_sd15_canny";
+            unit["model"] = !localBaseName.isEmpty() ? localBaseName
+                           : (isSdxl ? "controlnet-canny-sdxl-1.0" : "control_v11p_sd15_canny");
             break;
         case ControlNetType::ReferenceOnly:
             unit["module"] = "reference_only";
@@ -493,7 +555,12 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     QString positiveNodeId = "6";
     int positiveOutIndex = 0;
     if (params.enableControlNet && !uploadedControlNetImage.isEmpty()) {
-        QString cnModel = getComfyUiControlNetModelName(params.controlNetType);
+        bool isSdxl = isModelSdxl(params.modelName);
+        QString localFound = findControlNetModelPath(params.controlNetType, isSdxl);
+        QString cnModel = !localFound.isEmpty()
+            ? QFileInfo(localFound).fileName()
+            : getComfyUiControlNetModelName(params.controlNetType, isSdxl);
+
         if (!cnModel.isEmpty()) {
             // Node 20: ControlNetLoader
             QJsonObject node20;
@@ -1116,7 +1183,8 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
 
     // ControlNet
     if (params.enableControlNet && !params.controlNetImage.isNull()) {
-        QString cnModelPath = findControlNetModelPath(params.controlNetType, params.modelDirectory);
+        bool isSdxl = isModelSdxl(params.modelName);
+        QString cnModelPath = findControlNetModelPath(params.controlNetType, isSdxl, params.modelDirectory);
         if (!cnModelPath.isEmpty()) {
             QString tempCnPath = QDir::temp().filePath(QString("kaburagi_embed_cn_%1.png").arg(QDateTime::currentMSecsSinceEpoch()));
             if (params.controlNetImage.save(tempCnPath, "PNG")) {

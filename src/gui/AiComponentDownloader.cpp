@@ -148,6 +148,65 @@ ComponentInfo AiComponentDownloader::getComponentInfo(ComponentType type) {
         }
         break;
 
+    case ComponentType::ControlNetSdxlLineart:
+    case ComponentType::ControlNetSdxlDepth:
+    case ComponentType::ControlNetSdxlOpenpose:
+    case ComponentType::ControlNetSdxlScribble:
+    case ComponentType::ControlNetSdxlCanny:
+        {
+            QString cDir = PreferencesDialog::aiControlNetDirectory();
+            if (!cDir.isEmpty() && QDir(cDir).exists()) {
+                info.targetDirectory = cDir;
+            } else {
+                QString mDir = PreferencesDialog::aiModelDirectory();
+                if (!mDir.isEmpty()) {
+                    QDir md(mDir);
+                    if (md.exists("ControlNet")) info.targetDirectory = md.filePath("ControlNet");
+                    else if (md.exists("controlnet")) info.targetDirectory = md.filePath("controlnet");
+                    else {
+                        QDir parentDir = md;
+                        if (parentDir.cdUp() && (parentDir.exists("ControlNet") || parentDir.exists("controlnet"))) {
+                            info.targetDirectory = parentDir.exists("ControlNet") ? parentDir.filePath("ControlNet") : parentDir.filePath("controlnet");
+                        } else {
+                            info.targetDirectory = md.filePath("ControlNet");
+                        }
+                    }
+                } else {
+                    info.targetDirectory = appData + "/models/ControlNet";
+                }
+            }
+
+            info.estimatedSizeBytes = 2500ULL * 1024 * 1024; // 約2.5GB
+
+            if (type == ComponentType::ControlNetSdxlLineart) {
+                info.name = "ControlNet SDXL 線画抽出モデル (Anyline / Lineart)";
+                info.fileName = "CN-anytest_v4-marged.safetensors";
+                info.downloadUrl = "https://huggingface.co/2vXpSwA7/iroiro-lora/resolve/main/test_controlnet2/CN-anytest_v4-marged.safetensors";
+                info.description = "SDXL・AnimagineXL・Illustrious等でラフや線画からイラストを清書するための高性能モデルです。";
+            } else if (type == ComponentType::ControlNetSdxlDepth) {
+                info.name = "ControlNet SDXL 深度推定モデル (Depth)";
+                info.fileName = "controlnet-depth-sdxl-1.0.safetensors";
+                info.downloadUrl = "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors";
+                info.description = "SDXL環境で立体感や奥行きを維持して画像を生成するためのモデルです。";
+            } else if (type == ComponentType::ControlNetSdxlOpenpose) {
+                info.name = "ControlNet SDXL 人体ポーズモデル (Openpose)";
+                info.fileName = "controlnet-openpose-sdxl-1.0.safetensors";
+                info.downloadUrl = "https://huggingface.co/thibaud/controlnet-openpose-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors";
+                info.description = "SDXL環境でキャラクターのポーズや骨格姿勢を制御するためのモデルです。";
+            } else if (type == ComponentType::ControlNetSdxlScribble) {
+                info.name = "ControlNet SDXL ラフ・落書きモデル (Scribble)";
+                info.fileName = "controlnet-scribble-sdxl-1.0.safetensors";
+                info.downloadUrl = "https://huggingface.co/xinsir/controlnet-scribble-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors";
+                info.description = "SDXL環境で手書きスケッチやアタリからイラストを生成するためのモデルです。";
+            } else if (type == ComponentType::ControlNetSdxlCanny) {
+                info.name = "ControlNet SDXL エッジ抽出モデル (Canny)";
+                info.fileName = "controlnet-canny-sdxl-1.0.safetensors";
+                info.downloadUrl = "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors";
+                info.description = "SDXL環境で画像の輪郭線や境界を正確に維持して生成するためのモデルです。";
+            }
+        }
+        break;
+
     case ComponentType::BaseSdModel:
         info.name = "標準画像生成モデル (SD 1.5 Base)";
         info.fileName = "v1-5-pruned-emaonly.safetensors";
@@ -222,18 +281,30 @@ QString AiComponentDownloader::resolveLatestDownloadUrl(ComponentType type) {
     return getComponentInfo(type).downloadUrl;
 }
 
-ComponentType AiComponentDownloader::fromControlNetType(ControlNetType cnType) {
-    switch (cnType) {
-    case ControlNetType::Lineart: return ComponentType::ControlNetLineart;
-    case ControlNetType::Depth: return ComponentType::ControlNetDepth;
-    case ControlNetType::Openpose: return ComponentType::ControlNetOpenpose;
-    case ControlNetType::Scribble: return ComponentType::ControlNetScribble;
-    case ControlNetType::Canny: return ComponentType::ControlNetCanny;
-    default: return ComponentType::ControlNetLineart;
+ComponentType AiComponentDownloader::fromControlNetType(ControlNetType cnType, bool isSdxl) {
+    if (isSdxl) {
+        switch (cnType) {
+        case ControlNetType::Lineart: return ComponentType::ControlNetSdxlLineart;
+        case ControlNetType::Depth: return ComponentType::ControlNetSdxlDepth;
+        case ControlNetType::Openpose: return ComponentType::ControlNetSdxlOpenpose;
+        case ControlNetType::Scribble: return ComponentType::ControlNetSdxlScribble;
+        case ControlNetType::Canny: return ComponentType::ControlNetSdxlCanny;
+        default: return ComponentType::ControlNetSdxlLineart;
+        }
+    } else {
+        switch (cnType) {
+        case ControlNetType::Lineart: return ComponentType::ControlNetLineart;
+        case ControlNetType::Depth: return ComponentType::ControlNetDepth;
+        case ControlNetType::Openpose: return ComponentType::ControlNetOpenpose;
+        case ControlNetType::Scribble: return ComponentType::ControlNetScribble;
+        case ControlNetType::Canny: return ComponentType::ControlNetCanny;
+        default: return ComponentType::ControlNetLineart;
+        }
     }
 }
 
-bool AiComponentDownloader::hasComponentForControlNetType(ControlNetType cnType) {
+bool AiComponentDownloader::hasComponentForControlNetType(ControlNetType cnType, bool isSdxl) {
+    Q_UNUSED(isSdxl);
     switch (cnType) {
     case ControlNetType::Lineart:
     case ControlNetType::Depth:
@@ -255,14 +326,28 @@ QString AiComponentDownloader::getLocalFilePath(ComponentType type) {
         type == ComponentType::ControlNetDepth ||
         type == ComponentType::ControlNetOpenpose ||
         type == ComponentType::ControlNetScribble ||
-        type == ComponentType::ControlNetCanny) {
+        type == ComponentType::ControlNetCanny ||
+        type == ComponentType::ControlNetSdxlLineart ||
+        type == ComponentType::ControlNetSdxlDepth ||
+        type == ComponentType::ControlNetSdxlOpenpose ||
+        type == ComponentType::ControlNetSdxlScribble ||
+        type == ComponentType::ControlNetSdxlCanny) {
         ControlNetType cnType = ControlNetType::Lineart;
-        if (type == ComponentType::ControlNetDepth) cnType = ControlNetType::Depth;
-        else if (type == ComponentType::ControlNetOpenpose) cnType = ControlNetType::Openpose;
-        else if (type == ComponentType::ControlNetScribble) cnType = ControlNetType::Scribble;
-        else if (type == ComponentType::ControlNetCanny) cnType = ControlNetType::Canny;
+        bool isSdxl = false;
+        if (type == ComponentType::ControlNetDepth || type == ComponentType::ControlNetSdxlDepth) cnType = ControlNetType::Depth;
+        else if (type == ComponentType::ControlNetOpenpose || type == ComponentType::ControlNetSdxlOpenpose) cnType = ControlNetType::Openpose;
+        else if (type == ComponentType::ControlNetScribble || type == ComponentType::ControlNetSdxlScribble) cnType = ControlNetType::Scribble;
+        else if (type == ComponentType::ControlNetCanny || type == ComponentType::ControlNetSdxlCanny) cnType = ControlNetType::Canny;
 
-        QString found = AiService::findControlNetModelPath(cnType);
+        if (type == ComponentType::ControlNetSdxlLineart ||
+            type == ComponentType::ControlNetSdxlDepth ||
+            type == ComponentType::ControlNetSdxlOpenpose ||
+            type == ComponentType::ControlNetSdxlScribble ||
+            type == ComponentType::ControlNetSdxlCanny) {
+            isSdxl = true;
+        }
+
+        QString found = AiService::findControlNetModelPath(cnType, isSdxl);
         if (!found.isEmpty()) {
             return found;
         }

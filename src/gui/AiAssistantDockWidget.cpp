@@ -1016,22 +1016,27 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
     if (m_chkControlNet && m_chkControlNet->isChecked() && m_chkControlNet->isEnabled()) {
         ControlNetType cnType = static_cast<ControlNetType>(m_comboControlNetType->currentData().toInt());
         if (cnType != ControlNetType::ReferenceOnly) {
-            QString cnModelPath = AiService::findControlNetModelPath(cnType);
+            QString currentModel = m_comboModel ? m_comboModel->currentText().trimmed() : QString();
+            bool isSdxl = AiService::isModelSdxl(currentModel);
+            QString cnModelPath = AiService::findControlNetModelPath(cnType, isSdxl);
             if (cnModelPath.isEmpty()) {
-                ComponentType compType = AiComponentDownloader::fromControlNetType(cnType);
+                ComponentType compType = AiComponentDownloader::fromControlNetType(cnType, isSdxl);
                 auto info = AiComponentDownloader::getComponentInfo(compType);
+                QString generationName = isSdxl ? "SDXL" : "SD 1.5";
                 auto reply = QMessageBox::warning(
                     this,
-                    tr("ControlNet モデルが見つかりません"),
-                    tr("選択された ControlNet モデルが見つかりません。\n\n"
-                       "このまま生成すると、ControlNet（線の維持や構図の反映）が適用されません。\n"
-                       "対応するモデルファイルをダウンロードしますか？\n\n"
-                       "・モデル名: %1\n"
-                       "・ファイル名: %2\n"
-                       "・サイズ目安: 約 %3 MB\n\n"
+                    tr("ControlNet モデルが見つかりません (%1用)").arg(generationName),
+                    tr("選択された ControlNet モデル（%1用）が見つかりません。\n\n"
+                       "ベースモデル「%2」の世代に合わせて、対応する %1用 ControlNet モデルをダウンロードしますか？\n\n"
+                       "・モデル名: %3\n"
+                       "・ファイル名: %4\n"
+                       "・世代: %1\n"
+                       "・サイズ目安: 約 %5 MB\n\n"
                        "※ 「はい」を選択すると保存先フォルダの選択画面が開き、ダウンロードを開始します。\n"
                        "※ 「いいえ」を選択した場合、ControlNet なしで画像生成を続行します。\n"
                        "※ 「キャンセル」を選択した場合、生成を中止します。")
+                    .arg(generationName)
+                    .arg(currentModel.isEmpty() ? tr("(未選択)") : currentModel)
                     .arg(info.name)
                     .arg(info.fileName)
                     .arg(info.estimatedSizeBytes / (1024 * 1024)),
@@ -1076,13 +1081,13 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
                 }
             }
 
-            // 組み込み推論エンジン使用時、SDXLベースモデルとSD 1.5用ControlNetの不一致を事前検出
-            if (!cnModelPath.isEmpty() && m_radioEmbedded && m_radioEmbedded->isChecked()) {
-                QString currentModel = m_comboModel ? m_comboModel->currentText().toLower() : QString();
-                bool isBaseSdxl = currentModel.contains("xl") || currentModel.contains("illustrious");
+            // SDXLベースモデルとSD 1.5用ControlNetの不一致を事前検出
+            if (!cnModelPath.isEmpty()) {
+                QString curModel = m_comboModel ? m_comboModel->currentText() : QString();
+                bool isBaseSdxl = AiService::isModelSdxl(curModel);
                 QString cnLower = QFileInfo(cnModelPath).fileName().toLower();
                 bool isCnSd15 = cnLower.contains("sd15") || cnLower.contains("v11") || cnLower.contains("sd1.5");
-                bool isCnSdxl = cnLower.contains("sdxl") || (cnLower.contains("xl") && !cnLower.contains("sd15"));
+                bool isCnSdxl = cnLower.contains("sdxl") || cnLower.contains("anytest") || cnLower.contains("anyline") || (cnLower.contains("xl") && !cnLower.contains("sd15"));
 
                 if (isBaseSdxl && isCnSd15 && !isCnSdxl) {
                     QMessageBox::warning(
@@ -1090,9 +1095,24 @@ bool AiAssistantDockWidget::ensureRequirementsReady() {
                         tr("モデル世代の不一致 (SDXL vs SD 1.5)"),
                         tr("選択されているベースモデル（%1）は SDXL 世代ですが、\n"
                            "ControlNet モデル（%2）は SD 1.5 専用です。\n\n"
-                           "組み込み推論エンジン(sd.exe)では内部構造が異なるモデル同士を組み合わせることはできません。\n\n"
+                           "アーキテクチャが異なるモデル同士を組み合わせて生成することはできません。\n\n"
                            "【対処方法】\n"
-                           "「モデル」一覧から SD 1.5系のモデル（meinamix、v1-5-pruned、aniverse、dreamshaper 等）を選択して再試行してください。")
+                           "・SDXL用の ControlNet モデルをご用意いただくか、\n"
+                           "・「モデル」一覧から SD 1.5系のモデル（meinamix、v1-5-pruned、dreamshaper 等）を選択して再試行してください。")
+                        .arg(m_comboModel->currentText())
+                        .arg(QFileInfo(cnModelPath).fileName())
+                    );
+                    return false;
+                } else if (!isBaseSdxl && isCnSdxl && !isCnSd15) {
+                    QMessageBox::warning(
+                        this,
+                        tr("モデル世代の不一致 (SD 1.5 vs SDXL)"),
+                        tr("選択されているベースモデル（%1）は SD 1.5 世代ですが、\n"
+                           "ControlNet モデル（%2）は SDXL 専用です。\n\n"
+                           "アーキテクチャが異なるモデル同士を組み合わせて生成することはできません。\n\n"
+                           "【対処方法】\n"
+                           "・SD 1.5用の ControlNet モデルをご用意いただくか、\n"
+                           "・「モデル」一覧から SDXL系のモデル（Animagine XL、Illustrious、Pony 等）を選択して再試行してください。")
                         .arg(m_comboModel->currentText())
                         .arg(QFileInfo(cnModelPath).fileName())
                     );

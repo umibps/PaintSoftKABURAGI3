@@ -16,11 +16,16 @@ enum class ComponentType {
     EmbeddedSdExe,         // 組み込み推論エンジン (sd.exe / sd-cli.exe)
     UpscaleModelAnime6B,   // R-ESRGAN 4x+ Anime6B
     UpscaleModelRealEsrgan,// RealESRGAN_x4plus
-    ControlNetLineart,     // ControlNet lineart
-    ControlNetDepth,       // ControlNet depth
-    ControlNetOpenpose,    // ControlNet openpose
-    ControlNetScribble,    // ControlNet scribble
-    ControlNetCanny,       // ControlNet canny
+    ControlNetLineart,     // ControlNet lineart (SD 1.5)
+    ControlNetDepth,       // ControlNet depth (SD 1.5)
+    ControlNetOpenpose,    // ControlNet openpose (SD 1.5)
+    ControlNetScribble,    // ControlNet scribble (SD 1.5)
+    ControlNetCanny,       // ControlNet canny (SD 1.5)
+    ControlNetSdxlLineart, // ControlNet SDXL lineart (CN-anytest_v4-marged.safetensors)
+    ControlNetSdxlDepth,   // ControlNet SDXL depth
+    ControlNetSdxlOpenpose,// ControlNet SDXL openpose
+    ControlNetSdxlScribble,// ControlNet SDXL scribble
+    ControlNetSdxlCanny,   // ControlNet SDXL canny
     BaseSdModel            // 標準ベースモデル (v1-5-pruned-emaonly.safetensors)
 };
 
@@ -48,8 +53,8 @@ public:
     static QString getLocalFilePath(ComponentType type);
     static bool isComponentInstalled(ComponentType type);
     static QString resolveLatestDownloadUrl(ComponentType type);
-    static ComponentType fromControlNetType(ControlNetType cnType);
-    static bool hasComponentForControlNetType(ControlNetType cnType);
+    static ComponentType fromControlNetType(ControlNetType cnType, bool isSdxl = false);
+    static bool hasComponentForControlNetType(ControlNetType cnType, bool isSdxl = false);
 
     // プログレスダイアログを表示してモーダルダウンロードを実行 (成功で true)
     // customTargetDir が指定されている場合、そのディレクトリに保存
