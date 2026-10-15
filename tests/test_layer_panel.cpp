@@ -264,6 +264,52 @@ int main(int argc, char** argv) {
         assert(selectedLayerIndex == 2);
         assert(testDoc.activeLayerIndex() == 2);
         std::cout << "[PASS] Shift+Ctrl+Click on normal layer triggers layer selection to Layer 2!" << std::endl;
+
+        // 5. Test Shift+Click straight line drawing on normal layer (GIMP style)
+        canvas.setCurrentTool(ToolType::Pen);
+        canvas.setCurrentColor(QColor(255, 0, 0, 255));
+        canvas.setBrushSize(5.0f);
+        testDoc.setActiveLayerIndex(1); // Normal raster layer
+
+        // First click (without Shift) creates a point/stroke and sets last stroke end pos
+        QMouseEvent clickNormal(QEvent::MouseButtonPress, QPointF(50, 50), QPointF(50, 50),
+                                Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(&canvas, &clickNormal);
+        QMouseEvent releaseNormal(QEvent::MouseButtonRelease, QPointF(50, 50), QPointF(50, 50),
+                                  Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        app.sendEvent(&canvas, &releaseNormal);
+        app.processEvents();
+
+        assert(canvas.hasLastStrokeEndPos());
+        assert(std::abs(canvas.lastStrokeEndPos().x() - 50.0) < 1.0);
+        assert(std::abs(canvas.lastStrokeEndPos().y() - 50.0) < 1.0);
+
+        // Second click with ShiftModifier triggers straight line from (50, 50) to (150, 50)
+        QMouseEvent clickShift(QEvent::MouseButtonPress, QPointF(150, 50), QPointF(150, 50),
+                               Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
+        app.sendEvent(&canvas, &clickShift);
+        app.processEvents();
+
+        assert(canvas.hasLastStrokeEndPos());
+        assert(std::abs(canvas.lastStrokeEndPos().x() - 150.0) < 1.0);
+        assert(std::abs(canvas.lastStrokeEndPos().y() - 50.0) < 1.0);
+
+        // Check that pixels along the straight line are painted
+        QColor midPixel = testDoc.samplePixel(100, 50);
+        assert(midPixel.alpha() > 0);
+        std::cout << "[PASS] Shift+Click straight line drawing painted line from (50, 50) to (150, 50)!" << std::endl;
+
+        // Third click with ShiftModifier continues from (150, 50) to (150, 150)
+        QMouseEvent clickShift2(QEvent::MouseButtonPress, QPointF(150, 150), QPointF(150, 150),
+                                Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
+        app.sendEvent(&canvas, &clickShift2);
+        app.processEvents();
+
+        assert(std::abs(canvas.lastStrokeEndPos().x() - 150.0) < 1.0);
+        assert(std::abs(canvas.lastStrokeEndPos().y() - 150.0) < 1.0);
+        QColor midPixel2 = testDoc.samplePixel(150, 100);
+        assert(midPixel2.alpha() > 0);
+        std::cout << "[PASS] Continuous Shift+Click straight line drawing works!" << std::endl;
     }
 
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;

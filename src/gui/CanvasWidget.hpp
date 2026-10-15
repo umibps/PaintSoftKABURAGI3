@@ -106,6 +106,8 @@ public:
     void setRightClickEyedropperEnabled(bool enabled) { m_rightClickEyedropperEnabled = enabled; }
     bool isRightClickEyedropperEnabled() const { return m_rightClickEyedropperEnabled; }
     bool isRasterDrawingTool(ToolType tool) const;
+    bool isRasterBrushTool(ToolType tool) const;
+    void drawStraightLine(const QPointF& startPos, const QPointF& endPos);
 
     // ブラシ散布設定
     void setBrushScatter(bool s) { m_brushScatter = s; }
@@ -515,6 +517,8 @@ public:
     void testStrokeMove(const QPointF& docPos, float pressure = 1.0f) { strokeMove(docPos, pressure); }
     void testStrokeEnd() { strokeEnd(); }
     void selectLayerAtPixel(const QPointF& docPt);
+    QPointF lastStrokeEndPos() const { return m_lastStrokeEndPos; }
+    bool hasLastStrokeEndPos() const { return m_hasLastStrokeEndPos; }
 
 signals:
     void transformChanged(double zoom, double angleDeg, bool flipped, const QPointF& docCenterVisible, const QSizeF& viewportSize);
@@ -594,6 +598,10 @@ private:
 
     StrokeSmoother m_smoother;
     StrokeInputPoint m_lastFilteredPoint;
+
+    // 直線描画 (Shift + 左クリック) 用
+    QPointF m_lastStrokeEndPos;
+    bool m_hasLastStrokeEndPos = false;
 
     // SAI風ベクトルストローク記録
     VectorStroke m_currentVectorStroke;

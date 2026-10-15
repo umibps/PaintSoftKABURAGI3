@@ -80,8 +80,11 @@ void CanvasWidget::setDocument(Document* doc) {
             update();
         });
         connect(m_document, &Document::activeLayerChanged, this, [this](int) {
+            m_hasLastStrokeEndPos = false;
             updateCursorForActiveLayer();
+            update();
         });
+        m_hasLastStrokeEndPos = false;
         m_zoom = 1.0; // デフォルトの表示拡大倍率は100%
         m_rotationAngle = 0.0;
         m_panOffset = QPointF(0.0, 0.0);
@@ -150,6 +153,22 @@ bool CanvasWidget::isRasterDrawingTool(ToolType tool) const {
     case ToolType::Blur:
     case ToolType::Blend:
     case ToolType::Gradient:
+    case ToolType::CompositeBrush:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool CanvasWidget::isRasterBrushTool(ToolType tool) const {
+    switch (tool) {
+    case ToolType::Pen:
+    case ToolType::Airbrush:
+    case ToolType::Watercolor:
+    case ToolType::Marker:
+    case ToolType::Eraser:
+    case ToolType::Blur:
+    case ToolType::Blend:
     case ToolType::CompositeBrush:
         return true;
     default:
@@ -490,6 +509,8 @@ void CanvasWidget::strokeBegin(const QPointF& docPos, float pressure) {
     m_isDrawing = true;
     m_smoother.reset();
     m_lastFilteredPoint = m_smoother.pushPoint(docPos, pressure);
+    m_lastStrokeEndPos = docPos;
+    m_hasLastStrokeEndPos = true;
 
     // 前回のストローク情報が残っていれば解放
     for (auto& pair : m_strokeAlphaTiles) {
@@ -824,6 +845,10 @@ void CanvasWidget::strokeEnd() {
     }
     activeL->invalidateContentBounds();
     m_document->composite();
+    if (activeL->type() == LayerType::Raster) {
+        m_lastStrokeEndPos = m_lastFilteredPoint.pos;
+        m_hasLastStrokeEndPos = true;
+    }
 }
 
 void CanvasWidget::paintBrushSegment(const QPointF& p0, const QPointF& p1, float w0, float w1, float dens0, float dens1, uint32_t color) {
@@ -3439,6 +3464,57 @@ void CanvasWidget::autoSelect(const QPointF& docPos) {
     update();
 }
 
+void CanvasWidget::drawStraightLine(const QPointF& startPos, const QPointF& endPos) {
+    if (!m_document) return;
+    auto activeL = effectiveTargetLayer();
+    if (!activeL || activeL->type() != LayerType::Raster) return;
+
+    // 前準備 (ストローク開始)
+    strokeBegin(startPos, 1.0f);
+
+    float pEffSize = 1.0f;
+    float pEffDens = 1.0f;
+
+    float w = m_brushSize * (m_minSizeRatio + (1.0f - m_minSizeRatio) * pEffSize);
+    float dens = m_brushDensity * pEffDens;
+    uint32_t col = (m_currentTool == ToolType::Eraser) ? 0x00000000 : effectiveDrawColor(m_currentColor.rgba());
+
+    if (m_currentTool == ToolType::Blur) {
+        float blurW = m_blurSize * (m_blurMinSizeRatio + (1.0f - m_blurMinSizeRatio) * pEffSize);
+        float blurDens = m_blurDensity * pEffDens;
+        paintBlurSegment(startPos, endPos, blurW, blurW, blurDens, blurDens);
+    } else if (m_currentTool == ToolType::Blend) {
+        float smudgeW = m_smudgeSize * (m_smudgeMinSizeRatio + (1.0f - m_smudgeMinSizeRatio) * pEffSize);
+        float smudgeDens = m_smudgeDensity * pEffDens;
+        paintSmudgeSegment(startPos, endPos, smudgeW, smudgeW, smudgeDens, smudgeDens);
+    } else if (m_currentTool == ToolType::Watercolor) {
+        float waterW = m_watercolorSize * (m_watercolorMinSizeRatio + (1.0f - m_watercolorMinSizeRatio) * pEffSize);
+        float waterDens = m_watercolorDensity * pEffDens;
+        paintWatercolorSegment(startPos, endPos, waterW, waterW, waterDens, waterDens, 1.0f, 1.0f);
+    } else if (m_currentTool == ToolType::CompositeBrush) {
+        float compW = m_compositeBrushSize * (m_compositeBrushMinSizeRatio + (1.0f - m_compositeBrushMinSizeRatio) * pEffSize);
+        float compDens = m_compositeBrushDensity * pEffDens;
+        paintCompositeBrushSegment(startPos, endPos, compW, compW, compDens, compDens, 1.0f, 1.0f);
+    } else if (m_currentTool == ToolType::Marker) {
+        float imgW = m_imageBrushSize * (m_imageBrushMinSizeRatio + (1.0f - m_imageBrushMinSizeRatio) * pEffSize);
+        float imgDens = m_imageBrushDensity * pEffDens;
+        paintImageBrushSegment(startPos, endPos, imgW, imgW, imgDens, imgDens, 1.0f, 1.0f);
+    } else {
+        paintBrushSegment(startPos, endPos, w, w, dens, dens, col);
+    }
+
+    m_lastFilteredPoint.pos = endPos;
+    m_lastFilteredPoint.pressure = 1.0f;
+
+    strokeEnd();
+
+    m_lastStrokeEndPos = endPos;
+    m_hasLastStrokeEndPos = true;
+
+    m_document->composite();
+    update();
+}
+
 void CanvasWidget::selectLayerAtPixel(const QPointF& docPt) {
     if (!m_document) return;
 
@@ -3650,6 +3726,23 @@ void CanvasWidget::tabletEvent(QTabletEvent* event) {
         return;
     }
 
+    bool isShiftOnly = (event->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier)) == Qt::ShiftModifier;
+    if (isShiftOnly && activeL && activeL->type() == LayerType::Raster && isRasterBrushTool(m_currentTool)) {
+        if (event->type() == QEvent::TabletPress) {
+            QPointF docPt = viewToDoc(event->position());
+            if (m_hasLastStrokeEndPos) {
+                drawStraightLine(m_lastStrokeEndPos, docPt);
+            } else {
+                m_lastStrokeEndPos = docPt;
+                m_hasLastStrokeEndPos = true;
+                strokeBegin(docPt, 1.0f);
+                strokeEnd();
+            }
+        }
+        event->accept();
+        return;
+    }
+
     bool isRightClick = (event->button() == Qt::RightButton) || (event->buttons() & Qt::RightButton);
     if ((isRightClick || m_isRightClickEyedropper) && m_rightClickEyedropperEnabled && m_document && activeL && activeL->type() == LayerType::Raster && isRasterDrawingTool(m_currentTool)) {
         if (event->type() == QEvent::TabletPress || event->type() == QEvent::TabletMove) {
@@ -3853,6 +3946,21 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
 
         if (m_currentTool == ToolType::LayerSelect || isNormalLayerCtrlShift) {
             selectLayerAtPixel(docPt);
+            event->accept();
+            return;
+        }
+
+        // 通常レイヤーにおける鉛筆等のツール使用時の Shift + 左クリック直線描画 (GIMP風)
+        bool isShiftOnly = (event->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier)) == Qt::ShiftModifier;
+        if (isShiftOnly && activeL && activeL->type() == LayerType::Raster && isRasterBrushTool(m_currentTool)) {
+            if (m_hasLastStrokeEndPos) {
+                drawStraightLine(m_lastStrokeEndPos, docPt);
+            } else {
+                m_lastStrokeEndPos = docPt;
+                m_hasLastStrokeEndPos = true;
+                strokeBegin(docPt, 1.0f);
+                strokeEnd();
+            }
             event->accept();
             return;
         }
@@ -6151,10 +6259,18 @@ void CanvasWidget::keyPressEvent(QKeyEvent* event) {
         break;
     }
 
+    if (event->key() == Qt::Key_Shift) {
+        update();
+    }
+
     QWidget::keyPressEvent(event);
 }
 
 void CanvasWidget::keyReleaseEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Shift) {
+        update();
+    }
+
     if (event->key() == Qt::Key_Space && !event->isAutoRepeat()) {
         m_isSpacePressed = false;
         if (!m_isPanning && !m_isRotating) {
@@ -6791,6 +6907,28 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
         m_isCreatingPanel || m_isSplittingPanel || m_isModifyingPanel ||
         (activeL && activeL->type() == LayerType::Group)) {
         renderPanelOverlay(painter);
+    }
+
+    // 4-7. GIMP風 直線描画ガイド (Shiftキー押下時)
+    if (m_hasLastStrokeEndPos && !m_isDrawing && !m_isPanning && !m_isRotating && !m_isTransforming) {
+        bool isShiftOnly = (QGuiApplication::keyboardModifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier)) == Qt::ShiftModifier;
+        if (isShiftOnly && activeL && activeL->type() == LayerType::Raster && isRasterBrushTool(m_currentTool)) {
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            qreal invZoom = 1.0 / m_zoom;
+
+            painter.setPen(QPen(QColor(0, 0, 0, 160), 1.2 * invZoom, Qt::DashLine));
+            painter.drawLine(m_lastStrokeEndPos, m_cursorDocPos);
+            painter.setPen(QPen(QColor(255, 255, 255, 220), 1.2 * invZoom, Qt::DotLine));
+            painter.drawLine(m_lastStrokeEndPos, m_cursorDocPos);
+
+            qreal markR = 3.5 * invZoom;
+            painter.setBrush(QColor(0, 120, 255, 220));
+            painter.setPen(QPen(Qt::white, 1.0 * invZoom));
+            painter.drawEllipse(m_lastStrokeEndPos, markR, markR);
+
+            painter.restore();
+        }
     }
 
     // 5. GIMP風 ブラシサイズ輪郭カーソル (Brush Outline)
