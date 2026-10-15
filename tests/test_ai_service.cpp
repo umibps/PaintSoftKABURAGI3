@@ -11,6 +11,9 @@
 #include "AiAssistantDockWidget.hpp"
 #include "AiComponentDownloader.hpp"
 #include "LlmPromptService.hpp"
+#include "PromptHistoryDialog.hpp"
+#include "ThreeDLayer.hpp"
+#include "ThreeDModel.hpp"
 #include "Document.hpp"
 #include "Layer.hpp"
 #include "MainWindow.hpp"
@@ -678,6 +681,131 @@ static void testAiSettingsPersistenceAndThumbnailStyle() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testPromptHistory() {
+    std::cout << "[TEST] 14. Prompt History & Pinning Persistence..." << std::endl;
+
+    // 既存設定の退避
+    auto origItems = PromptHistoryDialog::loadHistory();
+
+    // 初期化
+    PromptHistoryDialog::saveHistory({});
+    assert(PromptHistoryDialog::loadHistory().empty());
+
+    // アイテム追加
+    PromptHistoryDialog::addHistoryItem("1girl, cute smile, school uniform", "worst quality, bad anatomy", "笑顔の女子高生");
+    PromptHistoryDialog::addHistoryItem("landscape, sunset, mountain, beautiful sky", "lowres, text");
+
+    auto items = PromptHistoryDialog::loadHistory();
+    assert(items.size() == 2);
+    // 最後に足したものが先頭
+    assert(items[0].prompt == "landscape, sunset, mountain, beautiful sky");
+    assert(items[1].prompt == "1girl, cute smile, school uniform");
+    assert(items[1].llmPrompt == "笑顔の女子高生");
+    assert(!items[0].isPinned && !items[1].isPinned);
+
+    // ピン留めテスト (1番目をピン留め)
+    items[1].isPinned = true;
+    PromptHistoryDialog::saveHistory(items);
+
+    auto itemsAfterPin = PromptHistoryDialog::loadHistory();
+    assert(itemsAfterPin.size() == 2);
+    // ピン留めされたアイテムが最上位に昇格していること
+    assert(itemsAfterPin[0].prompt == "1girl, cute smile, school uniform");
+    assert(itemsAfterPin[0].isPinned == true);
+    assert(itemsAfterPin[1].prompt == "landscape, sunset, mountain, beautiful sky");
+    assert(itemsAfterPin[1].isPinned == false);
+
+    // 重複アイテム追加（同じプロンプト＋ネガティブ）
+    PromptHistoryDialog::addHistoryItem("1girl, cute smile, school uniform", "worst quality, bad anatomy", "アップデートされた要望");
+    auto itemsAfterDuplicate = PromptHistoryDialog::loadHistory();
+    assert(itemsAfterDuplicate.size() == 2); // 重複により増えない
+    assert(itemsAfterDuplicate[0].prompt == "1girl, cute smile, school uniform");
+    assert(itemsAfterDuplicate[0].isPinned == true); // ピン留めが維持されていること
+    assert(itemsAfterDuplicate[0].llmPrompt == "アップデートされた要望");
+
+    // 元の設定を復元
+    PromptHistoryDialog::saveHistory(origItems);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testLlmPromptRefinement() {
+    std::cout << "[TEST] 15. LLM Prompt Iterative Refinement..." << std::endl;
+
+    LlmConfig cfg;
+    cfg.modelName = "llama3";
+    QString prevPrompt = "1girl, short hair, school uniform, daytime, classroom";
+    QString prevNeg = "worst quality, bad anatomy";
+    QString userMod = "もっと笑顔にして、髪を銀髪ロングに変えて、背景を夜空にして";
+    QString style = "アニメ・美麗イラスト調 (Anime / Masterpiece)";
+
+    QJsonObject json = LlmPromptService::buildRefineRequestJson(cfg, prevPrompt, prevNeg, userMod, style);
+    assert(json["model"].toString() == "llama3");
+
+    QJsonArray messages = json["messages"].toArray();
+    assert(messages.size() == 2);
+
+    QJsonObject sysMsg = messages[0].toObject();
+    assert(sysMsg["role"].toString() == "system");
+    QString sysContent = sysMsg["content"].toString();
+    assert(sysContent.contains("iterative refinement", Qt::CaseInsensitive));
+    assert(sysContent.contains("positive") || sysContent.contains("prompt"));
+    assert(sysContent.contains("Anime / Masterpiece"));
+
+    QJsonObject userMsg = messages[1].toObject();
+    assert(userMsg["role"].toString() == "user");
+    QString userContent = userMsg["content"].toString();
+    assert(userContent.contains("もっと笑顔にして、髪を銀髪ロングに変えて"));
+    assert(userContent.contains(prevPrompt));
+    assert(userContent.contains(prevNeg));
+
+    // レスポンス解析テスト
+    QByteArray mockResponse = R"({
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"prompt\": \"1girl, very long hair, silver hair, beaming smile, starry sky, night, cinematic lighting, masterpiece, best quality\", \"negative_prompt\": \"worst quality, low quality, bad anatomy\"}"
+                }
+            }
+        ]
+    })";
+
+    QString parseErr;
+    LlmPromptResult res = LlmPromptService::parseChatResponseJson(mockResponse, &parseErr);
+    assert(parseErr.isEmpty());
+    assert(res.prompt.contains("silver hair"));
+    assert(res.prompt.contains("starry sky"));
+    assert(res.negativePrompt.contains("worst quality"));
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
+void testThreeDOpenPoseExtraction() {
+    std::cout << "[TEST] 16. ThreeD OpenPose Extraction..." << std::endl;
+
+    ThreeDLayer layer("3D Test", 512, 512);
+    auto cube = ThreeDModel::createCube(1.0f);
+    assert(cube != nullptr);
+    layer.addModel(cube);
+
+    // OpenPose画像生成
+    QImage openPoseImg = layer.extractOpenPoseImage(512, 512);
+    assert(!openPoseImg.isNull());
+    assert(openPoseImg.width() == 512);
+    assert(openPoseImg.height() == 512);
+
+    // 黒背景であること (OpenPoseの標準仕様)
+    QColor bgPixel = openPoseImg.pixelColor(0, 0);
+    assert(bgPixel.red() == 0 && bgPixel.green() == 0 && bgPixel.blue() == 0);
+
+    // キューブのモデル単体関節テスト (ボーン未登録プリミティブでも安全に18関節配列を返すこと)
+    auto joints = cube->getOpenPoseJoints();
+    assert(joints.size() == 18);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -696,6 +824,9 @@ int main(int argc, char* argv[]) {
     testRemoveBackground();
     testUpscaleModelDirectoryPreference();
     testAiSettingsPersistenceAndThumbnailStyle();
+    testPromptHistory();
+    testLlmPromptRefinement();
+    testThreeDOpenPoseExtraction();
 
     std::cout << "[ALL AI SERVICE & ASSISTANT TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

@@ -21,13 +21,16 @@ public:
     explicit LlmPromptDialog(QWidget* parent = nullptr);
     ~LlmPromptDialog() override;
 
-    void setCurrentPrompt(const QString& prompt, const QString& negativePrompt);
+    void setCurrentPrompt(const QString& prompt, const QString& negativePrompt, const QImage& lastImage = QImage());
 
     QString generatedPrompt() const;
     QString generatedNegativePrompt() const;
+    QString lastUserInput() const; // アイデアまたは改善要望
     bool shouldAppend() const; // true: 追加, false: 上書き
+    bool isRefineMode() const;
 
 private slots:
+    void onModeChanged();
     void onBackendChanged();
     void onFetchModelsClicked();
     void onGenerateClicked();
@@ -49,6 +52,12 @@ private:
 private:
     LlmPromptService* m_llmService = nullptr;
 
+    // Mode selection (Create new vs Refine previous)
+    QRadioButton* m_radioModeCreate = nullptr;
+    QRadioButton* m_radioModeRefine = nullptr;
+    QWidget* m_widgetCreateMode = nullptr;
+    QWidget* m_widgetRefineMode = nullptr;
+
     // Backend controls
     QRadioButton* m_radioOllama = nullptr;
     QRadioButton* m_radioLmStudio = nullptr;
@@ -60,8 +69,15 @@ private:
     QComboBox* m_comboModel = nullptr;
     QPushButton* m_btnFetchModels = nullptr;
 
-    // Idea & Style
+    // Mode 1: Create Idea
     QPlainTextEdit* m_editIdea = nullptr;
+
+    // Mode 2: Refine Previous
+    QLabel* m_lblRefineImagePreview = nullptr;
+    QPlainTextEdit* m_editRefinePrevPrompt = nullptr;
+    QPlainTextEdit* m_editRefineRequest = nullptr;
+
+    // Style & Apply options
     QComboBox* m_comboStyle = nullptr;
     QComboBox* m_comboApplyMode = nullptr;
 
@@ -77,6 +93,7 @@ private:
 
     QString m_existingPrompt;
     QString m_existingNegative;
+    QImage m_lastImage;
     bool m_initialized = false;
 };
 

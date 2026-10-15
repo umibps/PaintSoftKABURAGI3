@@ -189,6 +189,8 @@ set(GUI_SOURCES
     src/gui/AiComponentDownloader.cpp
     src/gui/LlmPromptDialog.hpp
     src/gui/LlmPromptDialog.cpp
+    src/gui/PromptHistoryDialog.hpp
+    src/gui/PromptHistoryDialog.cpp
     src/gui/ThreeDSettingsWidget.hpp
     src/gui/ThreeDSettingsWidget.cpp
 )

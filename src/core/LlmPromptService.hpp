@@ -52,6 +52,13 @@ public:
                         const QString& stylePreset = QString(),
                         const QString& currentPrompt = QString());
 
+    // 前回の画像・プロンプトからの修正・改善リクエストの送信 (Iterative Refinement)
+    void refinePrompt(const LlmConfig& config,
+                      const QString& previousPrompt,
+                      const QString& previousNegative,
+                      const QString& modificationRequest,
+                      const QString& stylePreset = QString());
+
     // キャンセル
     void cancel();
 
@@ -61,7 +68,13 @@ public:
                                             const QString& userIdea,
                                             const QString& stylePreset,
                                             const QString& currentPrompt);
+    static QJsonObject buildRefineRequestJson(const LlmConfig& config,
+                                              const QString& previousPrompt,
+                                              const QString& previousNegative,
+                                              const QString& modificationRequest,
+                                              const QString& stylePreset);
     static QString buildSystemPrompt(const QString& stylePreset);
+    static QString buildRefineSystemPrompt(const QString& stylePreset);
     static LlmPromptResult parseChatResponseJson(const QByteArray& responseData, QString* outError = nullptr);
     static QStringList parseModelsResponse(LlmBackend backend, const QByteArray& responseData);
 

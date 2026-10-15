@@ -908,4 +908,168 @@ void ThreeDModel::updateSpringBones(float dt, bool updateCpuSkinning) {
     }
 }
 
+std::vector<ThreeDModel::OpenPoseJoint> ThreeDModel::getOpenPoseJoints() const {
+    std::vector<OpenPoseJoint> joints(18);
+    QMatrix4x4 modelMat = modelMatrix();
+
+    if (!m_nodes.empty()) {
+        // VRM / glTF ノードベース
+        auto getNodePos = [&](const QString& key, QVector3D* outPos) -> bool {
+            auto it = m_humanoidBoneToNode.find(key.toLower());
+            if (it != m_humanoidBoneToNode.end()) {
+                int idx = it->second;
+                if (idx >= 0 && idx < static_cast<int>(m_nodes.size())) {
+                    QVector3D localPos = m_nodes[idx].worldMatrix.map(QVector3D(0, 0, 0));
+                    if (outPos) *outPos = modelMat.map(localPos);
+                    return true;
+                }
+            }
+            // ノード名によるフォールバック検索
+            for (size_t i = 0; i < m_nodes.size(); ++i) {
+                if (m_nodes[i].name.contains(key, Qt::CaseInsensitive)) {
+                    QVector3D localPos = m_nodes[i].worldMatrix.map(QVector3D(0, 0, 0));
+                    if (outPos) *outPos = modelMat.map(localPos);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // 1: Neck
+        QVector3D neckPos;
+        if (getNodePos("neck", &neckPos) || getNodePos("upperchest", &neckPos) || getNodePos("chest", &neckPos)) {
+            joints[1] = { true, neckPos };
+        }
+
+        // 2: RShoulder, 3: RElbow, 4: RWrist
+        QVector3D rsPos, rePos, rwPos;
+        if (getNodePos("rightshoulder", &rsPos) || getNodePos("rightupperarm", &rsPos)) joints[2] = { true, rsPos };
+        if (getNodePos("rightlowerarm", &rePos)) joints[3] = { true, rePos };
+        if (getNodePos("righthand", &rwPos)) joints[4] = { true, rwPos };
+
+        // 5: LShoulder, 6: LElbow, 7: LWrist
+        QVector3D lsPos, lePos, lwPos;
+        if (getNodePos("leftshoulder", &lsPos) || getNodePos("leftupperarm", &lsPos)) joints[5] = { true, lsPos };
+        if (getNodePos("leftlowerarm", &lePos)) joints[6] = { true, lePos };
+        if (getNodePos("lefthand", &lwPos)) joints[7] = { true, lwPos };
+
+        // 8: RHip, 9: RKnee, 10: RAnkle
+        QVector3D rhPos, rkPos, raPos;
+        if (getNodePos("rightupperleg", &rhPos) || getNodePos("righthip", &rhPos)) joints[8] = { true, rhPos };
+        if (getNodePos("rightlowerleg", &rkPos)) joints[9] = { true, rkPos };
+        if (getNodePos("rightfoot", &raPos)) joints[10] = { true, raPos };
+
+        // 11: LHip, 12: LKnee, 13: LAnkle
+        QVector3D lhPos, lkPos, laPos;
+        if (getNodePos("leftupperleg", &lhPos) || getNodePos("lefthip", &lhPos)) joints[11] = { true, lhPos };
+        if (getNodePos("leftlowerleg", &lkPos)) joints[12] = { true, lkPos };
+        if (getNodePos("leftfoot", &laPos)) joints[13] = { true, laPos };
+
+        // 頭部関連 (0: Nose, 14: REye, 15: LEye, 16: REar, 17: LEar)
+        QVector3D headPos;
+        bool hasHead = getNodePos("head", &headPos);
+        QVector3D rEyePos, lEyePos;
+        bool hasREye = getNodePos("righteye", &rEyePos);
+        bool hasLEye = getNodePos("lefteye", &lEyePos);
+
+        if (hasREye) joints[14] = { true, rEyePos };
+        if (hasLEye) joints[15] = { true, lEyePos };
+
+        if (hasHead) {
+            int headNodeIdx = -1;
+            auto itH = m_humanoidBoneToNode.find("head");
+            if (itH != m_humanoidBoneToNode.end()) headNodeIdx = itH->second;
+            QQuaternion headRot = m_rotation;
+            if (headNodeIdx >= 0) {
+                headRot = getNodeWorldRotationHelper(m_nodes, m_rotation, headNodeIdx);
+            }
+            QVector3D forward = headRot.rotatedVector(QVector3D(0, 0, 1)).normalized();
+            QVector3D right = headRot.rotatedVector(QVector3D(1, 0, 0)).normalized();
+            QVector3D up = headRot.rotatedVector(QVector3D(0, 1, 0)).normalized();
+
+            float headScale = 0.15f * m_scale.y();
+
+            // 0: Nose (頭の中心より少し前・下)
+            QVector3D nosePos = headPos + forward * (headScale * 0.7f) - up * (headScale * 0.1f);
+            joints[0] = { true, nosePos };
+
+            if (!hasREye) {
+                joints[14] = { true, headPos + forward * (headScale * 0.5f) + right * (headScale * 0.25f) + up * (headScale * 0.1f) };
+            }
+            if (!hasLEye) {
+                joints[15] = { true, headPos + forward * (headScale * 0.5f) - right * (headScale * 0.25f) + up * (headScale * 0.1f) };
+            }
+
+            // 16: REar, 17: LEar
+            joints[16] = { true, headPos + right * (headScale * 0.5f) - forward * (headScale * 0.1f) };
+            joints[17] = { true, headPos - right * (headScale * 0.5f) - forward * (headScale * 0.1f) };
+
+            // 首が未検出なら頭から下へオフセット
+            if (!joints[1].valid) {
+                QVector3D chestPos;
+                if (getNodePos("chest", &chestPos) || getNodePos("spine", &chestPos)) {
+                    joints[1] = { true, (headPos + chestPos) * 0.5f };
+                } else {
+                    joints[1] = { true, headPos - up * (headScale * 0.6f) };
+                }
+            }
+        }
+    } else if (m_skeleton.boneCount() > 0) {
+        // MMD (PMD / PMX) スケルトンベース
+        auto getBonePos = [&](const QStringList& names, QVector3D* outPos) -> bool {
+            for (const QString& name : names) {
+                int bIdx = m_skeleton.findBoneIndex(name);
+                if (bIdx >= 0) {
+                    const auto* bone = m_skeleton.bone(bIdx);
+                    if (bone) {
+                        QVector3D localPos = bone->combinedMatrix.map(bone->initialPosition);
+                        if (outPos) *outPos = modelMat.map(localPos);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+
+        QVector3D neckPos;
+        if (getBonePos({ "首", "上半身2", "上半身" }, &neckPos)) joints[1] = { true, neckPos };
+
+        QVector3D rsPos, rePos, rwPos;
+        if (getBonePos({ "右肩", "右腕" }, &rsPos)) joints[2] = { true, rsPos };
+        if (getBonePos({ "右ひじ" }, &rePos)) joints[3] = { true, rePos };
+        if (getBonePos({ "右手首", "右手" }, &rwPos)) joints[4] = { true, rwPos };
+
+        QVector3D lsPos, lePos, lwPos;
+        if (getBonePos({ "左肩", "左腕" }, &lsPos)) joints[5] = { true, lsPos };
+        if (getBonePos({ "左ひじ" }, &lePos)) joints[6] = { true, lePos };
+        if (getBonePos({ "左手首", "左手" }, &lwPos)) joints[7] = { true, lwPos };
+
+        QVector3D rhPos, rkPos, raPos;
+        if (getBonePos({ "右足", "下半身" }, &rhPos)) joints[8] = { true, rhPos };
+        if (getBonePos({ "右ひざ" }, &rkPos)) joints[9] = { true, rkPos };
+        if (getBonePos({ "右足首" }, &raPos)) joints[10] = { true, raPos };
+
+        QVector3D lhPos, lkPos, laPos;
+        if (getBonePos({ "左足", "下半身" }, &lhPos)) joints[11] = { true, lhPos };
+        if (getBonePos({ "左ひざ" }, &lkPos)) joints[12] = { true, lkPos };
+        if (getBonePos({ "左足首" }, &laPos)) joints[13] = { true, laPos };
+
+        QVector3D headPos;
+        if (getBonePos({ "頭", "顔" }, &headPos)) {
+            float headScale = 0.15f * m_scale.y();
+            QVector3D forward = m_rotation.rotatedVector(QVector3D(0, 0, 1)).normalized();
+            QVector3D right = m_rotation.rotatedVector(QVector3D(1, 0, 0)).normalized();
+            QVector3D up = m_rotation.rotatedVector(QVector3D(0, 1, 0)).normalized();
+
+            joints[0] = { true, headPos + forward * (headScale * 0.7f) - up * (headScale * 0.1f) };
+            joints[14] = { true, headPos + forward * (headScale * 0.5f) + right * (headScale * 0.25f) + up * (headScale * 0.1f) };
+            joints[15] = { true, headPos + forward * (headScale * 0.5f) - right * (headScale * 0.25f) + up * (headScale * 0.1f) };
+            joints[16] = { true, headPos + right * (headScale * 0.5f) - forward * (headScale * 0.1f) };
+            joints[17] = { true, headPos - right * (headScale * 0.5f) - forward * (headScale * 0.1f) };
+        }
+    }
+
+    return joints;
+}
+
 } // namespace Kaburagi

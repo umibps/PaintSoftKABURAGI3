@@ -40,6 +40,9 @@ public:
     // 輪郭線のみの画像抽出
     QImage extractContourImage() const;
 
+    // OpenPose (COCO 18 keypoints) スケルトン画像の抽出
+    QImage extractOpenPoseImage(int width = -1, int height = -1) const;
+
     // レンダリング
     void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr) override;
     QImage createThumbnail(int width = 36, int height = 28) const override;

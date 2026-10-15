@@ -137,6 +137,13 @@ public:
     void resetSpringBones();
     void updateSpringBones(float dt, bool updateCpuSkinning = true);
 
+    // OpenPose 関節情報 (COCO 18 keypoints)
+    struct OpenPoseJoint {
+        bool valid = false;
+        QVector3D worldPos;
+    };
+    std::vector<OpenPoseJoint> getOpenPoseJoints() const;
+
     // テスト・プリミティブ生成
     static std::shared_ptr<ThreeDModel> createCube(float size = 1.0f);
     static std::shared_ptr<ThreeDModel> createGrid(float size = 10.0f, int divisions = 10);

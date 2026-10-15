@@ -6,6 +6,8 @@
 #include "PreferencesDialog.hpp"
 #include "AiComponentDownloader.hpp"
 #include "LlmPromptDialog.hpp"
+#include "PromptHistoryDialog.hpp"
+#include "ThreeDLayer.hpp"
 #include "MainWindow.hpp"
 #include "ReferenceImageWindow.hpp"
 #include <QClipboard>
@@ -186,6 +188,11 @@ void AiAssistantDockWidget::setupUi() {
     auto layPromptHeader = new QHBoxLayout();
     layPromptHeader->addWidget(new QLabel(tr("プロンプト:"), grpPrompt));
     layPromptHeader->addStretch();
+    m_btnPromptHistory = new QPushButton(tr("📜 履歴..."), grpPrompt);
+    m_btnPromptHistory->setToolTip(tr("過去の生成プロンプトやLLMプロンプトの履歴を表示・再適用・ピン留めします"));
+    connect(m_btnPromptHistory, &QPushButton::clicked, this, &AiAssistantDockWidget::onPromptHistoryClicked);
+    layPromptHeader->addWidget(m_btnPromptHistory);
+
     m_btnPromptAssist = new QPushButton(tr("🪄 LLM プロンプト支援..."), grpPrompt);
     m_btnPromptAssist->setStyleSheet("QPushButton { font-weight: bold; background-color: #6a1b9a; color: white; padding: 3px 8px; border-radius: 3px; } QPushButton:hover { background-color: #7b1fa2; }");
     connect(m_btnPromptAssist, &QPushButton::clicked, this, &AiAssistantDockWidget::onPromptAssistClicked);
@@ -234,6 +241,7 @@ void AiAssistantDockWidget::setupUi() {
     m_comboControlNetSource->addItem(tr("クリップボード"), static_cast<int>(AiImageSource::Clipboard));
     m_comboControlNetSource->addItem(tr("参考画像ウィンドウ"), static_cast<int>(AiImageSource::ReferenceWindow));
     m_comboControlNetSource->addItem(tr("ファイル"), static_cast<int>(AiImageSource::File));
+    m_comboControlNetSource->addItem(tr("3Dモデル (OpenPose骨格)"), static_cast<int>(AiImageSource::ThreeDOpenPose));
 
     m_widgetControlNetFile = new QWidget(grpCN);
     auto layCnFile = new QHBoxLayout(m_widgetControlNetFile);
@@ -1056,6 +1064,9 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.prompt = m_editPrompt->toPlainText().trimmed();
     params.negativePrompt = m_editNegativePrompt->toPlainText().trimmed();
 
+    // プロンプト履歴に自動記録
+    PromptHistoryDialog::addHistoryItem(params.prompt, params.negativePrompt, m_lastLlmPrompt);
+
     params.batchCount = m_spinBatchCount->value();
     params.steps = m_spinSteps->value();
     params.cfgScale = static_cast<float>(m_spinCfg->value());
@@ -1296,6 +1307,38 @@ QImage AiAssistantDockWidget::getImageFromSource(int sourceIndex, const QString&
         }
         return fileImg;
     }
+    case AiImageSource::ThreeDOpenPose: {
+        if (!m_document) {
+            if (outError) *outError = tr("キャンバスが開かれていません。");
+            return QImage();
+        }
+        std::shared_ptr<ThreeDLayer> threeDLayer;
+        auto activeLayer = m_document->activeLayer();
+        if (activeLayer && activeLayer->type() == LayerType::ThreeD) {
+            threeDLayer = std::dynamic_pointer_cast<ThreeDLayer>(activeLayer);
+        } else {
+            for (const auto& l : m_document->layers()) {
+                if (l && l->type() == LayerType::ThreeD) {
+                    threeDLayer = std::dynamic_pointer_cast<ThreeDLayer>(l);
+                    break;
+                }
+            }
+        }
+        if (!threeDLayer) {
+            if (outError) *outError = tr("ドキュメント内に3Dレイヤーが見つかりません。");
+            return QImage();
+        }
+        if (threeDLayer->models().empty()) {
+            if (outError) *outError = tr("3Dレイヤーに3Dモデルが配置されていません。");
+            return QImage();
+        }
+        QImage poseImg = threeDLayer->extractOpenPoseImage(m_document->width(), m_document->height());
+        if (poseImg.isNull()) {
+            if (outError) *outError = tr("3DモデルからOpenPose骨格画像を生成できませんでした。");
+            return QImage();
+        }
+        return poseImg;
+    }
     }
     return QImage();
 }
@@ -1405,14 +1448,38 @@ void AiAssistantDockWidget::onApplyOverwriteClicked() {
     }
 }
 
+QImage AiAssistantDockWidget::currentSelectedResultImage() const {
+    if (m_selectedIndex >= 0 && m_selectedIndex < m_currentResults.size()) {
+        return m_currentResults[m_selectedIndex];
+    }
+    if (!m_currentResults.isEmpty()) {
+        return m_currentResults.first();
+    }
+    return QImage();
+}
+
+void AiAssistantDockWidget::onPromptHistoryClicked() {
+    PromptHistoryDialog dlg(this);
+    if (dlg.exec() == QDialog::Accepted) {
+        if (dlg.applyPrompt() && !dlg.selectedPrompt().isEmpty()) {
+            m_editPrompt->setPlainText(dlg.selectedPrompt());
+        }
+        if (dlg.applyNegative() && !dlg.selectedNegativePrompt().isEmpty()) {
+            m_editNegativePrompt->setPlainText(dlg.selectedNegativePrompt());
+        }
+    }
+}
+
 void AiAssistantDockWidget::onPromptAssistClicked() {
     LlmPromptDialog dlg(this);
     dlg.setCurrentPrompt(m_editPrompt->toPlainText().trimmed(),
-                         m_editNegativePrompt->toPlainText().trimmed());
+                         m_editNegativePrompt->toPlainText().trimmed(),
+                         currentSelectedResultImage());
 
     if (dlg.exec() == QDialog::Accepted) {
         QString newPrompt = dlg.generatedPrompt();
         QString newNeg = dlg.generatedNegativePrompt();
+        m_lastLlmPrompt = dlg.lastUserInput();
 
         if (dlg.shouldAppend()) {
             QString cur = m_editPrompt->toPlainText().trimmed();
@@ -1430,6 +1497,9 @@ void AiAssistantDockWidget::onPromptAssistClicked() {
         if (!newNeg.isEmpty()) {
             m_editNegativePrompt->setPlainText(newNeg);
         }
+
+        // 履歴に自動記録
+        PromptHistoryDialog::addHistoryItem(m_editPrompt->toPlainText(), m_editNegativePrompt->toPlainText(), m_lastLlmPrompt);
     }
 }
 

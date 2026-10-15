@@ -18,6 +18,8 @@
 #include <QFileDialog>
 #include <QColorDialog>
 #include <QMessageBox>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QtMath>
 
 namespace Kaburagi {
@@ -317,13 +319,18 @@ void ThreeDSettingsWidget::setupUi() {
     m_btnExtractContour = new QPushButton(tr("✏️ 輪郭線を新規レイヤーに抽出"), grpAction);
     m_btnExtractContour->setStyleSheet("QPushButton { font-weight: bold; padding: 5px; }");
 
+    m_btnExtractOpenPose = new QPushButton(tr("🎯 OpenPose骨格画像を生成..."), grpAction);
+    m_btnExtractOpenPose->setStyleSheet("QPushButton { font-weight: bold; padding: 5px; }");
+
     m_btnSyncPerspective = new QPushButton(tr("📐 消失点・パース定規を同期"), grpAction);
 
     layAction->addWidget(m_btnExtractContour);
+    layAction->addWidget(m_btnExtractOpenPose);
     layAction->addWidget(m_btnSyncPerspective);
     mainLayout->addWidget(grpAction);
 
     connect(m_btnExtractContour, &QPushButton::clicked, this, &ThreeDSettingsWidget::onExtractContourClicked);
+    connect(m_btnExtractOpenPose, &QPushButton::clicked, this, &ThreeDSettingsWidget::onExtractOpenPoseClicked);
     connect(m_btnSyncPerspective, &QPushButton::clicked, this, &ThreeDSettingsWidget::onSyncPerspectiveClicked);
 
     mainLayout->addStretch(1);
@@ -525,6 +532,40 @@ void ThreeDSettingsWidget::onExtractContourClicked() {
         m_document->addRasterLayerWithImage(contour, tr("3D輪郭線抽出"));
     }
     emit extractContourRequested();
+}
+
+void ThreeDSettingsWidget::onExtractOpenPoseClicked() {
+    auto layer = currentThreeDLayer();
+    if (!layer || !m_document) return;
+
+    if (layer->models().empty()) {
+        QMessageBox::information(this, tr("OpenPose骨格抽出"), tr("3Dモデルが配置されていません。"));
+        return;
+    }
+
+    QImage poseImg = layer->extractOpenPoseImage(m_document->width(), m_document->height());
+    if (poseImg.isNull()) {
+        QMessageBox::warning(this, tr("OpenPose骨格抽出"), tr("OpenPose骨格画像の生成に失敗しました。"));
+        return;
+    }
+
+    QMenu menu(this);
+    auto actLayer = menu.addAction(tr("新規通常レイヤーとして追加"));
+    auto actClipboard = menu.addAction(tr("クリップボードにコピー"));
+    auto actSave = menu.addAction(tr("画像ファイルとして保存..."));
+
+    QAction* selected = menu.exec(QCursor::pos());
+    if (!selected || selected == actLayer) {
+        m_document->addRasterLayerWithImage(poseImg, tr("OpenPose骨格"));
+    } else if (selected == actClipboard) {
+        QGuiApplication::clipboard()->setImage(poseImg);
+        QMessageBox::information(this, tr("OpenPose"), tr("OpenPose画像をクリップボードにコピーしました。"));
+    } else if (selected == actSave) {
+        QString file = QFileDialog::getSaveFileName(this, tr("OpenPose骨格画像を保存"), "openpose.png", tr("PNG画像 (*.png)"));
+        if (!file.isEmpty()) {
+            poseImg.save(file);
+        }
+    }
 }
 
 void ThreeDSettingsWidget::onSyncPerspectiveClicked() {

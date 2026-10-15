@@ -30,7 +30,8 @@ enum class AiImageSource {
     ActiveLayer = 1,     // キャンバス (アクティブレイヤー)
     Clipboard = 2,       // クリップボード
     ReferenceWindow = 3, // 参考画像ウィンドウ
-    File = 4             // ファイル
+    File = 4,            // ファイル
+    ThreeDOpenPose = 5   // 3Dモデル (OpenPose骨格)
 };
 
 /**
@@ -87,10 +88,13 @@ private slots:
     void onApplyOverwriteClicked();
     void onThumbnailSelected(int row);
     void onPromptAssistClicked();
+    void onPromptHistoryClicked();
     void onBrowseControlNetFile();
     void onBrowseIpAdapterFile();
     void onControlNetSourceChanged(int index);
     void onIpAdapterSourceChanged(int index);
+
+    QImage currentSelectedResultImage() const;
 
     // AiService slots
     void onModelsFetched(const QStringList& models);
@@ -131,6 +135,8 @@ private:
     QPlainTextEdit* m_editPrompt = nullptr;
     QPlainTextEdit* m_editNegativePrompt = nullptr;
     QPushButton* m_btnPromptAssist = nullptr;
+    QPushButton* m_btnPromptHistory = nullptr;
+    QString m_lastLlmPrompt;
 
     // ControlNet
     QCheckBox* m_chkControlNet = nullptr;

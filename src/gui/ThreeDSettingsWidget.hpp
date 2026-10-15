@@ -50,6 +50,7 @@ private slots:
     void onShadingModeChanged(int idx);
     void onEdgeSettingsChanged();
     void onExtractContourClicked();
+    void onExtractOpenPoseClicked();
     void onSyncPerspectiveClicked();
     void onOpenPoseClicked();
     void onPresetPoseChanged(int idx);
@@ -141,6 +142,7 @@ private:
     QColor m_edgeColor = Qt::black;
 
     QPushButton* m_btnExtractContour = nullptr;
+    QPushButton* m_btnExtractOpenPose = nullptr;
     QPushButton* m_btnSyncPerspective = nullptr;
 };
 

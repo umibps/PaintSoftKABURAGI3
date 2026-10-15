@@ -40,9 +40,31 @@ LlmPromptDialog::~LlmPromptDialog() {
     saveSettings();
 }
 
-void LlmPromptDialog::setCurrentPrompt(const QString& prompt, const QString& negativePrompt) {
+void LlmPromptDialog::setCurrentPrompt(const QString& prompt, const QString& negativePrompt, const QImage& lastImage) {
     m_existingPrompt = prompt;
     m_existingNegative = negativePrompt;
+    m_lastImage = lastImage;
+
+    if (m_editRefinePrevPrompt) {
+        m_editRefinePrevPrompt->setPlainText(prompt);
+    }
+    if (m_lblRefineImagePreview) {
+        if (!lastImage.isNull()) {
+            m_lblRefineImagePreview->setPixmap(QPixmap::fromImage(lastImage.scaled(90, 90, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+            m_lblRefineImagePreview->setText(QString());
+        } else {
+            m_lblRefineImagePreview->setPixmap(QPixmap());
+            m_lblRefineImagePreview->setText(tr("(画像なし)"));
+        }
+    }
+
+    // 前回画像やプロンプトがあれば「修正・改善」モードをデフォルト推奨
+    if (!lastImage.isNull() || !prompt.trimmed().isEmpty()) {
+        if (m_radioModeRefine) {
+            m_radioModeRefine->setChecked(true);
+            onModeChanged();
+        }
+    }
 }
 
 QString LlmPromptDialog::generatedPrompt() const {
@@ -53,16 +75,50 @@ QString LlmPromptDialog::generatedNegativePrompt() const {
     return m_editResultNegative ? m_editResultNegative->toPlainText().trimmed() : QString();
 }
 
+QString LlmPromptDialog::lastUserInput() const {
+    if (isRefineMode()) {
+        return m_editRefineRequest ? m_editRefineRequest->toPlainText().trimmed() : QString();
+    }
+    return m_editIdea ? m_editIdea->toPlainText().trimmed() : QString();
+}
+
 bool LlmPromptDialog::shouldAppend() const {
     return m_comboApplyMode && m_comboApplyMode->currentIndex() == 1;
+}
+
+bool LlmPromptDialog::isRefineMode() const {
+    return m_radioModeRefine && m_radioModeRefine->isChecked();
+}
+
+void LlmPromptDialog::onModeChanged() {
+    bool refine = isRefineMode();
+    if (m_widgetCreateMode) m_widgetCreateMode->setVisible(!refine);
+    if (m_widgetRefineMode) m_widgetRefineMode->setVisible(refine);
+
+    if (m_btnGenerate) {
+        m_btnGenerate->setText(refine ? tr("🔄 LLM で改善プロンプトを生成") : tr("✨ LLM でプロンプトを考案・最適化"));
+    }
 }
 
 void LlmPromptDialog::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(12, 12, 12, 12);
-    mainLayout->setSpacing(10);
+    mainLayout->setSpacing(8);
 
-    // 1. LLM バックエンド接続設定
+    // 1. モード選択
+    auto grpMode = new QGroupBox(tr("作業モード"), this);
+    auto layMode = new QHBoxLayout(grpMode);
+    m_radioModeCreate = new QRadioButton(tr("✨ 新規プロンプト考案"), grpMode);
+    m_radioModeRefine = new QRadioButton(tr("🔄 前回の画像・プロンプトから修正・改善"), grpMode);
+    m_radioModeCreate->setChecked(true);
+    layMode->addWidget(m_radioModeCreate);
+    layMode->addWidget(m_radioModeRefine);
+    mainLayout->addWidget(grpMode);
+
+    connect(m_radioModeCreate, &QRadioButton::toggled, this, &LlmPromptDialog::onModeChanged);
+    connect(m_radioModeRefine, &QRadioButton::toggled, this, &LlmPromptDialog::onModeChanged);
+
+    // 2. LLM バックエンド接続設定
     auto grpBackend = new QGroupBox(tr("LLM 接続設定"), this);
     auto layBackend = new QVBoxLayout(grpBackend);
 
@@ -106,17 +162,56 @@ void LlmPromptDialog::setupUi() {
     layBackend->addLayout(formConn);
     mainLayout->addWidget(grpBackend);
 
-    // 2. プロンプト考案・アイデア入力
-    auto grpIdea = new QGroupBox(tr("描きたい内容・アイデア (日本語可)"), this);
+    // 3-1. Mode 1: 新規プロンプト考案
+    m_widgetCreateMode = new QWidget(this);
+    auto layCreate = new QVBoxLayout(m_widgetCreateMode);
+    layCreate->setContentsMargins(0, 0, 0, 0);
+    auto grpIdea = new QGroupBox(tr("描きたい内容・アイデア (日本語可)"), m_widgetCreateMode);
     auto layIdea = new QVBoxLayout(grpIdea);
-
     m_editIdea = new QPlainTextEdit(grpIdea);
     m_editIdea->setPlaceholderText(tr("例: 夕暮れの教室、窓辺に立つ制服の女子高生、少し物憂げな表情、エモーショナルな逆光、高品質なアニメ塗り"));
-    m_editIdea->setMaximumHeight(75);
+    m_editIdea->setMaximumHeight(70);
     layIdea->addWidget(m_editIdea);
+    layCreate->addWidget(grpIdea);
+    mainLayout->addWidget(m_widgetCreateMode);
 
+    // 3-2. Mode 2: 前回の画像・プロンプトから修正・改善
+    m_widgetRefineMode = new QWidget(this);
+    auto layRefine = new QVBoxLayout(m_widgetRefineMode);
+    layRefine->setContentsMargins(0, 0, 0, 0);
+    auto grpRefine = new QGroupBox(tr("前回の画像・プロンプトからの改善・修正指示"), m_widgetRefineMode);
+    auto layRefineBox = new QVBoxLayout(grpRefine);
+
+    auto layPrevInfo = new QHBoxLayout();
+    m_lblRefineImagePreview = new QLabel(tr("(画像なし)"), grpRefine);
+    m_lblRefineImagePreview->setFixedSize(94, 94);
+    m_lblRefineImagePreview->setAlignment(Qt::AlignCenter);
+    m_lblRefineImagePreview->setStyleSheet("QLabel { border: 1px solid #b0bec5; border-radius: 4px; background-color: #f5f5f5; color: #78909c; }");
+    layPrevInfo->addWidget(m_lblRefineImagePreview);
+
+    auto layPrevPromptCol = new QVBoxLayout();
+    layPrevPromptCol->addWidget(new QLabel(tr("前回のプロンプト:"), grpRefine));
+    m_editRefinePrevPrompt = new QPlainTextEdit(grpRefine);
+    m_editRefinePrevPrompt->setReadOnly(true);
+    m_editRefinePrevPrompt->setMaximumHeight(70);
+    m_editRefinePrevPrompt->setPlaceholderText(tr("(前回のプロンプトなし)"));
+    layPrevPromptCol->addWidget(m_editRefinePrevPrompt);
+    layPrevInfo->addLayout(layPrevPromptCol);
+    layRefineBox->addLayout(layPrevInfo);
+
+    layRefineBox->addWidget(new QLabel(tr("修正・改善したい点、追加・変更したい要素 (日本語可):"), grpRefine));
+    m_editRefineRequest = new QPlainTextEdit(grpRefine);
+    m_editRefineRequest->setPlaceholderText(tr("例: もっと笑顔にして、髪を銀髪ロングに変えて、背景をサイバーパンクの夜景にしたい"));
+    m_editRefineRequest->setMaximumHeight(65);
+    layRefineBox->addWidget(m_editRefineRequest);
+
+    layRefine->addWidget(grpRefine);
+    mainLayout->addWidget(m_widgetRefineMode);
+    m_widgetRefineMode->setVisible(false);
+
+    // 画風・適用オプション
     auto formOptions = new QFormLayout();
-    m_comboStyle = new QComboBox(grpIdea);
+    m_comboStyle = new QComboBox(this);
     m_comboStyle->addItem(tr("指定なし（自由）"));
     m_comboStyle->addItem(tr("アニメ・美麗イラスト調 (Anime / Masterpiece)"));
     m_comboStyle->addItem(tr("美麗デジタルアート (Digital Painting)"));
@@ -126,16 +221,15 @@ void LlmPromptDialog::setupUi() {
     m_comboStyle->addItem(tr("レトロコミック・アメコミ調 (Retro Comic)"));
     m_comboStyle->addItem(tr("ドット絵・ピクセルアート (Pixel Art)"));
 
-    m_comboApplyMode = new QComboBox(grpIdea);
+    m_comboApplyMode = new QComboBox(this);
     m_comboApplyMode->addItem(tr("現在のプロンプトを上書き"));
     m_comboApplyMode->addItem(tr("現在のプロンプトの末尾に追加"));
 
     formOptions->addRow(tr("画風・スタイル:"), m_comboStyle);
     formOptions->addRow(tr("適用方法:"), m_comboApplyMode);
-    layIdea->addLayout(formOptions);
-    mainLayout->addWidget(grpIdea);
+    mainLayout->addLayout(formOptions);
 
-    // 3. アクション & ステータス
+    // 4. アクション & ステータス
     auto layAction = new QVBoxLayout();
     m_btnGenerate = new QPushButton(tr("✨ LLM でプロンプトを考案・最適化"), this);
     m_btnGenerate->setStyleSheet("QPushButton { font-weight: bold; background-color: #6a1b9a; color: white; padding: 8px; font-size: 13px; } QPushButton:hover { background-color: #7b1fa2; }");
@@ -154,23 +248,23 @@ void LlmPromptDialog::setupUi() {
     layAction->addWidget(m_lblStatus);
     mainLayout->addLayout(layAction);
 
-    // 4. 生成結果プレビュー
+    // 5. 生成結果プレビュー
     auto grpResult = new QGroupBox(tr("生成結果 (英語タグ)"), this);
     auto layResult = new QVBoxLayout(grpResult);
 
     layResult->addWidget(new QLabel(tr("プロンプト (Positive):"), grpResult));
     m_editResultPrompt = new QPlainTextEdit(grpResult);
-    m_editResultPrompt->setMaximumHeight(85);
+    m_editResultPrompt->setMaximumHeight(75);
     layResult->addWidget(m_editResultPrompt);
 
     layResult->addWidget(new QLabel(tr("ネガティブプロンプト (Negative):"), grpResult));
     m_editResultNegative = new QPlainTextEdit(grpResult);
-    m_editResultNegative->setMaximumHeight(50);
+    m_editResultNegative->setMaximumHeight(45);
     layResult->addWidget(m_editResultNegative);
 
     mainLayout->addWidget(grpResult);
 
-    // 5. 下部ダイアログボタン
+    // 6. 下部ダイアログボタン
     auto layBottom = new QHBoxLayout();
     auto btnCancel = new QPushButton(tr("閉じる"), this);
     connect(btnCancel, &QPushButton::clicked, this, &QDialog::reject);
@@ -263,10 +357,20 @@ void LlmPromptDialog::onModelsFetchFailed(const QString& errorMessage) {
 }
 
 void LlmPromptDialog::onGenerateClicked() {
-    QString idea = m_editIdea->toPlainText().trimmed();
-    if (idea.isEmpty()) {
-        QMessageBox::information(this, tr("入力確認"), tr("描きたい内容やアイデアを入力してください。"));
-        return;
+    bool refine = isRefineMode();
+    QString idea = m_editIdea ? m_editIdea->toPlainText().trimmed() : QString();
+    QString req = m_editRefineRequest ? m_editRefineRequest->toPlainText().trimmed() : QString();
+
+    if (refine) {
+        if (req.isEmpty()) {
+            QMessageBox::information(this, tr("入力確認"), tr("修正・改善したい要望や変更点を入力してください。"));
+            return;
+        }
+    } else {
+        if (idea.isEmpty()) {
+            QMessageBox::information(this, tr("入力確認"), tr("描きたい内容やアイデアを入力してください。"));
+            return;
+        }
     }
 
     LlmConfig cfg = currentConfig();
@@ -280,12 +384,16 @@ void LlmPromptDialog::onGenerateClicked() {
     m_btnGenerate->setEnabled(false);
     m_progressBar->setVisible(true);
     m_progressBar->setValue(5);
-    m_lblStatus->setText(tr("LLM がプロンプトを考案中..."));
+    m_lblStatus->setText(refine ? tr("LLM が前回のプロンプトを改善中...") : tr("LLM がプロンプトを考案中..."));
     m_editResultPrompt->clear();
     m_editResultNegative->clear();
 
     QString style = m_comboStyle->currentText();
-    m_llmService->generatePrompt(cfg, idea, style, m_existingPrompt);
+    if (refine) {
+        m_llmService->refinePrompt(cfg, m_existingPrompt, m_existingNegative, req, style);
+    } else {
+        m_llmService->generatePrompt(cfg, idea, style, m_existingPrompt);
+    }
 }
 
 void LlmPromptDialog::onPromptGenerationProgress(int percent, const QString& statusMessage, const QString& currentContent) {

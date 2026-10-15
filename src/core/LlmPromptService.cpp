@@ -153,6 +153,31 @@ QString LlmPromptService::buildSystemPrompt(const QString& stylePreset) {
     return prompt;
 }
 
+QString LlmPromptService::buildRefineSystemPrompt(const QString& stylePreset) {
+    QString prompt =
+        "You are an expert prompt engineer specializing in iterative refinement of Text-to-Image prompts (Stable Diffusion, SDXL, Illustrious, Animagine, Midjourney).\n"
+        "Your role is to help the user improve an existing image prompt based on their feedback about the previously generated image, bringing the next generation closer to their ideal vision.\n\n"
+        "Refinement Guidelines:\n"
+        "1. Retain the core strengths, subjects, and artistic style of the previous prompt, unless the user specifically requested changes to them.\n"
+        "2. Add, modify, or replace specific Danbooru tags, keywords, expressions, lighting, composition, colors, or poses according to the user's modification request.\n"
+        "3. If the user mentions unwanted artifacts or features, add them to the negative prompt.\n"
+        "4. Always output detailed, high-quality descriptive tags in English.\n";
+
+    if (!stylePreset.isEmpty() && stylePreset != "指定なし（自由）") {
+        prompt += QString("5. Target Style Preset: %1.\n").arg(stylePreset);
+    }
+
+    prompt +=
+        "\nOutput format: You MUST return a valid JSON object ONLY with exactly these keys:\n"
+        "{\n"
+        "  \"prompt\": \"refined prompt with tags...\",\n"
+        "  \"negative_prompt\": \"refined negative prompt...\"\n"
+        "}\n"
+        "Do NOT include any markdown code blocks (e.g. ```json). Output raw JSON text only.";
+
+    return prompt;
+}
+
 QJsonObject LlmPromptService::buildChatRequestJson(const LlmConfig& config,
                                                    const QString& userIdea,
                                                    const QString& stylePreset,
@@ -173,6 +198,41 @@ QJsonObject LlmPromptService::buildChatRequestJson(const LlmConfig& config,
     if (!currentPrompt.isEmpty()) {
         userContent += QString("\nExisting / Draft Prompt: %1\n(Please enhance or expand upon this draft if helpful)").arg(currentPrompt);
     }
+
+    QJsonObject userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = userContent;
+    messages.append(userMsg);
+
+    json["messages"] = messages;
+    json["temperature"] = 0.7;
+
+    return json;
+}
+
+QJsonObject LlmPromptService::buildRefineRequestJson(const LlmConfig& config,
+                                                    const QString& previousPrompt,
+                                                    const QString& previousNegative,
+                                                    const QString& modificationRequest,
+                                                    const QString& stylePreset) {
+    QJsonObject json;
+    json["model"] = config.modelName.isEmpty() ? "llama3" : config.modelName;
+
+    QJsonArray messages;
+
+    // System prompt
+    QJsonObject sysMsg;
+    sysMsg["role"] = "system";
+    sysMsg["content"] = buildRefineSystemPrompt(stylePreset);
+    messages.append(sysMsg);
+
+    // User prompt
+    QString userContent = QString("User's Modification / Improvement Request:\n%1\n\nPrevious Prompt:\n%2")
+                              .arg(modificationRequest, previousPrompt);
+    if (!previousNegative.isEmpty()) {
+        userContent += QString("\n\nPrevious Negative Prompt:\n%1").arg(previousNegative);
+    }
+    userContent += "\nPlease produce a refined, updated prompt that incorporates the requested changes while maintaining the desired parts.";
 
     QJsonObject userMsg;
     userMsg["role"] = "user";
@@ -220,6 +280,48 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
     }
 
     emit promptGenerationProgress(10, tr("LLMサーバーに接続・プロンプト送信中..."), QString());
+
+    m_generateReply = m_netManager->post(request, body);
+    connect(m_generateReply, &QNetworkReply::readyRead, this, &LlmPromptService::onGenerateReadyRead);
+    connect(m_generateReply, &QNetworkReply::finished, this, &LlmPromptService::onGenerateFinished);
+}
+
+void LlmPromptService::refinePrompt(const LlmConfig& config,
+                                    const QString& previousPrompt,
+                                    const QString& previousNegative,
+                                    const QString& modificationRequest,
+                                    const QString& stylePreset) {
+    if (m_generateReply && m_generateReply->isRunning()) {
+        m_generateReply->abort();
+    }
+
+    m_streamBuffer.clear();
+    m_accumulatedContent.clear();
+
+    QString base = config.serverUrl.trimmed();
+    if (base.endsWith("/")) base.chop(1);
+
+    QString chatEndpoint;
+    if (base.endsWith("/v1")) {
+        chatEndpoint = base + "/chat/completions";
+    } else if (base.endsWith("/v1/chat/completions")) {
+        chatEndpoint = base;
+    } else {
+        chatEndpoint = base + "/v1/chat/completions";
+    }
+
+    QJsonObject reqJson = buildRefineRequestJson(config, previousPrompt, previousNegative, modificationRequest, stylePreset);
+    reqJson["stream"] = true; // ストリーミング受信を有効化
+    QByteArray body = QJsonDocument(reqJson).toJson(QJsonDocument::Compact);
+
+    QNetworkRequest request{QUrl(chatEndpoint)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1 (LlmPromptService)");
+    if (!config.apiKey.isEmpty()) {
+        request.setRawHeader("Authorization", "Bearer " + config.apiKey.toUtf8());
+    }
+
+    emit promptGenerationProgress(10, tr("LLMサーバーにプロンプト改善リクエスト送信中..."), QString());
 
     m_generateReply = m_netManager->post(request, body);
     connect(m_generateReply, &QNetworkReply::readyRead, this, &LlmPromptService::onGenerateReadyRead);
