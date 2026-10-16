@@ -10,6 +10,10 @@
 #include "DocumentSerializer.hpp"
 #include "PanelSettingsWidget.hpp"
 #include "ToolBoxWidget.hpp"
+#include "NewPanelDialog.hpp"
+#include <QComboBox>
+#include <QRadioButton>
+#include <QSpinBox>
 
 using namespace Kaburagi;
 
@@ -247,6 +251,61 @@ void testPanelSettingsWidget() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testNewPanelDialog() {
+    std::cout << "[TEST] 7. NewPanelDialog Templates & Grid..." << std::endl;
+    NewPanelDialog dlg(1600, 1200, 3.0f, Qt::black, 20.0f, 40.0f);
+
+    auto tplCombo = dlg.findChild<QComboBox*>("templateCombo");
+    auto gridRadio = dlg.findChild<QRadioButton*>("gridRadio");
+    auto tplRadio = dlg.findChild<QRadioButton*>("templateRadio");
+    auto colsSpin = dlg.findChild<QSpinBox*>("colsSpin");
+    auto rowsSpin = dlg.findChild<QSpinBox*>("rowsSpin");
+
+    assert(tplCombo != nullptr);
+    assert(gridRadio != nullptr);
+    assert(tplRadio != nullptr);
+    assert(colsSpin != nullptr);
+    assert(rowsSpin != nullptr);
+
+    // 1. Default: 4-koma (1 col x 4 rows) -> 4 panels
+    auto p4 = dlg.panels();
+    assert(p4.size() == 4);
+    assert(p4[0].name == "コマ 1");
+    assert(p4[3].name == "コマ 4");
+    assert(p4[0].polygon.boundingRect().top() < p4[1].polygon.boundingRect().top());
+    assert(p4[1].polygon.boundingRect().top() < p4[2].polygon.boundingRect().top());
+    assert(p4[2].polygon.boundingRect().top() < p4[3].polygon.boundingRect().top());
+
+    // 2. 2-column 4-koma (index 1) -> 8 panels
+    tplCombo->setCurrentIndex(1);
+    auto p8 = dlg.panels();
+    assert(p8.size() == 8);
+
+    // 3. 3-tier (index 2) -> 3 panels
+    tplCombo->setCurrentIndex(2);
+    auto p3 = dlg.panels();
+    assert(p3.size() == 3);
+
+    // 4. Standard 5 panels (index 6) -> 5 panels
+    tplCombo->setCurrentIndex(6);
+    auto p5 = dlg.panels();
+    assert(p5.size() == 5);
+
+    // 5. Single panel (index 10) -> 1 panel
+    tplCombo->setCurrentIndex(10);
+    auto p1 = dlg.panels();
+    assert(p1.size() == 1);
+
+    // 6. Grid mode: 2 cols x 3 rows -> 6 panels
+    gridRadio->setChecked(true);
+    colsSpin->setValue(2);
+    rowsSpin->setValue(3);
+    auto pGrid = dlg.panels();
+    assert(pGrid.size() == 6);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
@@ -258,6 +317,7 @@ int main(int argc, char* argv[]) {
     testPanelShapeEditing();
     testPanelSerialization();
     testPanelSettingsWidget();
+    testNewPanelDialog();
 
     std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

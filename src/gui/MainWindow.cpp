@@ -29,6 +29,7 @@
 #include "CanvasContainer.hpp"
 #include "DocumentSerializer.hpp"
 #include "NewCanvasDialog.hpp"
+#include "NewPanelDialog.hpp"
 #include "PreferencesDialog.hpp"
 #include "UndoCommands.hpp"
 #include "TextSettingsWidget.hpp"
@@ -745,6 +746,7 @@ void MainWindow::setupLayout() {
             statusBar()->showMessage(tr("Loaded AI parameters from layer: %1").arg(layer->name()), 4000);
         }
     });
+    connect(m_layerPanel, &LayerPanelWidget::newPanelFolderRequested, this, &MainWindow::onNewPanelFolder);
     m_navSplitter->addWidget(m_layerPanel);
 
     m_navSplitter->setStretchFactor(0, 0); // ナビゲーター
@@ -3978,24 +3980,39 @@ void MainWindow::onNewGroupLayer() {
 
 void MainWindow::onNewPanelFolder() {
     if (!m_document) return;
-    int w = m_document->width();
-    int h = m_document->height();
-    int padX = std::max(20, w / 16);
-    int padY = std::max(20, h / 16);
-    QRectF r(padX, padY, w - padX * 2, h - padY * 2);
-    QPolygonF poly;
-    poly << r.topLeft() << r.topRight() << r.bottomRight() << r.bottomLeft();
 
     float bWidth = m_panelSettings ? m_panelSettings->borderWidth() : 3.0f;
     QColor bColor = m_panelSettings ? m_panelSettings->borderColor() : Qt::black;
-    auto panel = m_document->addPanelFolder(poly, bWidth, bColor);
-    if (panel && m_panelSettings) {
-        panel->setDrawPanelBorder(m_panelSettings->drawBorder());
-        m_panelSettings->setFromPanel(panel.get());
+    float mx = m_panelSettings ? m_panelSettings->marginHorizontal() : 20.0f;
+    float my = m_panelSettings ? m_panelSettings->marginVertical() : 40.0f;
+
+    NewPanelDialog dlg(m_document->width(), m_document->height(), bWidth, bColor, mx, my, this);
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    auto panelSpecs = dlg.panels();
+    if (panelSpecs.isEmpty()) return;
+
+    // 逆順（最後のコマから最初のコマ）で追加し、レイヤーリスト上で「コマ 1」が最上部に来るようにする
+    std::shared_ptr<GroupLayer> firstPanel = nullptr;
+    for (int i = panelSpecs.size() - 1; i >= 0; --i) {
+        const auto& spec = panelSpecs[i];
+        auto panel = m_document->addPanelFolder(spec.polygon, dlg.borderWidth(), dlg.borderColor(), spec.name);
+        if (panel) {
+            panel->setDrawPanelBorder(dlg.drawBorder());
+            firstPanel = panel;
+        }
+    }
+
+    if (firstPanel && m_panelSettings) {
+        m_panelSettings->setFromPanel(firstPanel.get());
     }
     if (m_toolBox) {
         m_toolBox->setCurrentTool(ToolType::PanelFrame);
     }
+    onToolChanged(ToolType::PanelFrame);
+
     m_document->composite();
     if (m_canvasWidget) m_canvasWidget->update();
 }

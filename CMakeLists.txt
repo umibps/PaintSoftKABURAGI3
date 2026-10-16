@@ -167,6 +167,8 @@ set(GUI_SOURCES
     src/gui/VectorPressureSettingsWidget.cpp
     src/gui/NewCanvasDialog.hpp
     src/gui/NewCanvasDialog.cpp
+    src/gui/NewPanelDialog.hpp
+    src/gui/NewPanelDialog.cpp
     src/gui/PreferencesDialog.hpp
     src/gui/PreferencesDialog.cpp
     src/gui/ScatterSettingsWidget.hpp

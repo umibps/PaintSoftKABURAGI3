@@ -75,6 +75,7 @@ public:
 
 signals:
     void loadAiParametersRequested(const std::shared_ptr<Layer>& layer);
+    void newPanelFolderRequested();
 
 public slots:
     void onLayerListChanged();

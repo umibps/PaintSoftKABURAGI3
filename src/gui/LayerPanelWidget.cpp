@@ -1251,6 +1251,10 @@ void LayerPanelWidget::onAddGroupLayer() {
 }
 
 void LayerPanelWidget::onAddPanelFolder() {
+    if (receivers(SIGNAL(newPanelFolderRequested())) > 0) {
+        emit newPanelFolderRequested();
+        return;
+    }
     if (!m_document) return;
     int w = m_document->width();
     int h = m_document->height();
