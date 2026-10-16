@@ -7,6 +7,7 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
 class QPushButton;
+class QCheckBox;
 
 namespace Kaburagi {
 
@@ -21,12 +22,17 @@ public:
     double canvasDpi() const;
     QColor backgroundColor() const;
     QColor secondaryBackgroundColor() const;
+    bool isKeepAspect() const;
+    void setKeepAspect(bool keep);
 
 private slots:
     void onPresetChanged(int index);
     void onBgModeChanged(int index);
     void onPickBgColor();
     void onPickBg2Color();
+    void onWidthChanged(int w);
+    void onHeightChanged(int h);
+    void onKeepAspectToggled(bool checked);
     void accept() override;
 
 private:
@@ -37,10 +43,14 @@ private:
     QComboBox* m_presetCombo = nullptr;
     QSpinBox* m_widthSpin = nullptr;
     QSpinBox* m_heightSpin = nullptr;
+    QCheckBox* m_keepAspectCheck = nullptr;
     QDoubleSpinBox* m_dpiSpin = nullptr;
     QComboBox* m_bgModeCombo = nullptr;
     QPushButton* m_bgColorBtn = nullptr;
     QPushButton* m_bg2ColorBtn = nullptr;
+
+    double m_aspectRatio = 1600.0 / 1200.0;
+    bool m_updatingSpin = false;
 
     QColor m_customBgColor = Qt::white;
     QColor m_secondaryBgColor = Qt::white;

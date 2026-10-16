@@ -249,6 +249,7 @@ void MainWindow::createMenuBar() {
         if (m_toolBox) {
             m_toolBox->setCurrentTool(ToolType::Transform);
         }
+        onToolChanged(ToolType::Transform);
         if (m_canvasWidget) {
             if (!m_canvasWidget->isTransforming()) {
                 m_canvasWidget->startTransform();

@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QMouseEvent>
+#include <QSpinBox>
+#include <QCheckBox>
 #include <cassert>
 #include <iostream>
 #include "CanvasWidget.hpp"
@@ -8,6 +10,7 @@
 #include "PreferencesDialog.hpp"
 #include "ReferenceImageWindow.hpp"
 #include "PatternFillSettingsWidget.hpp"
+#include "NewCanvasDialog.hpp"
 
 using namespace Kaburagi;
 
@@ -228,6 +231,53 @@ int main(int argc, char* argv[]) {
         assert(c54 == QColor(0, 0, 255, 255));
 
         std::cout << "  [INFO] Tiled coordinates (0,0), (1,0), (4,4), (5,4) matched pattern colors perfectly!" << std::endl;
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 6. NewCanvasDialog keep aspect ratio check
+    {
+        std::cout << "[TEST] 6. Checking NewCanvasDialog Keep Aspect Ratio..." << std::endl;
+        NewCanvasDialog dlg;
+        auto widthSpin = dlg.findChild<QSpinBox*>("widthSpin");
+        auto heightSpin = dlg.findChild<QSpinBox*>("heightSpin");
+        auto keepAspectCheck = dlg.findChild<QCheckBox*>("keepAspectCheck");
+
+        assert(widthSpin != nullptr);
+        assert(heightSpin != nullptr);
+        assert(keepAspectCheck != nullptr);
+
+        // Initially set to 1600 x 1200
+        widthSpin->setValue(1600);
+        heightSpin->setValue(1200);
+
+        // Turn ON keep aspect
+        keepAspectCheck->setChecked(true);
+        assert(dlg.isKeepAspect() == true);
+
+        // Change width to 800 -> height should automatically become 600
+        widthSpin->setValue(800);
+        assert(heightSpin->value() == 600);
+        assert(dlg.canvasWidth() == 800);
+        assert(dlg.canvasHeight() == 600);
+
+        // Change height to 900 -> width should automatically become 1200
+        heightSpin->setValue(900);
+        assert(widthSpin->value() == 1200);
+
+        // Turn OFF keep aspect
+        keepAspectCheck->setChecked(false);
+        assert(dlg.isKeepAspect() == false);
+
+        // Change width to 500 -> height should stay 900
+        widthSpin->setValue(500);
+        assert(heightSpin->value() == 900);
+
+        // Turn ON keep aspect at 500 x 900 (aspect ratio 5/9)
+        keepAspectCheck->setChecked(true);
+        // Change width to 1000 -> height should become 1800
+        widthSpin->setValue(1000);
+        assert(heightSpin->value() == 1800);
+
         std::cout << "  -> PASSED!" << std::endl;
     }
 

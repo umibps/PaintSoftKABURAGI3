@@ -7,6 +7,7 @@
 #include <QDoubleSpinBox>
 #include <QComboBox>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QColorDialog>
 #include <QSettings>
@@ -17,7 +18,7 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
     : QDialog(parent) {
     setWindowTitle("新規キャンバス作成");
     setModal(true);
-    resize(360, 320);
+    resize(360, 350);
 
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(10);
@@ -39,16 +40,22 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
     auto sizeForm = new QFormLayout(sizeGroup);
 
     m_widthSpin = new QSpinBox(this);
+    m_widthSpin->setObjectName("widthSpin");
     m_widthSpin->setRange(10, 10000);
     m_widthSpin->setSuffix(" px");
     m_widthSpin->setValue(1600);
     sizeForm->addRow("幅(&W):", m_widthSpin);
 
     m_heightSpin = new QSpinBox(this);
+    m_heightSpin->setObjectName("heightSpin");
     m_heightSpin->setRange(10, 10000);
     m_heightSpin->setSuffix(" px");
     m_heightSpin->setValue(1200);
     sizeForm->addRow("高さ(&H):", m_heightSpin);
+
+    m_keepAspectCheck = new QCheckBox("縦横比を固定(&K)", this);
+    m_keepAspectCheck->setObjectName("keepAspectCheck");
+    sizeForm->addRow(QString(), m_keepAspectCheck);
 
     m_dpiSpin = new QDoubleSpinBox(this);
     m_dpiSpin->setRange(72.0, 1200.0);
@@ -88,6 +95,9 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
 
     // シグナル接続
     connect(m_presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NewCanvasDialog::onPresetChanged);
+    connect(m_widthSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &NewCanvasDialog::onWidthChanged);
+    connect(m_heightSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &NewCanvasDialog::onHeightChanged);
+    connect(m_keepAspectCheck, &QCheckBox::toggled, this, &NewCanvasDialog::onKeepAspectToggled);
     connect(m_bgModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NewCanvasDialog::onBgModeChanged);
     connect(m_bgColorBtn, &QPushButton::clicked, this, &NewCanvasDialog::onPickBgColor);
     connect(m_bg2ColorBtn, &QPushButton::clicked, this, &NewCanvasDialog::onPickBg2Color);
@@ -97,11 +107,17 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
 }
 
 void NewCanvasDialog::loadSettings() {
+    m_updatingSpin = true;
     QSettings settings;
     settings.beginGroup("NewCanvas");
     m_widthSpin->setValue(settings.value("width", 1600).toInt());
     m_heightSpin->setValue(settings.value("height", 1200).toInt());
     m_dpiSpin->setValue(settings.value("dpi", 350.0).toDouble());
+    bool keep = settings.value("keepAspect", false).toBool();
+    m_keepAspectCheck->setChecked(keep);
+    if (m_heightSpin->value() > 0) {
+        m_aspectRatio = static_cast<double>(m_widthSpin->value()) / static_cast<double>(m_heightSpin->value());
+    }
     int bgMode = settings.value("bgMode", 0).toInt();
     m_bgModeCombo->setCurrentIndex(std::clamp(bgMode, 0, 2));
 
@@ -113,6 +129,7 @@ void NewCanvasDialog::loadSettings() {
     m_secondaryBgColor = QColor(bg2ColorStr);
     if (!m_secondaryBgColor.isValid()) m_secondaryBgColor = Qt::white;
     settings.endGroup();
+    m_updatingSpin = false;
 
     onBgModeChanged(m_bgModeCombo->currentIndex());
 }
@@ -122,6 +139,7 @@ void NewCanvasDialog::saveSettings() {
     settings.beginGroup("NewCanvas");
     settings.setValue("width", m_widthSpin->value());
     settings.setValue("height", m_heightSpin->value());
+    settings.setValue("keepAspect", m_keepAspectCheck->isChecked());
     settings.setValue("dpi", m_dpiSpin->value());
     settings.setValue("bgMode", m_bgModeCombo->currentIndex());
     settings.setValue("bgColor", m_customBgColor.name(QColor::HexArgb));
@@ -159,7 +177,18 @@ QColor NewCanvasDialog::secondaryBackgroundColor() const {
     return m_secondaryBgColor;
 }
 
+bool NewCanvasDialog::isKeepAspect() const {
+    return m_keepAspectCheck ? m_keepAspectCheck->isChecked() : false;
+}
+
+void NewCanvasDialog::setKeepAspect(bool keep) {
+    if (m_keepAspectCheck) {
+        m_keepAspectCheck->setChecked(keep);
+    }
+}
+
 void NewCanvasDialog::onPresetChanged(int index) {
+    m_updatingSpin = true;
     switch (index) {
     case 1: // イラスト標準
         m_widthSpin->setValue(1600);
@@ -188,6 +217,48 @@ void NewCanvasDialog::onPresetChanged(int index) {
         break;
     default:
         break;
+    }
+    if (m_heightSpin->value() > 0) {
+        m_aspectRatio = static_cast<double>(m_widthSpin->value()) / static_cast<double>(m_heightSpin->value());
+    }
+    m_updatingSpin = false;
+}
+
+void NewCanvasDialog::onWidthChanged(int w) {
+    if (m_updatingSpin) return;
+    if (m_keepAspectCheck && m_keepAspectCheck->isChecked()) {
+        if (m_aspectRatio > 0.0) {
+            m_updatingSpin = true;
+            int newH = std::clamp(qRound(static_cast<double>(w) / m_aspectRatio), m_heightSpin->minimum(), m_heightSpin->maximum());
+            m_heightSpin->setValue(newH);
+            m_updatingSpin = false;
+        }
+    } else {
+        if (m_heightSpin->value() > 0) {
+            m_aspectRatio = static_cast<double>(w) / static_cast<double>(m_heightSpin->value());
+        }
+    }
+}
+
+void NewCanvasDialog::onHeightChanged(int h) {
+    if (m_updatingSpin) return;
+    if (m_keepAspectCheck && m_keepAspectCheck->isChecked()) {
+        if (m_aspectRatio > 0.0) {
+            m_updatingSpin = true;
+            int newW = std::clamp(qRound(static_cast<double>(h) * m_aspectRatio), m_widthSpin->minimum(), m_widthSpin->maximum());
+            m_widthSpin->setValue(newW);
+            m_updatingSpin = false;
+        }
+    } else {
+        if (h > 0) {
+            m_aspectRatio = static_cast<double>(m_widthSpin->value()) / static_cast<double>(h);
+        }
+    }
+}
+
+void NewCanvasDialog::onKeepAspectToggled(bool checked) {
+    if (checked && m_heightSpin->value() > 0) {
+        m_aspectRatio = static_cast<double>(m_widthSpin->value()) / static_cast<double>(m_heightSpin->value());
     }
 }
 
