@@ -98,20 +98,54 @@ public:
         painter->drawRect(thumbRect);
 
         // 4. テキスト描画 (x: left + 68)
-        QRect textRect(option.rect.left() + 68, option.rect.top(), option.rect.width() - 72, option.rect.height());
         QString text = index.data(Qt::DisplayRole).toString();
+        int textLeft = option.rect.left() + 68;
+        int textWidth = option.rect.width() - 72;
 
-        painter->setFont(option.font);
-        if (isSelected) {
-            QFont boldFont = option.font;
-            boldFont.setBold(true);
-            painter->setFont(boldFont);
-            painter->setPen(QColor("#000000"));
+        QStringList lines = text.split('\n');
+        if (lines.size() >= 2) {
+            QRect nameRect(textLeft, option.rect.top() + 3, textWidth, 16);
+            QRect opacityRect(textLeft, option.rect.top() + 20, textWidth, 14);
+
+            // 上段: レイヤー名
+            painter->setFont(option.font);
+            if (isSelected) {
+                QFont boldFont = option.font;
+                boldFont.setBold(true);
+                painter->setFont(boldFont);
+                painter->setPen(QColor("#000000"));
+            } else {
+                painter->setPen(isVisible ? QColor("#000000") : QColor("#888888"));
+            }
+            painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, lines[0]);
+
+            // 下段: 不透明度
+            QFont subFont = option.font;
+            if (subFont.pointSizeF() > 0) {
+                subFont.setPointSizeF(qMax(7.0, subFont.pointSizeF() - 1.5));
+            } else if (subFont.pixelSize() > 0) {
+                subFont.setPixelSize(qMax(9, subFont.pixelSize() - 2));
+            }
+            painter->setFont(subFont);
+            if (isSelected) {
+                painter->setPen(QColor("#444444"));
+            } else {
+                painter->setPen(isVisible ? QColor("#666666") : QColor("#999999"));
+            }
+            painter->drawText(opacityRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, lines[1]);
         } else {
-            painter->setPen(isVisible ? QColor("#000000") : QColor("#888888"));
+            QRect textRect(textLeft, option.rect.top(), textWidth, option.rect.height());
+            painter->setFont(option.font);
+            if (isSelected) {
+                QFont boldFont = option.font;
+                boldFont.setBold(true);
+                painter->setFont(boldFont);
+                painter->setPen(QColor("#000000"));
+            } else {
+                painter->setPen(isVisible ? QColor("#000000") : QColor("#888888"));
+            }
+            painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
         }
-
-        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
 
         painter->restore();
     }
@@ -296,9 +330,19 @@ public:
                 typePrefix = QString("[%1 グループ]").arg(foldIcon);
             }
 
-            QString itemText = QString("%1%2 %3 (%4%)")
-                .arg(indent, typePrefix, layer->name())
-                .arg(static_cast<int>(layer->opacity() * 100));
+            QString subIndent = "";
+            auto p2 = layer->parentGroup();
+            while (p2) {
+                subIndent = "  " + subIndent;
+                p2 = p2->parentGroup();
+            }
+            if (layer->parentGroup()) {
+                subIndent += "   ";
+            }
+
+            QString nameLine = QString("%1%2 %3").arg(indent, typePrefix, layer->name());
+            QString opacityLine = QString("%1不透明度: %2%").arg(subIndent).arg(static_cast<int>(layer->opacity() * 100));
+            QString itemText = QString("%1\n%2").arg(nameLine, opacityLine);
 
             model->setData(index, itemText, Qt::DisplayRole);
 
@@ -358,7 +402,7 @@ public:
             textStart = baseLeft;
             editWidth = option.rect.right() - textStart - 4;
         }
-        QRect editRect(textStart, option.rect.top() + 3, std::max(60, editWidth), option.rect.height() - 6);
+        QRect editRect(textStart, option.rect.top() + 2, std::max(60, editWidth), 18);
         editor->setGeometry(editRect);
     }
 
@@ -1383,9 +1427,19 @@ void LayerPanelWidget::onLayerListChanged() {
             indent += "└ ";
         }
 
-        QString itemText = QString("%1%2 %3 (%4%)")
-            .arg(indent, typePrefix, layer->name())
-            .arg(static_cast<int>(layer->opacity() * 100));
+        QString subIndent = "";
+        auto p2 = layer->parentGroup();
+        while (p2) {
+            subIndent = "  " + subIndent;
+            p2 = p2->parentGroup();
+        }
+        if (layer->parentGroup()) {
+            subIndent += "   ";
+        }
+
+        QString nameLine = QString("%1%2 %3").arg(indent, typePrefix, layer->name());
+        QString opacityLine = QString("%1不透明度: %2%").arg(subIndent).arg(static_cast<int>(layer->opacity() * 100));
+        QString itemText = QString("%1\n%2").arg(nameLine, opacityLine);
 
         auto item = new QListWidgetItem();
         auto flags = item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable;
@@ -1557,6 +1611,29 @@ void LayerPanelWidget::onOpacityScaleChanged(double value) {
     if (layer) {
         layer->setOpacity(static_cast<float>(value / 100.0));
         m_document->composite();
+
+        int row = static_cast<int>(m_document->layers().size()) - 1 - m_document->activeLayerIndex();
+        if (m_layerListWidget && row >= 0 && row < m_layerListWidget->count()) {
+            auto item = m_layerListWidget->item(row);
+            if (item) {
+                QString text = item->text();
+                int nlPos = text.indexOf('\n');
+                if (nlPos != -1) {
+                    QString nameLine = text.left(nlPos);
+                    QString subIndent = "";
+                    auto p = layer->parentGroup();
+                    while (p) {
+                        subIndent = "  " + subIndent;
+                        p = p->parentGroup();
+                    }
+                    if (layer->parentGroup()) {
+                        subIndent += "   ";
+                    }
+                    QString opacityLine = QString("%1不透明度: %2%").arg(subIndent).arg(static_cast<int>(value));
+                    item->setText(nameLine + "\n" + opacityLine);
+                }
+            }
+        }
     }
 }
 

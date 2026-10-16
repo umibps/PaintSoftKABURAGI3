@@ -7,6 +7,7 @@
 #include "Document.hpp"
 #include "LayerPanelWidget.hpp"
 #include "CanvasWidget.hpp"
+#include "SpinScaleWidget.hpp"
 
 using namespace Kaburagi;
 
@@ -549,6 +550,43 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::cout << "[PASS] Drop slot is clamped to valid row range when below viewport!" << std::endl;
+    }
+
+    {
+        std::cout << "[TEST] Testing Layer Item Opacity display under Layer Name..." << std::endl;
+        Document testDoc(200, 200);
+        LayerPanelWidget panel;
+        panel.setDocument(&testDoc);
+
+        // Document has 背景 (0) and レイヤー 1 (1)
+        // In layer list widget:
+        // row 0: レイヤー 1
+        // row 1: 背景
+        auto listWidget = panel.findChild<QListWidget*>();
+        assert(listWidget != nullptr);
+        assert(listWidget->count() == 2);
+
+        auto item0 = listWidget->item(0);
+        assert(item0 != nullptr);
+        QString text0 = item0->text();
+        assert(text0.contains("\n"));
+        QStringList lines0 = text0.split('\n');
+        assert(lines0.size() == 2);
+        assert(lines0[0].contains("レイヤー 1"));
+        assert(lines0[1].contains("不透明度: 100%"));
+
+        // Change opacity via SpinScale widget
+        auto opacityScale = panel.findChild<SpinScale*>();
+        assert(opacityScale != nullptr);
+        opacityScale->setValue(42.0);
+        assert(std::abs(testDoc.activeLayer()->opacity() - 0.42f) < 0.01f);
+        QString updatedText = listWidget->item(0)->text();
+        QStringList updatedLines = updatedText.split('\n');
+        assert(updatedLines.size() == 2);
+        assert(updatedLines[0].contains("レイヤー 1"));
+        assert(updatedLines[1].contains("不透明度: 42%"));
+
+        std::cout << "[PASS] Layer item displays opacity on second row and updates in real-time!" << std::endl;
     }
 
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;

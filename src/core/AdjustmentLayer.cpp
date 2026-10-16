@@ -263,7 +263,7 @@ void AdjustmentLayer::renderToTarget(TileManager& target, const QRect& dirtyRect
     if (!m_visible || m_opacity <= 0.0f) return;
 
     if (m_isClippingMask) {
-        if (!baseLayer || !baseLayer->isVisible() || baseLayer->effectiveOpacity() <= 0.0f) {
+        if (!baseLayer || baseLayer->effectiveOpacity() <= 0.0f) {
             return;
         }
     }

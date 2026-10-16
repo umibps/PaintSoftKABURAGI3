@@ -153,14 +153,20 @@ int main(int argc, char** argv) {
 
         std::cout << "[PASS] Consecutive clipping rendering verified: all clipped to Base!" << std::endl;
 
-        // 5. ベースレイヤー非表示時の検証 (SAI仕様: ベースが消えるとクリッピングレイヤーも消える)
+        // 5. ベースレイヤー非表示時の検証 (ベースが非表示でも下のレイヤーの形状でクリッピング描画される)
         baseLayer->setVisible(false);
         doc.composite();
 
+        // ベースレイヤーの範囲内 (30, 30) -> ベースが非表示でも、クリッピング先(緑)がマスクされて描画される！
         QColor cHidden = doc.compositeBuffer().getPixel(30, 30);
-        assert(cHidden.alpha() == 0); // ベース非表示に伴いクリッピング先も非表示！
+        assert(cHidden.alpha() == 255);
+        assert(cHidden.green() == 255 && cHidden.red() == 0);
 
-        std::cout << "[PASS] Base layer hidden suppresses clipped layers passed!" << std::endl;
+        // ベースレイヤーの範囲外 (15, 15) -> クリッピングにより透明のまま！
+        QColor cOuterHidden = doc.compositeBuffer().getPixel(15, 15);
+        assert(cOuterHidden.alpha() == 0);
+
+        std::cout << "[PASS] Base layer hidden clips and renders clipped layers successfully!" << std::endl;
     }
 
     // 6. UIチェックボックスとデリゲートのテスト

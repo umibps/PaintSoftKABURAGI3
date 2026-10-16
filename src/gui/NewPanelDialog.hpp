@@ -42,6 +42,8 @@ public:
     float marginX() const;
     float marginY() const;
 
+    void accept() override;
+
 private slots:
     void onModeToggled();
     void onTemplateChanged(int index);
@@ -50,12 +52,18 @@ private slots:
 
 private:
     void setupUI();
+    void loadSettings();
+    void saveSettings();
     void updatePreview();
     void updateColorButtonStyle();
     QList<PanelSpec> calculatePanels() const;
 
     int m_canvasWidth = 1600;
     int m_canvasHeight = 1200;
+    float m_defaultBorderWidth = 3.0f;
+    QColor m_defaultBorderColor = Qt::black;
+    float m_defaultMarginX = 20.0f;
+    float m_defaultMarginY = 40.0f;
 
     // 作成モード
     QRadioButton* m_templateRadio = nullptr;

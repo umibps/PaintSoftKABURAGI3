@@ -40,8 +40,8 @@ void Layer::renderToTarget(TileManager& target, const QRect& dirtyRect, const La
 
     // クリッピングマスクが有効な場合
     if (m_isClippingMask) {
-        if (!baseLayer || !baseLayer->isVisible() || baseLayer->effectiveOpacity() <= 0.0f) {
-            // ベースレイヤーが存在しない、または非表示なら描画しない (SAI仕様)
+        if (!baseLayer || baseLayer->effectiveOpacity() <= 0.0f) {
+            // ベースレイヤーが存在しない、または不透明度が0なら描画しない
             return;
         }
     }

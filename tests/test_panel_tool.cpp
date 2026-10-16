@@ -332,6 +332,33 @@ void testNewPanelDialog() {
     auto pGrid = dlg.panels();
     assert(pGrid.size() == 6);
 
+    // 9. Test persistence (saveSettings & loadSettings via accept())
+    dlg.accept();
+
+    // Create a new dialog instance; it should load the saved settings (Grid mode, 2 cols, 3 rows)
+    NewPanelDialog dlg2(800, 600);
+    auto gridRadio2 = dlg2.findChild<QRadioButton*>("gridRadio");
+    auto colsSpin2 = dlg2.findChild<QSpinBox*>("colsSpin");
+    auto rowsSpin2 = dlg2.findChild<QSpinBox*>("rowsSpin");
+    assert(gridRadio2 && gridRadio2->isChecked());
+    assert(colsSpin2 && colsSpin2->value() == 2);
+    assert(rowsSpin2 && rowsSpin2->value() == 3);
+
+    // Switch back to template mode, choose Yonkoma with title (index 1), and save
+    auto tplRadio2 = dlg2.findChild<QRadioButton*>("templateRadio");
+    auto tplCombo2 = dlg2.findChild<QComboBox*>("templateCombo");
+    assert(tplRadio2 && tplCombo2);
+    tplRadio2->setChecked(true);
+    tplCombo2->setCurrentIndex(1);
+    dlg2.accept();
+
+    // Verify 3rd instance restores template index 1
+    NewPanelDialog dlg3(800, 600);
+    auto tplRadio3 = dlg3.findChild<QRadioButton*>("templateRadio");
+    auto tplCombo3 = dlg3.findChild<QComboBox*>("templateCombo");
+    assert(tplRadio3 && tplRadio3->isChecked());
+    assert(tplCombo3 && tplCombo3->currentIndex() == 1);
+
     std::cout << "  -> PASSED!" << std::endl;
 }
 

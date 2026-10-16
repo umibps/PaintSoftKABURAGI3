@@ -14,6 +14,7 @@
 #include <QColorDialog>
 #include <QPainter>
 #include <QPainterPath>
+#include <QSettings>
 #include <algorithm>
 #include <cmath>
 
@@ -112,6 +113,10 @@ NewPanelDialog::NewPanelDialog(int canvasWidth, int canvasHeight,
     : QDialog(parent),
       m_canvasWidth(std::max(10, canvasWidth)),
       m_canvasHeight(std::max(10, canvasHeight)),
+      m_defaultBorderWidth(defaultBorderWidth),
+      m_defaultBorderColor(defaultBorderColor),
+      m_defaultMarginX(defaultMarginX),
+      m_defaultMarginY(defaultMarginY),
       m_borderColor(defaultBorderColor) {
     setWindowTitle("新規コマフォルダ作成");
     setModal(true);
@@ -123,7 +128,9 @@ NewPanelDialog::NewPanelDialog(int canvasWidth, int canvasHeight,
     m_marginXSpin->setValue(defaultMarginX);
     m_marginYSpin->setValue(defaultMarginY);
 
-    onTemplateChanged(0);
+    loadSettings();
+
+    onModeToggled();
     updatePreview();
 }
 
@@ -594,6 +601,61 @@ float NewPanelDialog::marginX() const {
 
 float NewPanelDialog::marginY() const {
     return m_marginYSpin ? static_cast<float>(m_marginYSpin->value()) : 40.0f;
+}
+
+void NewPanelDialog::loadSettings() {
+    QSettings settings;
+    settings.beginGroup("NewPanel");
+    bool isGrid = settings.value("isGrid", false).toBool();
+    if (isGrid) {
+        m_gridRadio->setChecked(true);
+    } else {
+        m_templateRadio->setChecked(true);
+    }
+    int tmplIdx = settings.value("templateIndex", 0).toInt();
+    if (tmplIdx >= 0 && tmplIdx < m_templateCombo->count()) {
+        m_templateCombo->setCurrentIndex(tmplIdx);
+    }
+    m_colsSpin->setValue(settings.value("cols", 1).toInt());
+    m_rowsSpin->setValue(settings.value("rows", 4).toInt());
+
+    m_padXSpin->setValue(settings.value("padX", 40).toInt());
+    m_padYSpin->setValue(settings.value("padY", 40).toInt());
+
+    m_marginXSpin->setValue(settings.value("marginX", m_defaultMarginX).toDouble());
+    m_marginYSpin->setValue(settings.value("marginY", m_defaultMarginY).toDouble());
+
+    m_drawBorderCheck->setChecked(settings.value("drawBorder", true).toBool());
+    m_borderWidthSpin->setValue(settings.value("borderWidth", m_defaultBorderWidth).toDouble());
+    QString colorStr = settings.value("borderColor", m_defaultBorderColor.name(QColor::HexArgb)).toString();
+    QColor c(colorStr);
+    if (c.isValid()) {
+        m_borderColor = c;
+        updateColorButtonStyle();
+    }
+    settings.endGroup();
+}
+
+void NewPanelDialog::saveSettings() {
+    QSettings settings;
+    settings.beginGroup("NewPanel");
+    settings.setValue("isGrid", m_gridRadio->isChecked());
+    settings.setValue("templateIndex", m_templateCombo->currentIndex());
+    settings.setValue("cols", m_colsSpin->value());
+    settings.setValue("rows", m_rowsSpin->value());
+    settings.setValue("padX", m_padXSpin->value());
+    settings.setValue("padY", m_padYSpin->value());
+    settings.setValue("marginX", m_marginXSpin->value());
+    settings.setValue("marginY", m_marginYSpin->value());
+    settings.setValue("drawBorder", m_drawBorderCheck->isChecked());
+    settings.setValue("borderWidth", m_borderWidthSpin->value());
+    settings.setValue("borderColor", m_borderColor.name(QColor::HexArgb));
+    settings.endGroup();
+}
+
+void NewPanelDialog::accept() {
+    saveSettings();
+    QDialog::accept();
 }
 
 } // namespace Kaburagi
