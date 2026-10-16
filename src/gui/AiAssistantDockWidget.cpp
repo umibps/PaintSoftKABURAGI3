@@ -1467,9 +1467,9 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
         return whiteCanvas;
     }
 
-    // 「自動着彩 / カラーラフ」モードでは、各パーツが別レイヤーで色分け（下塗り）されていることが多いため、
+    // 「自動着彩 / カラーラフ」および「選択範囲インペイント」モードでは、各パーツが別レイヤーで分かれていることが多いため、
     // キャンバス全体の可視レイヤー合成画像（compositeBuffer）をベース画像として渡す
-    if (mode == AiMode::Colorization) {
+    if (mode == AiMode::Colorization || mode == AiMode::Inpaint) {
         return m_document->compositeBuffer().toQImage();
     }
 
