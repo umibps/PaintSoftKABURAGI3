@@ -1334,14 +1334,16 @@ std::shared_ptr<GroupLayer> Document::addPanelFolder(const QPolygonF& polygon, f
     if (insertIdx > static_cast<int>(m_layers.size())) {
         insertIdx = static_cast<int>(m_layers.size());
     }
-    m_layers.insert(m_layers.begin() + insertIdx, panel);
 
-    // コマフォルダ内に初期描画用ラスターレイヤーを1枚作成
+    // コマフォルダ内に初期描画用ラスターレイヤーを1枚作成（フォルダーの直下階層として配置）
     auto innerLayer = std::make_shared<Layer>("レイヤー 1", m_width, m_height, LayerType::Raster);
-    m_layers.insert(m_layers.begin() + insertIdx + 1, innerLayer);
-    setLayerParentGroup(insertIdx + 1, panel);
+    m_layers.insert(m_layers.begin() + insertIdx, innerLayer);
 
-    m_activeLayerIndex = insertIdx + 1;
+    // コマフォルダ本体を子レイヤーの上位インデックスに配置（UI上でフォルダーの下に子レイヤーが表示される）
+    m_layers.insert(m_layers.begin() + insertIdx + 1, panel);
+    setLayerParentGroup(insertIdx, panel);
+
+    m_activeLayerIndex = insertIdx;
 
     emit layerListChanged();
     emit activeLayerChanged(m_activeLayerIndex);
@@ -1460,11 +1462,10 @@ bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const 
         insertIdx++;
     }
 
-    m_layers.insert(m_layers.begin() + insertIdx, newPanel);
-
     auto innerLayer = std::make_shared<Layer>("レイヤー 1", m_width, m_height, LayerType::Raster);
-    m_layers.insert(m_layers.begin() + insertIdx + 1, innerLayer);
-    setLayerParentGroup(insertIdx + 1, newPanel);
+    m_layers.insert(m_layers.begin() + insertIdx, innerLayer);
+    m_layers.insert(m_layers.begin() + insertIdx + 1, newPanel);
+    setLayerParentGroup(insertIdx, newPanel);
 
     emit layerListChanged();
     emit documentUpdated(QRect(0, 0, m_width, m_height));

@@ -38,6 +38,16 @@ void testPanelFolderCreation() {
     assert(child != nullptr);
     assert(child->parentGroup() == panel);
 
+    // レイヤー順序: panel (上位) が child (直下) にあることを検証（UI上でフォルダーの下に子レイヤーが来る）
+    int panelIdx = -1;
+    int childIdx = -1;
+    for (size_t i = 0; i < doc.layers().size(); ++i) {
+        if (doc.layers()[i] == panel) panelIdx = static_cast<int>(i);
+        if (doc.layers()[i] == child) childIdx = static_cast<int>(i);
+    }
+    assert(panelIdx > childIdx);
+    assert(panelIdx == childIdx + 1);
+
     // findPanelFolderAt のテスト
     auto found = doc.findPanelFolderAt(QPointF(100, 100));
     assert(found == panel);
