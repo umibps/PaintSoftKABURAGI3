@@ -29,6 +29,8 @@ public:
     float marginHorizontal() const;
     float marginVertical() const;
     bool snapToBleed() const;
+    bool linkAdjacentPanels() const;
+    void setLinkAdjacentPanels(bool enable);
 
     // 表示状態の取得
     bool isBorderGroupVisible() const;
@@ -58,6 +60,7 @@ private:
     QDoubleSpinBox* m_marginHSpin = nullptr;
     QDoubleSpinBox* m_marginVSpin = nullptr;
     QCheckBox* m_snapToBleedCheck = nullptr;
+    QCheckBox* m_linkAdjacentPanelsCheck = nullptr;
 };
 
 } // namespace Kaburagi

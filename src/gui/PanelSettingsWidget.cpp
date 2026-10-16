@@ -71,6 +71,11 @@ void PanelSettingsWidget::setupUI() {
     m_snapToBleedCheck->setChecked(true);
     mainLayout->addWidget(m_snapToBleedCheck);
 
+    // 隣接コマ連動（共通設定）
+    m_linkAdjacentPanelsCheck = new QCheckBox("隣接するコマ枠を連動 (間隔を維持)", this);
+    m_linkAdjacentPanelsCheck->setChecked(true);
+    mainLayout->addWidget(m_linkAdjacentPanelsCheck);
+
     mainLayout->addStretch();
 
     // シグナル接続
@@ -80,6 +85,7 @@ void PanelSettingsWidget::setupUI() {
     connect(m_marginHSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &PanelSettingsWidget::settingsChanged);
     connect(m_marginVSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &PanelSettingsWidget::settingsChanged);
     connect(m_snapToBleedCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
+    connect(m_linkAdjacentPanelsCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
 }
 
 void PanelSettingsWidget::setToolType(ToolType tool) {
@@ -137,6 +143,16 @@ float PanelSettingsWidget::marginVertical() const {
 
 bool PanelSettingsWidget::snapToBleed() const {
     return m_snapToBleedCheck ? m_snapToBleedCheck->isChecked() : true;
+}
+
+bool PanelSettingsWidget::linkAdjacentPanels() const {
+    return m_linkAdjacentPanelsCheck ? m_linkAdjacentPanelsCheck->isChecked() : true;
+}
+
+void PanelSettingsWidget::setLinkAdjacentPanels(bool enable) {
+    if (m_linkAdjacentPanelsCheck) {
+        m_linkAdjacentPanelsCheck->setChecked(enable);
+    }
 }
 
 void PanelSettingsWidget::setFromPanel(const GroupLayer* panel) {

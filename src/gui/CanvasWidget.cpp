@@ -4363,6 +4363,35 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                     m_panelModifyStartDocPos = docPt;
                     m_panelOrigPolygon = poly;
                     m_editingPanel = targetPanel;
+                    m_linkedPanelVertices.clear();
+
+                    if (m_panelSettings && m_panelSettings->linkAdjacentPanels() && m_document) {
+                        float mx = m_panelSettings->marginHorizontal();
+                        float my = m_panelSettings->marginVertical();
+                        float maxDx = std::max(50.0f, mx * 1.8f);
+                        float maxDy = std::max(50.0f, my * 1.8f);
+
+                        QPointF p0 = poly[hitVertex];
+                        for (const auto& layer : m_document->layers()) {
+                            auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+                            if (!grp || !grp->isPanelFolder() || grp == targetPanel) continue;
+                            const auto& otherPoly = grp->panelPolygon();
+                            for (int k = 0; k < otherPoly.size(); ++k) {
+                                QPointF q = otherPoly[k];
+                                float dx = std::abs(q.x() - p0.x());
+                                float dy = std::abs(q.y() - p0.y());
+                                if (dx <= maxDx && dy <= maxDy) {
+                                    LinkedPanelVertex lv;
+                                    lv.panel = grp;
+                                    lv.vertexIndex = k;
+                                    lv.origPolygon = otherPoly;
+                                    lv.origPos = q;
+                                    m_linkedPanelVertices.push_back(lv);
+                                }
+                            }
+                        }
+                    }
+
                     if (m_panelSettings) m_panelSettings->setFromPanel(targetPanel.get());
                     update();
                     event->accept();
@@ -5207,9 +5236,20 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         if (m_isModifyingPanel && m_editingPanel) {
             if (m_panelDragHandle == PanelHandle::Vertex && m_panelDragIndex >= 0 &&
                 m_panelDragIndex < m_panelOrigPolygon.size()) {
+                QPointF newPt = snapToBleed(m_cursorDocPos);
+                QPointF delta = newPt - m_panelOrigPolygon[m_panelDragIndex];
+
                 QPolygonF cur = m_panelOrigPolygon;
-                cur[m_panelDragIndex] = snapToBleed(m_cursorDocPos);
+                cur[m_panelDragIndex] = newPt;
                 m_editingPanel->setPanelPolygon(cur);
+
+                for (const auto& lv : m_linkedPanelVertices) {
+                    if (!lv.panel || lv.vertexIndex < 0 || lv.vertexIndex >= lv.origPolygon.size()) continue;
+                    QPolygonF otherCur = lv.origPolygon;
+                    otherCur[lv.vertexIndex] = lv.origPos + delta;
+                    lv.panel->setPanelPolygon(otherCur);
+                }
+
                 m_document->composite();
                 update();
                 event->accept();
@@ -5913,6 +5953,23 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             m_isModifyingPanel = false;
             m_panelDragHandle = PanelHandle::None;
             m_panelDragIndex = -1;
+
+            if (m_editingPanel && m_document && m_document->undoStack()) {
+                std::vector<PanelPolygonSnapshot> snapshots;
+                if (m_editingPanel->panelPolygon() != m_panelOrigPolygon) {
+                    snapshots.push_back({m_editingPanel, m_panelOrigPolygon, m_editingPanel->panelPolygon()});
+                }
+                for (const auto& lv : m_linkedPanelVertices) {
+                    if (lv.panel && lv.panel->panelPolygon() != lv.origPolygon) {
+                        snapshots.push_back({lv.panel, lv.origPolygon, lv.panel->panelPolygon()});
+                    }
+                }
+                if (!snapshots.empty()) {
+                    m_document->undoStack()->push(new ModifyPanelPolygonsCommand(m_document, std::move(snapshots)));
+                }
+            }
+            m_linkedPanelVertices.clear();
+
             if (m_document) m_document->composite();
             update();
             event->accept();

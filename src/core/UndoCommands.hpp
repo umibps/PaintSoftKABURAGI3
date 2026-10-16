@@ -434,4 +434,27 @@ private:
     bool m_firstRun = true;
 };
 
+struct PanelPolygonSnapshot {
+    std::shared_ptr<GroupLayer> panel;
+    QPolygonF oldPoly;
+    QPolygonF newPoly;
+};
+
+/**
+ * @brief コマ枠ポリゴン変形 (頂点・辺ドラッグ) の元に戻す/やり直しコマンド
+ */
+class ModifyPanelPolygonsCommand : public QUndoCommand {
+public:
+    ModifyPanelPolygonsCommand(Document* doc, std::vector<PanelPolygonSnapshot> snapshots,
+                               const QString& text = "コマ枠変形", QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    std::vector<PanelPolygonSnapshot> m_snapshots;
+    bool m_firstRun = true;
+};
+
 } // namespace Kaburagi

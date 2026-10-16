@@ -745,6 +745,14 @@ private:
     QPolygonF m_panelOrigPolygon;
     std::shared_ptr<GroupLayer> m_editingPanel;
 
+    struct LinkedPanelVertex {
+        std::shared_ptr<GroupLayer> panel;
+        int vertexIndex = -1;
+        QPolygonF origPolygon;
+        QPointF origPos;
+    };
+    std::vector<LinkedPanelVertex> m_linkedPanelVertices;
+
     PanelSettingsWidget* m_panelSettings = nullptr;
     QPointF snapToBleed(const QPointF& pt, float threshold = 15.0f) const;
     void renderPanelOverlay(QPainter& painter);

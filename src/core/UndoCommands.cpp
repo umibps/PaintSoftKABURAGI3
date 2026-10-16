@@ -750,4 +750,41 @@ void CanvasTransformCommand::redo() {
     m_doc->applyCanvasTransform(m_newW, m_newH, m_newSnapshots, m_newSel);
 }
 
+// ----------------------------------------------------------------------------
+// ModifyPanelPolygonsCommand
+// ----------------------------------------------------------------------------
+ModifyPanelPolygonsCommand::ModifyPanelPolygonsCommand(Document* doc,
+                                                       std::vector<PanelPolygonSnapshot> snapshots,
+                                                       const QString& text,
+                                                       QUndoCommand* parent)
+    : QUndoCommand(text, parent)
+    , m_doc(doc)
+    , m_snapshots(std::move(snapshots))
+{
+}
+
+void ModifyPanelPolygonsCommand::undo() {
+    if (!m_doc) return;
+    for (const auto& s : m_snapshots) {
+        if (s.panel) {
+            s.panel->setPanelPolygon(s.oldPoly);
+        }
+    }
+    m_doc->composite();
+}
+
+void ModifyPanelPolygonsCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc) return;
+    for (const auto& s : m_snapshots) {
+        if (s.panel) {
+            s.panel->setPanelPolygon(s.newPoly);
+        }
+    }
+    m_doc->composite();
+}
+
 } // namespace Kaburagi

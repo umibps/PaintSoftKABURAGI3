@@ -385,6 +385,122 @@ void testPanelFoldersUndoAndHierarchy() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testLinkedPanelVertices() {
+    std::cout << "[TEST] 9. Linked Panel Vertices Editing..." << std::endl;
+
+    Document doc(120, 120);
+
+    // 2x2 コマ作成
+    // makePoly: topLeft, topRight, bottomRight, bottomLeft
+    auto makePoly = [](double x, double y, double w, double h) {
+        QPolygonF p;
+        p << QPointF(x, y) << QPointF(x + w, y) << QPointF(x + w, y + h) << QPointF(x, y + h);
+        return p;
+    };
+
+    // コマ1 (右上: x=60, y=20, w=40, h=40) -> bottomLeft = (60, 60)
+    // コマ2 (左上: x=10, y=20, w=40, h=40) -> bottomRight = (50, 60)
+    // コマ3 (右下: x=60, y=70, w=40, h=40) -> topLeft = (60, 70)
+    // コマ4 (左下: x=10, y=70, w=40, h=40) -> topRight = (50, 70)
+    std::vector<Document::PanelCreationSpec> specs = {
+        {makePoly(60, 20, 40, 40), 1.0f, Qt::black, true, "コマ 1"},
+        {makePoly(10, 20, 40, 40), 1.0f, Qt::black, true, "コマ 2"},
+        {makePoly(60, 70, 40, 40), 1.0f, Qt::black, true, "コマ 3"},
+        {makePoly(10, 70, 40, 40), 1.0f, Qt::black, true, "コマ 4"}
+    };
+    auto panels = doc.addPanelFolders(specs);
+    assert(panels.size() == 4);
+
+    PanelSettingsWidget settings;
+    assert(settings.linkAdjacentPanels() == true);
+    settings.setLinkAdjacentPanels(false);
+    assert(settings.linkAdjacentPanels() == false);
+    settings.setLinkAdjacentPanels(true);
+
+    // コマ1の bottomLeft (index 3) を基準に隣接頂点を検出
+    auto p1 = panels[0];
+    QPointF p0 = p1->panelPolygon()[3]; // (60, 60)
+    assert(p0 == QPointF(60, 60));
+
+    float mx = 10.0f;
+    float my = 10.0f;
+    float maxDx = std::max(50.0f, mx * 1.8f);
+    float maxDy = std::max(50.0f, my * 1.8f);
+
+    struct Found {
+        std::shared_ptr<GroupLayer> panel;
+        int idx;
+        QPointF pt;
+    };
+    std::vector<Found> linked;
+
+    for (const auto& layer : doc.layers()) {
+        auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+        if (!grp || !grp->isPanelFolder() || grp == p1) continue;
+        const auto& otherPoly = grp->panelPolygon();
+        for (int k = 0; k < otherPoly.size(); ++k) {
+            QPointF q = otherPoly[k];
+            float dx = std::abs(q.x() - p0.x());
+            float dy = std::abs(q.y() - p0.y());
+            if (dx <= maxDx && dy <= maxDy) {
+                linked.push_back({grp, k, q});
+            }
+        }
+    }
+
+    // コマ2の bottomRight(index 2), コマ3の topLeft(index 0), コマ4の topRight(index 1) の3つが検出される
+    assert(linked.size() == 3);
+
+    // +5, +8 移動
+    QPointF delta(5, 8);
+    std::vector<PanelPolygonSnapshot> snapshots;
+    QPolygonF oldP1 = p1->panelPolygon();
+    QPolygonF newP1 = oldP1;
+    newP1[3] += delta;
+    p1->setPanelPolygon(newP1);
+    snapshots.push_back({p1, oldP1, newP1});
+
+    for (const auto& l : linked) {
+        QPolygonF oldPoly = l.panel->panelPolygon();
+        QPolygonF newPoly = oldPoly;
+        newPoly[l.idx] += delta;
+        l.panel->setPanelPolygon(newPoly);
+        snapshots.push_back({l.panel, oldPoly, newPoly});
+    }
+
+    // 移動後の間隔検証
+    // コマ1とコマ2の水平間隔
+    double distH_after = p1->panelPolygon()[3].x() - panels[1]->panelPolygon()[2].x();
+    assert(std::abs(distH_after - 10.0) < 1e-4);
+
+    // コマ1とコマ3の垂直間隔
+    double distV_after = panels[2]->panelPolygon()[0].y() - p1->panelPolygon()[3].y();
+    assert(std::abs(distV_after - 10.0) < 1e-4);
+
+    // コマ4の対角位置関係も維持
+    assert(panels[3]->panelPolygon()[1] == QPointF(55, 78));
+
+    // ModifyPanelPolygonsCommand による Undo / Redo 検証
+    doc.undoStack()->push(new ModifyPanelPolygonsCommand(&doc, snapshots));
+    assert(doc.undoStack()->canUndo() == true);
+
+    // Undo 実行
+    doc.undoStack()->undo();
+    assert(p1->panelPolygon()[3] == QPointF(60, 60));
+    assert(panels[1]->panelPolygon()[2] == QPointF(50, 60));
+    assert(panels[2]->panelPolygon()[0] == QPointF(60, 70));
+    assert(panels[3]->panelPolygon()[1] == QPointF(50, 70));
+
+    // Redo 実行
+    doc.undoStack()->redo();
+    assert(p1->panelPolygon()[3] == QPointF(65, 68));
+    assert(panels[1]->panelPolygon()[2] == QPointF(55, 68));
+    assert(panels[2]->panelPolygon()[0] == QPointF(65, 78));
+    assert(panels[3]->panelPolygon()[1] == QPointF(55, 78));
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
@@ -398,6 +514,7 @@ int main(int argc, char* argv[]) {
     testPanelSettingsWidget();
     testNewPanelDialog();
     testPanelFoldersUndoAndHierarchy();
+    testLinkedPanelVertices();
 
     std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
