@@ -16,6 +16,7 @@
 #include "ThreeDModel.hpp"
 #include "Document.hpp"
 #include "Layer.hpp"
+#include "DocumentSerializer.hpp"
 #include "MainWindow.hpp"
 
 using namespace Kaburagi;

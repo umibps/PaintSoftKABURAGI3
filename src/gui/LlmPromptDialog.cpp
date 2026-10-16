@@ -410,7 +410,8 @@ void LlmPromptDialog::onGenerateClicked() {
     if (refine) {
         m_llmService->refinePrompt(cfg, m_existingPrompt, m_existingNegative, req, style);
     } else {
-        m_llmService->generatePrompt(cfg, idea, style, m_existingPrompt);
+        // 新規考案モードでは前回のプロンプトを渡さず、入力されたアイデアのみから真っ新に考案する
+        m_llmService->generatePrompt(cfg, idea, style, QString());
     }
 }
 
