@@ -25,6 +25,11 @@ public:
     bool isKeepAspect() const;
     void setKeepAspect(bool keep);
     void swapDimensions();
+    bool isClipToHiddenBase() const;
+    void setClipToHiddenBase(bool clip);
+
+public slots:
+    void accept() override;
 
 private slots:
     void onPresetChanged(int index);
@@ -35,7 +40,6 @@ private slots:
     void onHeightChanged(int h);
     void onKeepAspectToggled(bool checked);
     void onSwapDimensions();
-    void accept() override;
 
 private:
     void loadSettings();
@@ -51,6 +55,7 @@ private:
     QComboBox* m_bgModeCombo = nullptr;
     QPushButton* m_bgColorBtn = nullptr;
     QPushButton* m_bg2ColorBtn = nullptr;
+    QCheckBox* m_clipToHiddenBaseCheck = nullptr;
 
     double m_aspectRatio = 1600.0 / 1200.0;
     bool m_updatingSpin = false;

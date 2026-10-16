@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) {
 
     doc->setPrimaryBackgroundColor(QColor(250, 240, 230));
     doc->setSecondaryBackgroundColor(QColor(100, 150, 200));
+    doc->setClipToHiddenBaseLayer(false);
     doc->switchBackgroundColor(); // Switch to secondary
     assert(doc->isSecondaryBgColorActive() == true);
     assert(doc->backgroundLayer()->tileManager().getPixel(0, 0) == 0xFF6496C8);
@@ -120,6 +121,7 @@ int main(int argc, char* argv[]) {
     loadedDoc->switchBackgroundColor();
     assert(loadedDoc->isSecondaryBgColorActive() == false);
     assert(loadedDoc->backgroundLayer()->tileManager().getPixel(0, 0) == 0xFFFAF0E6);
+    assert(loadedDoc->isClipToHiddenBaseLayerEnabled() == false);
     assert(loadedDoc->hasSelection());
     assert(loadedDoc->selection().boundingRect() == QRectF(10, 10, 80, 80));
 

@@ -93,6 +93,15 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
 
     mainLayout->addWidget(bgGroup);
 
+    // 詳細設定・オプション
+    auto optGroup = new QGroupBox("詳細オプション", this);
+    auto optLayout = new QVBoxLayout(optGroup);
+    m_clipToHiddenBaseCheck = new QCheckBox("下のレイヤーが非表示でもクリッピングマスクを有効(&C)", optGroup);
+    m_clipToHiddenBaseCheck->setObjectName("clipToHiddenBaseCheck");
+    m_clipToHiddenBaseCheck->setChecked(true);
+    optLayout->addWidget(m_clipToHiddenBaseCheck);
+    mainLayout->addWidget(optGroup);
+
     // ボタン
     auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     buttonBox->button(QDialogButtonBox::Ok)->setText("OK");
@@ -137,6 +146,12 @@ void NewCanvasDialog::loadSettings() {
     QString bg2ColorStr = settings.value("bg2Color", "#ffffff").toString();
     m_secondaryBgColor = QColor(bg2ColorStr);
     if (!m_secondaryBgColor.isValid()) m_secondaryBgColor = Qt::white;
+
+    bool clipHidden = settings.value("clipToHiddenBase", true).toBool();
+    if (m_clipToHiddenBaseCheck) {
+        m_clipToHiddenBaseCheck->setChecked(clipHidden);
+    }
+
     settings.endGroup();
     m_updatingSpin = false;
 
@@ -153,6 +168,9 @@ void NewCanvasDialog::saveSettings() {
     settings.setValue("bgMode", m_bgModeCombo->currentIndex());
     settings.setValue("bgColor", m_customBgColor.name(QColor::HexArgb));
     settings.setValue("bg2Color", m_secondaryBgColor.name(QColor::HexArgb));
+    if (m_clipToHiddenBaseCheck) {
+        settings.setValue("clipToHiddenBase", m_clipToHiddenBaseCheck->isChecked());
+    }
     settings.endGroup();
 }
 
@@ -323,6 +341,16 @@ void NewCanvasDialog::updateColorButtons() {
         .arg(m_secondaryBgColor.name())
         .arg(m_secondaryBgColor.lightness() > 128 ? "#000000" : "#ffffff"));
     m_bg2ColorBtn->setText(QString("第2背景色: %1").arg(m_secondaryBgColor.name()));
+}
+
+bool NewCanvasDialog::isClipToHiddenBase() const {
+    return m_clipToHiddenBaseCheck ? m_clipToHiddenBaseCheck->isChecked() : true;
+}
+
+void NewCanvasDialog::setClipToHiddenBase(bool clip) {
+    if (m_clipToHiddenBaseCheck) {
+        m_clipToHiddenBaseCheck->setChecked(clip);
+    }
 }
 
 } // namespace Kaburagi

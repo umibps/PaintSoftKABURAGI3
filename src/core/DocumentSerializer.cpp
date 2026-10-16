@@ -153,6 +153,8 @@ bool DocumentSerializer::saveToFile(const Document* document, const QString& fil
     stream << document->secondaryBackgroundColor();
     stream << document->isSecondaryBgColorActive();
     stream << document->selection();
+    // Version 6: 非表示ベースレイヤーへのクリッピングマスク有効化フラグ
+    stream << document->isClipToHiddenBaseLayerEnabled();
 
     // 4. 各レイヤーのシリアライズ
     for (qint32 i = 0; i < layerCount; ++i) {
@@ -392,11 +394,17 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
     QPainterPath selectionPath;
     stream >> selectionPath;
 
+    bool clipToHiddenBase = true;
+    if (version >= 6) {
+        stream >> clipToHiddenBase;
+    }
+
     // ドキュメント初期化 (デフォルトレイヤー作成を抑制)
     auto doc = new Document(width, height, dpi, false, priBgColor, parent);
     doc->setPrimaryBackgroundColor(priBgColor);
     doc->setSecondaryBackgroundColor(secBgColor);
     doc->setBackgroundColorActive(isSecActive);
+    doc->setClipToHiddenBaseLayer(clipToHiddenBase);
     if (!selectionPath.isEmpty()) {
         doc->setSelection(selectionPath);
     }

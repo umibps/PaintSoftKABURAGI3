@@ -11,7 +11,7 @@ class Document;
 class DocumentSerializer {
 public:
     static constexpr quint32 KAB_MAGIC = 0x4B414255; // 'KABU'
-    static constexpr quint32 KAB_VERSION = 5;
+    static constexpr quint32 KAB_VERSION = 6;
 
     static bool saveToFile(const Document* document, const QString& filePath, QString* outErrorMessage = nullptr);
     static Document* loadFromFile(const QString& filePath, QObject* parent = nullptr, QString* outErrorMessage = nullptr);

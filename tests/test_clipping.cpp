@@ -7,7 +7,9 @@
 #include "LayerPanelWidget.hpp"
 #include "MainWindow.hpp"
 #include "CanvasWidget.hpp"
+#include "NewCanvasDialog.hpp"
 #include <QToolButton>
+#include <QCheckBox>
 
 using namespace Kaburagi;
 
@@ -153,11 +155,13 @@ int main(int argc, char** argv) {
 
         std::cout << "[PASS] Consecutive clipping rendering verified: all clipped to Base!" << std::endl;
 
-        // 5. ベースレイヤー非表示時の検証 (ベースが非表示でも下のレイヤーの形状でクリッピング描画される)
+        // 5. ベースレイヤー非表示時の検証
         baseLayer->setVisible(false);
-        doc.composite();
 
-        // ベースレイヤーの範囲内 (30, 30) -> ベースが非表示でも、クリッピング先(緑)がマスクされて描画される！
+        // A: doc.isClipToHiddenBaseLayerEnabled() == true (デフォルト)
+        // -> ベースが非表示でも、クリッピング先(緑)がマスクされて描画される！
+        assert(doc.isClipToHiddenBaseLayerEnabled() == true);
+        doc.composite();
         QColor cHidden = doc.compositeBuffer().getPixel(30, 30);
         assert(cHidden.alpha() == 255);
         assert(cHidden.green() == 255 && cHidden.red() == 0);
@@ -165,8 +169,23 @@ int main(int argc, char** argv) {
         // ベースレイヤーの範囲外 (15, 15) -> クリッピングにより透明のまま！
         QColor cOuterHidden = doc.compositeBuffer().getPixel(15, 15);
         assert(cOuterHidden.alpha() == 0);
+        std::cout << "[PASS] Base layer hidden with clipToHiddenBaseLayer=true renders clipped layers!" << std::endl;
 
-        std::cout << "[PASS] Base layer hidden clips and renders clipped layers successfully!" << std::endl;
+        // B: doc.setClipToHiddenBaseLayer(false)
+        // -> ベース非表示時のクリッピングが無効になるため、(30, 30) も含めて描画されない（透明）！
+        doc.setClipToHiddenBaseLayer(false);
+        assert(doc.isClipToHiddenBaseLayerEnabled() == false);
+        QColor cDisabled = doc.compositeBuffer().getPixel(30, 30);
+        assert(cDisabled.alpha() == 0);
+        std::cout << "[PASS] Base layer hidden with clipToHiddenBaseLayer=false skips clipped layers!" << std::endl;
+
+        // C: 再び true に戻すと描画が復活！
+        doc.setClipToHiddenBaseLayer(true);
+        assert(doc.isClipToHiddenBaseLayerEnabled() == true);
+        QColor cRestored = doc.compositeBuffer().getPixel(30, 30);
+        assert(cRestored.alpha() == 255);
+        assert(cRestored.green() == 255 && cRestored.red() == 0);
+        std::cout << "[PASS] Base layer hidden clips and restores dynamically!" << std::endl;
     }
 
     // 6. UIチェックボックスとデリゲートのテスト
@@ -205,6 +224,70 @@ int main(int argc, char** argv) {
         assert(!flipBtn->isChecked());
 
         std::cout << "[PASS] Flip button toggle interaction verified!" << std::endl;
+    }
+
+    // 8. NewCanvasDialog および MainWindow キャンバスメニューの連携テスト
+    {
+        std::cout << "[TEST 6] Testing NewCanvasDialog and MainWindow clipToHiddenBaseAction..." << std::endl;
+
+        // --- NewCanvasDialog ---
+        {
+            NewCanvasDialog dlg;
+            // デフォルトは有効 (true)
+            dlg.setClipToHiddenBase(true);
+            assert(dlg.isClipToHiddenBase() == true);
+
+            // OFF に切り替えて accept() で保存
+            dlg.setClipToHiddenBase(false);
+            assert(dlg.isClipToHiddenBase() == false);
+            dlg.accept();
+
+            // 新規インスタンスで OFF が復元されることを確認
+            NewCanvasDialog dlg2;
+            assert(dlg2.isClipToHiddenBase() == false);
+
+            // 再び ON に戻して保存
+            dlg2.setClipToHiddenBase(true);
+            dlg2.accept();
+
+            NewCanvasDialog dlg3;
+            assert(dlg3.isClipToHiddenBase() == true);
+            std::cout << "[PASS] NewCanvasDialog clipToHiddenBase settings persistence verified!" << std::endl;
+        }
+
+        // --- MainWindow キャンバスメニュー ---
+        {
+            MainWindow win;
+            auto clipAct = win.clipToHiddenBaseAction();
+            assert(clipAct != nullptr);
+            assert(clipAct->isCheckable());
+            // ドキュメント未ロード時は無効化
+            assert(!clipAct->isEnabled());
+
+            // ドキュメントをロード
+            auto doc = new Document(100, 100);
+            doc->setClipToHiddenBaseLayer(true);
+            win.setDocumentForTest(doc);
+
+            assert(clipAct->isEnabled());
+            assert(clipAct->isChecked() == true);
+
+            // メニューアクションを実行 (トグル) -> OFF
+            clipAct->trigger();
+            assert(doc->isClipToHiddenBaseLayerEnabled() == false);
+            assert(clipAct->isChecked() == false);
+
+            // もう一度実行 -> ON
+            clipAct->trigger();
+            assert(doc->isClipToHiddenBaseLayerEnabled() == true);
+            assert(clipAct->isChecked() == true);
+
+            // ドキュメント側の変更がメニューに反映されることを確認
+            doc->setClipToHiddenBaseLayer(false);
+            assert(clipAct->isChecked() == false);
+
+            std::cout << "[PASS] MainWindow canvas menu clipToHiddenBaseAction toggle verified!" << std::endl;
+        }
     }
 
     std::cout << "[ALL LAYER CLIPPING TESTS PASSED SUCCESSFULLY!]" << std::endl;

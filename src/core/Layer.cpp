@@ -35,13 +35,13 @@ float Layer::effectiveOpacity() const {
     return op;
 }
 
-void Layer::renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer) {
+void Layer::renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer, bool clipToHiddenBase) {
     if (!m_visible || m_opacity <= 0.0f) return;
 
     // クリッピングマスクが有効な場合
     if (m_isClippingMask) {
-        if (!baseLayer || baseLayer->effectiveOpacity() <= 0.0f) {
-            // ベースレイヤーが存在しない、または不透明度が0なら描画しない
+        if (!baseLayer || (!clipToHiddenBase && !baseLayer->isVisible()) || baseLayer->effectiveOpacity() <= 0.0f) {
+            // ベースレイヤーが存在しない、非表示クリッピング無効時にベース非表示、または不透明度が0なら描画しない
             return;
         }
     }

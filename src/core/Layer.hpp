@@ -63,7 +63,7 @@ public:
     bool effectiveVisible() const;
     float effectiveOpacity() const;
 
-    virtual void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr);
+    virtual void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr, bool clipToHiddenBase = true);
     virtual void translate(int dx, int dy);
     virtual QImage createThumbnail(int width = 36, int height = 28) const;
 

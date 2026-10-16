@@ -47,7 +47,7 @@ public:
     // グループバッファのクリア
     void clearTileBuffer(const QRect& dirtyRect);
 
-    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr) override;
+    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr, bool clipToHiddenBase = true) override;
     void translate(int dx, int dy) override;
     QRect contentBounds() const override;
 

@@ -967,7 +967,7 @@ void Document::composite(const QRect& dirtyRect) {
             const auto& layer = m_layers[i];
             if (layer->parentGroup() == grp && layer->isVisible()) {
                 auto baseLayer = findClippingBaseLayer(static_cast<int>(i));
-                layer->renderToTarget(grp->tileManager(), targetRect, baseLayer.get());
+                layer->renderToTarget(grp->tileManager(), targetRect, baseLayer.get(), m_clipToHiddenBaseLayer);
             }
         }
         if (grp->isPanelFolder()) {
@@ -995,7 +995,7 @@ void Document::composite(const QRect& dirtyRect) {
         const auto& layer = m_layers[i];
         if (!layer->parentGroup() && layer->isVisible()) {
             auto baseLayer = findClippingBaseLayer(static_cast<int>(i));
-            layer->renderToTarget(m_compositeBuffer, targetRect, baseLayer.get());
+            layer->renderToTarget(m_compositeBuffer, targetRect, baseLayer.get(), m_clipToHiddenBaseLayer);
         }
     }
 
@@ -1854,6 +1854,13 @@ void Document::setColorMode(CanvasColorMode mode) {
 
     composite(QRect(0, 0, m_width, m_height));
     emit colorModeChanged(m_colorMode);
+}
+
+void Document::setClipToHiddenBaseLayer(bool enabled) {
+    if (m_clipToHiddenBaseLayer == enabled) return;
+    m_clipToHiddenBaseLayer = enabled;
+    composite(QRect(0, 0, m_width, m_height));
+    emit clipToHiddenBaseLayerChanged(m_clipToHiddenBaseLayer);
 }
 
 std::vector<CanvasLayerSnapshot> Document::snapshotAllLayers() const {

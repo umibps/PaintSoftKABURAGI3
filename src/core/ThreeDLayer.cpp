@@ -56,14 +56,14 @@ void ThreeDLayer::updateRenderCache() {
     invalidateContentBounds();
 }
 
-void ThreeDLayer::renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer) {
+void ThreeDLayer::renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer, bool clipToHiddenBase) {
     if (!effectiveVisible()) return;
 
     if (m_isDirty || m_cachedImage.isNull()) {
         updateRenderCache();
     }
 
-    Layer::renderToTarget(target, dirtyRect, baseLayer);
+    Layer::renderToTarget(target, dirtyRect, baseLayer, clipToHiddenBase);
 }
 
 QImage ThreeDLayer::createThumbnail(int width, int height) const {

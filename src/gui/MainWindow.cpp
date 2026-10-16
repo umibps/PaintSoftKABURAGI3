@@ -344,6 +344,19 @@ void MainWindow::createMenuBar() {
     m_colorModeCmykNativeAction->setCheckable(true);
     m_colorModeGroup->addAction(m_colorModeCmykNativeAction);
 
+    canvasMenu->addSeparator();
+
+    m_clipToHiddenBaseAction = canvasMenu->addAction(tr("下のレイヤーが非表示でもクリッピングマスクを有効(&H)"), this, [this](bool checked) {
+        if (m_document) {
+            m_document->setClipToHiddenBaseLayer(checked);
+            if (m_canvasWidget) {
+                m_canvasWidget->update();
+            }
+            statusBar()->showMessage(checked ? tr("下のレイヤーが非表示でもクリッピングマスクを有効にしました。") : tr("下のレイヤーが非表示でもクリッピングマスクを無効にしました。"), 3000);
+        }
+    });
+    m_clipToHiddenBaseAction->setCheckable(true);
+
     connect(canvasMenu, &QMenu::aboutToShow, this, &MainWindow::updateCanvasMenuActions);
     updateCanvasMenuActions();
 
@@ -2981,6 +2994,10 @@ void MainWindow::setupDocument(Document* doc) {
         if (m_navigator) m_navigator->setDocument(m_document);
         if (m_previewWindow) m_previewWindow->setDocument(m_document);
     });
+
+    connect(m_document, &Document::clipToHiddenBaseLayerChanged, this, [this](bool) {
+        updateCanvasMenuActions();
+    });
     updateCanvasMenuActions();
 }
 
@@ -3014,6 +3031,16 @@ void MainWindow::updateCanvasMenuActions() {
     if (m_rotate180Action) m_rotate180Action->setEnabled(hasDoc);
     if (m_flipCanvasHAction) m_flipCanvasHAction->setEnabled(hasDoc);
     if (m_flipCanvasVAction) m_flipCanvasVAction->setEnabled(hasDoc);
+    if (m_clipToHiddenBaseAction) {
+        m_clipToHiddenBaseAction->setEnabled(hasDoc);
+        if (hasDoc) {
+            m_clipToHiddenBaseAction->blockSignals(true);
+            m_clipToHiddenBaseAction->setChecked(m_document->isClipToHiddenBaseLayerEnabled());
+            m_clipToHiddenBaseAction->blockSignals(false);
+        } else {
+            m_clipToHiddenBaseAction->setChecked(false);
+        }
+    }
 }
 
 void MainWindow::updateColorModeActions() {
@@ -3167,6 +3194,7 @@ void MainWindow::onNewCanvas() {
     m_currentFilePath.clear();
     auto doc = new Document(dlg.canvasWidth(), dlg.canvasHeight(), dlg.canvasDpi(), true, dlg.backgroundColor(), this);
     doc->setSecondaryBackgroundColor(dlg.secondaryBackgroundColor());
+    doc->setClipToHiddenBaseLayer(dlg.isClipToHiddenBase());
     setupDocument(doc);
     if (m_document->undoStack()) {
         m_document->undoStack()->setClean();

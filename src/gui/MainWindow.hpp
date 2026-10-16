@@ -265,6 +265,9 @@ private:
     QAction* m_colorModeCmykProofAction = nullptr;
     QAction* m_colorModeCmykNativeAction = nullptr;
 
+    // クリッピングマスク非表示ベース参照アクション
+    QAction* m_clipToHiddenBaseAction = nullptr;
+
 public:
     void updateCanvasMenuActions();
     void onChangeCanvasSize();
@@ -276,6 +279,7 @@ public:
     QAction* rotate180Action() const { return m_rotate180Action; }
     QAction* flipCanvasHAction() const { return m_flipCanvasHAction; }
     QAction* flipCanvasVAction() const { return m_flipCanvasVAction; }
+    QAction* clipToHiddenBaseAction() const { return m_clipToHiddenBaseAction; }
     void updateColorModeActions();
     QAction* colorModeRgbAction() const { return m_colorModeRgbAction; }
     QAction* colorModeCmykProofAction() const { return m_colorModeCmykProofAction; }

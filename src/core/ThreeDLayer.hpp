@@ -44,7 +44,7 @@ public:
     QImage extractOpenPoseImage(int width = -1, int height = -1) const;
 
     // レンダリング
-    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr) override;
+    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr, bool clipToHiddenBase = true) override;
     QImage createThumbnail(int width = 36, int height = 28) const override;
     QRect contentBounds() const override;
 

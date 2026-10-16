@@ -74,7 +74,7 @@ public:
     void resetAllLevels();
 
     // 合成処理
-    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr) override;
+    void renderToTarget(TileManager& target, const QRect& dirtyRect, const Layer* baseLayer = nullptr, bool clipToHiddenBase = true) override;
 
     // ヒストグラム算出ユーティリティ (R, G, B, 輝度)
     static void computeHistogram(const TileManager& source, const QRect& bounds,

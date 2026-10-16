@@ -149,6 +149,9 @@ public:
     void flipCanvasHorizontal() { transformCanvas(CanvasTransformType::FlipHorizontal); }
     void flipCanvasVertical() { transformCanvas(CanvasTransformType::FlipVertical); }
 
+    bool isClipToHiddenBaseLayerEnabled() const { return m_clipToHiddenBaseLayer; }
+    void setClipToHiddenBaseLayer(bool enabled);
+
     // キャンバス更新シグナル
 signals:
     void layerListChanged();
@@ -159,12 +162,14 @@ signals:
     void backgroundColorChanged();
     void colorModeChanged(CanvasColorMode mode);
     void canvasResized(int width, int height);
+    void clipToHiddenBaseLayerChanged(bool enabled);
 
 private:
     int m_width;
     int m_height;
     double m_dpi;
     CanvasColorMode m_colorMode = CanvasColorMode::RGB;
+    bool m_clipToHiddenBaseLayer = true;
     QColor m_primaryBgColor = Qt::white;
     QColor m_secondaryBgColor = Qt::white;
     bool m_isSecondaryBgColorActive = false;
