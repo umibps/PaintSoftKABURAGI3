@@ -18,7 +18,7 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
     : QDialog(parent) {
     setWindowTitle("新規キャンバス作成");
     setModal(true);
-    resize(360, 350);
+    resize(380, 350);
 
     auto mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(10);
@@ -53,9 +53,17 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
     m_heightSpin->setValue(1200);
     sizeForm->addRow("高さ(&H):", m_heightSpin);
 
+    auto aspectAndSwapLayout = new QHBoxLayout();
     m_keepAspectCheck = new QCheckBox("縦横比を固定(&K)", this);
     m_keepAspectCheck->setObjectName("keepAspectCheck");
-    sizeForm->addRow(QString(), m_keepAspectCheck);
+
+    m_swapSizeBtn = new QPushButton("⇄ 幅と高さを入れ替え(&X)", this);
+    m_swapSizeBtn->setObjectName("swapSizeBtn");
+    m_swapSizeBtn->setToolTip("幅と高さを入れ替えます");
+
+    aspectAndSwapLayout->addWidget(m_keepAspectCheck);
+    aspectAndSwapLayout->addWidget(m_swapSizeBtn);
+    sizeForm->addRow(QString(), aspectAndSwapLayout);
 
     m_dpiSpin = new QDoubleSpinBox(this);
     m_dpiSpin->setRange(72.0, 1200.0);
@@ -98,6 +106,7 @@ NewCanvasDialog::NewCanvasDialog(QWidget* parent)
     connect(m_widthSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &NewCanvasDialog::onWidthChanged);
     connect(m_heightSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &NewCanvasDialog::onHeightChanged);
     connect(m_keepAspectCheck, &QCheckBox::toggled, this, &NewCanvasDialog::onKeepAspectToggled);
+    connect(m_swapSizeBtn, &QPushButton::clicked, this, &NewCanvasDialog::onSwapDimensions);
     connect(m_bgModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &NewCanvasDialog::onBgModeChanged);
     connect(m_bgColorBtn, &QPushButton::clicked, this, &NewCanvasDialog::onPickBgColor);
     connect(m_bg2ColorBtn, &QPushButton::clicked, this, &NewCanvasDialog::onPickBg2Color);
@@ -187,6 +196,10 @@ void NewCanvasDialog::setKeepAspect(bool keep) {
     }
 }
 
+void NewCanvasDialog::swapDimensions() {
+    onSwapDimensions();
+}
+
 void NewCanvasDialog::onPresetChanged(int index) {
     m_updatingSpin = true;
     switch (index) {
@@ -260,6 +273,18 @@ void NewCanvasDialog::onKeepAspectToggled(bool checked) {
     if (checked && m_heightSpin->value() > 0) {
         m_aspectRatio = static_cast<double>(m_widthSpin->value()) / static_cast<double>(m_heightSpin->value());
     }
+}
+
+void NewCanvasDialog::onSwapDimensions() {
+    m_updatingSpin = true;
+    int w = m_widthSpin->value();
+    int h = m_heightSpin->value();
+    m_widthSpin->setValue(h);
+    m_heightSpin->setValue(w);
+    if (w > 0) {
+        m_aspectRatio = static_cast<double>(h) / static_cast<double>(w);
+    }
+    m_updatingSpin = false;
 }
 
 void NewCanvasDialog::onBgModeChanged(int index) {

@@ -24,6 +24,7 @@ public:
     QColor secondaryBackgroundColor() const;
     bool isKeepAspect() const;
     void setKeepAspect(bool keep);
+    void swapDimensions();
 
 private slots:
     void onPresetChanged(int index);
@@ -33,6 +34,7 @@ private slots:
     void onWidthChanged(int w);
     void onHeightChanged(int h);
     void onKeepAspectToggled(bool checked);
+    void onSwapDimensions();
     void accept() override;
 
 private:
@@ -44,6 +46,7 @@ private:
     QSpinBox* m_widthSpin = nullptr;
     QSpinBox* m_heightSpin = nullptr;
     QCheckBox* m_keepAspectCheck = nullptr;
+    QPushButton* m_swapSizeBtn = nullptr;
     QDoubleSpinBox* m_dpiSpin = nullptr;
     QComboBox* m_bgModeCombo = nullptr;
     QPushButton* m_bgColorBtn = nullptr;

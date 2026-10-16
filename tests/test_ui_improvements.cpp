@@ -2,6 +2,7 @@
 #include <QMouseEvent>
 #include <QSpinBox>
 #include <QCheckBox>
+#include <QPushButton>
 #include <cassert>
 #include <iostream>
 #include "CanvasWidget.hpp"
@@ -277,6 +278,20 @@ int main(int argc, char* argv[]) {
         // Change width to 1000 -> height should become 1800
         widthSpin->setValue(1000);
         assert(heightSpin->value() == 1800);
+
+        // Check swap width and height button
+        auto swapSizeBtn = dlg.findChild<QPushButton*>("swapSizeBtn");
+        assert(swapSizeBtn != nullptr);
+        swapSizeBtn->click();
+        assert(widthSpin->value() == 1800);
+        assert(heightSpin->value() == 1000);
+        assert(dlg.canvasWidth() == 1800);
+        assert(dlg.canvasHeight() == 1000);
+
+        // Aspect ratio is now inverted (1800 / 1000 = 1.8)
+        // Change height to 500 -> width should become 900
+        heightSpin->setValue(500);
+        assert(widthSpin->value() == 900);
 
         std::cout << "  -> PASSED!" << std::endl;
     }
