@@ -41,6 +41,7 @@
 #include "ReferenceImageWindow.hpp"
 #include "CanvasDialogs.hpp"
 #include "MergePanelDialog.hpp"
+#include "SplitPanelDialog.hpp"
 
 namespace Kaburagi {
 
@@ -364,6 +365,9 @@ void MainWindow::createMenuBar() {
 
     m_duplicateLayerAction = layerMenu->addAction(tr("&Duplicate Layer"), this, &MainWindow::onDuplicateLayer);
     m_mergeDownAction = layerMenu->addAction(tr("&Merge Down"), this, &MainWindow::onMergeDown);
+    m_splitPanelVerticalAction = layerMenu->addAction(tr("Split Panel Frame &Vertically"), this, &MainWindow::onSplitPanelVertical);
+    m_splitPanelHorizontalAction = layerMenu->addAction(tr("Split Panel Frame &Horizontally"), this, &MainWindow::onSplitPanelHorizontal);
+    m_splitPanelCustomAction = layerMenu->addAction(tr("&Split Panel Frame..."), this, &MainWindow::onSplitPanelCustom);
     m_mergePanelsAction = layerMenu->addAction(tr("Merge &Panel Frames..."), this, &MainWindow::onMergePanels);
     m_deleteLayerAction = layerMenu->addAction(tr("&Delete Layer"), this, &MainWindow::onDeleteLayer);
 
@@ -1649,6 +1653,9 @@ void MainWindow::setupLayout() {
 
     // コマ設定とキャンバスの連動
     connect(m_panelSettings, &PanelSettingsWidget::settingsChanged, m_canvasWidget, &CanvasWidget::applyPanelSettingsToSelected);
+    connect(m_panelSettings, &PanelSettingsWidget::splitPanelVerticalRequested, this, &MainWindow::onSplitPanelVertical);
+    connect(m_panelSettings, &PanelSettingsWidget::splitPanelHorizontalRequested, this, &MainWindow::onSplitPanelHorizontal);
+    connect(m_panelSettings, &PanelSettingsWidget::splitPanelCustomRequested, this, &MainWindow::onSplitPanelCustom);
     connect(m_panelSettings, &PanelSettingsWidget::mergePanelsRequested, this, &MainWindow::onMergePanels);
 
     // AI アシスタント ドック
@@ -3932,10 +3939,25 @@ void MainWindow::updateLayerMenuActions() {
     if (m_mergeDownAction) {
         m_mergeDownAction->setEnabled(hasDoc && activeIdx > 0);
     }
+    bool isPanel = false;
+    if (activeL) {
+        if (activeL->type() == LayerType::Group && std::dynamic_pointer_cast<GroupLayer>(activeL) &&
+            std::dynamic_pointer_cast<GroupLayer>(activeL)->isPanelFolder()) {
+            isPanel = true;
+        } else if (activeL->parentGroup() && activeL->parentGroup()->isPanelFolder()) {
+            isPanel = true;
+        }
+    }
+    if (m_splitPanelVerticalAction) {
+        m_splitPanelVerticalAction->setEnabled(hasDoc && isPanel);
+    }
+    if (m_splitPanelHorizontalAction) {
+        m_splitPanelHorizontalAction->setEnabled(hasDoc && isPanel);
+    }
+    if (m_splitPanelCustomAction) {
+        m_splitPanelCustomAction->setEnabled(hasDoc && isPanel);
+    }
     if (m_mergePanelsAction) {
-        bool isPanel = activeL && activeL->type() == LayerType::Group &&
-                       std::dynamic_pointer_cast<GroupLayer>(activeL) &&
-                       std::dynamic_pointer_cast<GroupLayer>(activeL)->isPanelFolder();
         m_mergePanelsAction->setEnabled(hasDoc && isPanel);
     }
     if (m_deleteLayerAction) {
@@ -4058,6 +4080,65 @@ void MainWindow::onDuplicateLayer() {
 void MainWindow::onMergeDown() {
     if (m_document && m_document->activeLayerIndex() > 0) {
         m_document->mergeDown(m_document->activeLayerIndex());
+    }
+}
+
+void MainWindow::onSplitPanelVertical() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    auto activePanel = std::dynamic_pointer_cast<GroupLayer>(activeL);
+
+    if (!activePanel && activeL && activeL->parentGroup() && activeL->parentGroup()->isPanelFolder()) {
+        activePanel = activeL->parentGroup();
+    }
+
+    if (!activePanel || !activePanel->isPanelFolder()) {
+        QMessageBox::information(this, tr("コマ枠の分割"), tr("分割対象のコマ枠フォルダを選択してください。"));
+        return;
+    }
+
+    float marginH = m_panelSettings ? m_panelSettings->marginHorizontal() : 20.0f;
+    m_document->splitPanelFolderEqually(activePanel, Qt::Vertical, 2, marginH);
+}
+
+void MainWindow::onSplitPanelHorizontal() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    auto activePanel = std::dynamic_pointer_cast<GroupLayer>(activeL);
+
+    if (!activePanel && activeL && activeL->parentGroup() && activeL->parentGroup()->isPanelFolder()) {
+        activePanel = activeL->parentGroup();
+    }
+
+    if (!activePanel || !activePanel->isPanelFolder()) {
+        QMessageBox::information(this, tr("コマ枠の分割"), tr("分割対象のコマ枠フォルダを選択してください。"));
+        return;
+    }
+
+    float marginV = m_panelSettings ? m_panelSettings->marginVertical() : 40.0f;
+    m_document->splitPanelFolderEqually(activePanel, Qt::Horizontal, 2, marginV);
+}
+
+void MainWindow::onSplitPanelCustom() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    auto activePanel = std::dynamic_pointer_cast<GroupLayer>(activeL);
+
+    if (!activePanel && activeL && activeL->parentGroup() && activeL->parentGroup()->isPanelFolder()) {
+        activePanel = activeL->parentGroup();
+    }
+
+    if (!activePanel || !activePanel->isPanelFolder()) {
+        QMessageBox::information(this, tr("コマ枠の分割"), tr("分割対象のコマ枠フォルダを選択してください。"));
+        return;
+    }
+
+    float marginH = m_panelSettings ? m_panelSettings->marginHorizontal() : 20.0f;
+    float marginV = m_panelSettings ? m_panelSettings->marginVertical() : 40.0f;
+
+    SplitPanelDialog dlg(activePanel, marginH, marginV, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        m_document->splitPanelFolderEqually(activePanel, dlg.orientation(), dlg.splitCount(), dlg.margin());
     }
 }
 

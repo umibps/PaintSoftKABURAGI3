@@ -852,4 +852,82 @@ void MergePanelFoldersCommand::redo() {
     emit m_doc->layerListChanged();
 }
 
+// ----------------------------------------------------------------------------
+// SplitPanelCommand
+// ----------------------------------------------------------------------------
+SplitPanelCommand::SplitPanelCommand(Document* doc,
+                                     std::shared_ptr<GroupLayer> origPanel,
+                                     const QPolygonF& oldPoly,
+                                     const QPolygonF& newPoly,
+                                     std::vector<SplitAddedPanelEntry> addedPanels,
+                                     const QString& text,
+                                     QUndoCommand* parent)
+    : QUndoCommand(text, parent)
+    , m_doc(doc)
+    , m_origPanel(origPanel)
+    , m_oldPoly(oldPoly)
+    , m_newPoly(newPoly)
+    , m_addedPanels(std::move(addedPanels))
+{
+}
+
+void SplitPanelCommand::undo() {
+    if (!m_doc || !m_origPanel) return;
+    m_doc->setUndoRedoInProgress(true);
+
+    // 追加されたパネル・子レイヤーを逆順に削除
+    for (auto it = m_addedPanels.rbegin(); it != m_addedPanels.rend(); ++it) {
+        if (it->panel) {
+            for (int i = 0; i < static_cast<int>(m_doc->layers().size()); ++i) {
+                if (m_doc->layers()[i] == it->panel) {
+                    m_doc->removeLayer(i);
+                    break;
+                }
+            }
+        }
+        if (it->innerLayer) {
+            for (int i = 0; i < static_cast<int>(m_doc->layers().size()); ++i) {
+                if (m_doc->layers()[i] == it->innerLayer) {
+                    m_doc->removeLayer(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    m_origPanel->setPanelPolygon(m_oldPoly);
+
+    m_doc->setUndoRedoInProgress(false);
+    m_doc->composite();
+    emit m_doc->layerListChanged();
+}
+
+void SplitPanelCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc || !m_origPanel) return;
+    m_doc->setUndoRedoInProgress(true);
+
+    m_origPanel->setPanelPolygon(m_newPoly);
+
+    for (const auto& entry : m_addedPanels) {
+        if (entry.innerLayer) {
+            m_doc->insertLayer(entry.insertIndex, entry.innerLayer);
+        }
+        if (entry.panel) {
+            m_doc->insertLayer(entry.insertIndex + 1, entry.panel);
+            if (entry.innerLayer) {
+                entry.innerLayer->setParentGroup(entry.panel);
+                entry.panel->addChild(entry.innerLayer);
+            }
+        }
+    }
+
+    m_doc->setUndoRedoInProgress(false);
+    m_doc->composite();
+    emit m_doc->layerListChanged();
+}
+
 } // namespace Kaburagi

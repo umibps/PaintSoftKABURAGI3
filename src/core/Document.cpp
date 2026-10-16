@@ -1401,7 +1401,11 @@ std::shared_ptr<GroupLayer> Document::findPanelFolderAt(const QPointF& docPt) co
     return nullptr;
 }
 
-bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine, float marginX, float marginY) {
+bool Document::splitPanelFolderInternal(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine,
+                                        float marginX, float marginY,
+                                        std::shared_ptr<GroupLayer>& outNewPanel,
+                                        std::shared_ptr<Layer>& outNewInnerLayer,
+                                        int& outInsertIndex) {
     if (!panel || !panel->isPanelFolder()) return false;
     const QPolygonF& origPoly = panel->panelPolygon();
     if (origPoly.size() < 3) return false;
@@ -1503,6 +1507,121 @@ bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const 
     m_layers.insert(m_layers.begin() + insertIdx + 1, newPanel);
     setLayerParentGroup(insertIdx, newPanel);
 
+    outNewPanel = newPanel;
+    outNewInnerLayer = innerLayer;
+    outInsertIndex = insertIdx;
+    return true;
+}
+
+bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine, float marginX, float marginY) {
+    if (!panel || !panel->isPanelFolder()) return false;
+    QPolygonF oldPoly = panel->panelPolygon();
+    std::shared_ptr<GroupLayer> newPanel;
+    std::shared_ptr<Layer> innerLayer;
+    int insertIdx = -1;
+
+    if (!splitPanelFolderInternal(panel, cutLine, marginX, marginY, newPanel, innerLayer, insertIdx)) {
+        return false;
+    }
+
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        std::vector<SplitAddedPanelEntry> entries;
+        entries.push_back({newPanel, innerLayer, insertIdx});
+        m_undoStack->push(new SplitPanelCommand(this, panel, oldPoly, panel->panelPolygon(), entries));
+    }
+
+    emit layerListChanged();
+    emit documentUpdated(QRect(0, 0, m_width, m_height));
+    return true;
+}
+
+bool Document::splitPanelFolderEqually(const std::shared_ptr<GroupLayer>& panel, Qt::Orientation orientation, int count, float margin) {
+    if (!panel || !panel->isPanelFolder() || count < 2) return false;
+    QPolygonF origPoly = panel->panelPolygon();
+    QRectF bbox = origPoly.boundingRect();
+    if (bbox.width() <= 1.0 || bbox.height() <= 1.0) return false;
+
+    float marginX = (orientation == Qt::Vertical) ? margin : 0.0f;
+    float marginY = (orientation == Qt::Horizontal) ? margin : 0.0f;
+
+    double totalDim = (orientation == Qt::Vertical) ? bbox.width() : bbox.height();
+    double totalMargin = (count - 1) * margin;
+    if (totalMargin >= totalDim - 5.0) return false;
+
+    double pieceDim = (totalDim - totalMargin) / count;
+
+    QPolygonF oldPoly = origPoly;
+    std::vector<SplitAddedPanelEntry> addedEntries;
+
+    auto currentTarget = panel;
+
+    for (int i = 1; i < count; ++i) {
+        double cutPos = 0.0;
+        QLineF cutLine;
+        if (orientation == Qt::Vertical) {
+            cutPos = bbox.left() + i * pieceDim + (i - 0.5) * margin;
+            cutLine = QLineF(QPointF(cutPos, bbox.top() - 10000.0), QPointF(cutPos, bbox.bottom() + 10000.0));
+        } else {
+            cutPos = bbox.top() + i * pieceDim + (i - 0.5) * margin;
+            cutLine = QLineF(QPointF(bbox.left() - 10000.0, cutPos), QPointF(bbox.right() + 10000.0, cutPos));
+        }
+
+        std::shared_ptr<GroupLayer> newP;
+        std::shared_ptr<Layer> newInner;
+        int insIdx = -1;
+
+        if (!splitPanelFolderInternal(currentTarget, cutLine, marginX, marginY, newP, newInner, insIdx)) {
+            // ロールバック
+            for (auto it = addedEntries.rbegin(); it != addedEntries.rend(); ++it) {
+                for (int j = 0; j < static_cast<int>(m_layers.size()); ++j) {
+                    if (m_layers[j] == it->panel) {
+                        removeLayer(j);
+                        break;
+                    }
+                }
+                for (int j = 0; j < static_cast<int>(m_layers.size()); ++j) {
+                    if (m_layers[j] == it->innerLayer) {
+                        removeLayer(j);
+                        break;
+                    }
+                }
+            }
+            panel->setPanelPolygon(oldPoly);
+            return false;
+        }
+
+        // 幾何学的にソート:
+        // currentTarget を左側 (または上側)、newP を右側 (または下側) に設定
+        QPolygonF poly1 = currentTarget->panelPolygon();
+        QPolygonF poly2 = newP->panelPolygon();
+        bool needSwap = false;
+        if (orientation == Qt::Vertical) {
+            if (poly1.boundingRect().center().x() > poly2.boundingRect().center().x()) {
+                needSwap = true;
+            }
+        } else {
+            if (poly1.boundingRect().center().y() > poly2.boundingRect().center().y()) {
+                needSwap = true;
+            }
+        }
+        if (needSwap) {
+            currentTarget->setPanelPolygon(poly2);
+            newP->setPanelPolygon(poly1);
+        }
+
+        addedEntries.push_back({newP, newInner, insIdx});
+        // 次の切断対象は右側/下側の newP
+        currentTarget = newP;
+    }
+
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        QString text = (orientation == Qt::Vertical)
+                       ? QString("コマ枠を縦に%1分割").arg(count)
+                       : QString("コマ枠を横に%1分割").arg(count);
+        m_undoStack->push(new SplitPanelCommand(this, panel, oldPoly, panel->panelPolygon(), addedEntries, text));
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
     emit layerListChanged();
     emit documentUpdated(QRect(0, 0, m_width, m_height));
     return true;

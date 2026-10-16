@@ -486,4 +486,38 @@ private:
     bool m_firstRun = true;
 };
 
+/**
+ * @brief コマ枠分割で生成された新規パネルのエントリ
+ */
+struct SplitAddedPanelEntry {
+    std::shared_ptr<GroupLayer> panel;
+    std::shared_ptr<Layer> innerLayer;
+    int insertIndex = 0;
+};
+
+/**
+ * @brief コマ枠分割の元に戻す/やり直しコマンド
+ */
+class SplitPanelCommand : public QUndoCommand {
+public:
+    SplitPanelCommand(Document* doc,
+                      std::shared_ptr<GroupLayer> origPanel,
+                      const QPolygonF& oldPoly,
+                      const QPolygonF& newPoly,
+                      std::vector<SplitAddedPanelEntry> addedPanels,
+                      const QString& text = "コマ枠を分割",
+                      QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    std::shared_ptr<GroupLayer> m_origPanel;
+    QPolygonF m_oldPoly;
+    QPolygonF m_newPoly;
+    std::vector<SplitAddedPanelEntry> m_addedPanels;
+    bool m_firstRun = true;
+};
+
 } // namespace Kaburagi

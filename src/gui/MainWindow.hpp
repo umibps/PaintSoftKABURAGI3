@@ -110,6 +110,9 @@ public slots:
     void onNewLayerFromVisible();
     void onDuplicateLayer();
     void onMergeDown();
+    void onSplitPanelVertical();
+    void onSplitPanelHorizontal();
+    void onSplitPanelCustom();
     void onMergePanels();
     void onDeleteLayer();
     void onSelectOpaque();
@@ -234,6 +237,9 @@ private:
     QAction* m_newLayerFromVisibleAction = nullptr;
     QAction* m_duplicateLayerAction = nullptr;
     QAction* m_mergeDownAction = nullptr;
+    QAction* m_splitPanelVerticalAction = nullptr;
+    QAction* m_splitPanelHorizontalAction = nullptr;
+    QAction* m_splitPanelCustomAction = nullptr;
     QAction* m_mergePanelsAction = nullptr;
     QAction* m_deleteLayerAction = nullptr;
     QAction* m_selectOpaqueAction = nullptr;
@@ -290,6 +296,10 @@ public:
     QAction* newLayerFromVisibleAction() const { return m_newLayerFromVisibleAction; }
     QAction* duplicateLayerAction() const { return m_duplicateLayerAction; }
     QAction* mergeDownAction() const { return m_mergeDownAction; }
+    QAction* splitPanelVerticalAction() const { return m_splitPanelVerticalAction; }
+    QAction* splitPanelHorizontalAction() const { return m_splitPanelHorizontalAction; }
+    QAction* splitPanelCustomAction() const { return m_splitPanelCustomAction; }
+    QAction* mergePanelsAction() const { return m_mergePanelsAction; }
     QAction* deleteLayerAction() const { return m_deleteLayerAction; }
     QAction* selectOpaqueAction() const { return m_selectOpaqueAction; }
     QAction* addOpaqueToSelectionAction() const { return m_addOpaqueToSelectionAction; }

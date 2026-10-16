@@ -171,6 +171,8 @@ set(GUI_SOURCES
     src/gui/NewPanelDialog.cpp
     src/gui/MergePanelDialog.hpp
     src/gui/MergePanelDialog.cpp
+    src/gui/SplitPanelDialog.hpp
+    src/gui/SplitPanelDialog.cpp
     src/gui/PreferencesDialog.hpp
     src/gui/PreferencesDialog.cpp
     src/gui/ScatterSettingsWidget.hpp

@@ -43,6 +43,9 @@ public:
 signals:
     void settingsChanged();
     void mergePanelsRequested();
+    void splitPanelVerticalRequested();
+    void splitPanelHorizontalRequested();
+    void splitPanelCustomRequested();
 
 private slots:
     void chooseBorderColor();
@@ -63,6 +66,9 @@ private:
     QCheckBox* m_snapToBleedCheck = nullptr;
     QCheckBox* m_linkAdjacentPanelsCheck = nullptr;
     QPushButton* m_mergeAdjacentBtn = nullptr;
+    QPushButton* m_splitVerticalBtn = nullptr;
+    QPushButton* m_splitHorizontalBtn = nullptr;
+    QPushButton* m_splitCustomBtn = nullptr;
 };
 
 } // namespace Kaburagi

@@ -76,9 +76,27 @@ void PanelSettingsWidget::setupUI() {
     m_linkAdjacentPanelsCheck->setChecked(true);
     mainLayout->addWidget(m_linkAdjacentPanelsCheck);
 
-    // コマ枠結合ボタン
-    m_mergeAdjacentBtn = new QPushButton("隣接するコマ枠を結合...", this);
-    mainLayout->addWidget(m_mergeAdjacentBtn);
+    // コマ枠の操作グループ (分割・結合)
+    auto opGroup = new QGroupBox("コマ枠の操作", this);
+    auto opLayout = new QVBoxLayout(opGroup);
+    opLayout->setContentsMargins(6, 6, 6, 6);
+    opLayout->setSpacing(6);
+
+    auto splitBtnLayout = new QHBoxLayout();
+    splitBtnLayout->setSpacing(4);
+    m_splitVerticalBtn = new QPushButton("縦に2分割", opGroup);
+    m_splitHorizontalBtn = new QPushButton("横に2分割", opGroup);
+    splitBtnLayout->addWidget(m_splitVerticalBtn);
+    splitBtnLayout->addWidget(m_splitHorizontalBtn);
+    opLayout->addLayout(splitBtnLayout);
+
+    m_splitCustomBtn = new QPushButton("コマ枠の詳細分割...", opGroup);
+    opLayout->addWidget(m_splitCustomBtn);
+
+    m_mergeAdjacentBtn = new QPushButton("隣接するコマ枠を結合...", opGroup);
+    opLayout->addWidget(m_mergeAdjacentBtn);
+
+    mainLayout->addWidget(opGroup);
 
     mainLayout->addStretch();
 
@@ -90,6 +108,9 @@ void PanelSettingsWidget::setupUI() {
     connect(m_marginVSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &PanelSettingsWidget::settingsChanged);
     connect(m_snapToBleedCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
     connect(m_linkAdjacentPanelsCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
+    connect(m_splitVerticalBtn, &QPushButton::clicked, this, &PanelSettingsWidget::splitPanelVerticalRequested);
+    connect(m_splitHorizontalBtn, &QPushButton::clicked, this, &PanelSettingsWidget::splitPanelHorizontalRequested);
+    connect(m_splitCustomBtn, &QPushButton::clicked, this, &PanelSettingsWidget::splitPanelCustomRequested);
     connect(m_mergeAdjacentBtn, &QPushButton::clicked, this, &PanelSettingsWidget::mergePanelsRequested);
 }
 

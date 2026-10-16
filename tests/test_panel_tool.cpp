@@ -11,6 +11,7 @@
 #include "PanelSettingsWidget.hpp"
 #include "ToolBoxWidget.hpp"
 #include "NewPanelDialog.hpp"
+#include "SplitPanelDialog.hpp"
 #include <QComboBox>
 #include <QRadioButton>
 #include <QSpinBox>
@@ -598,6 +599,96 @@ void testMergePanelFolders() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testSplitPanelFolderEquallyAndUndo() {
+    std::cout << "[TEST] 11. Split Panel Folder Equally (Vertical, Horizontal, N-split) & Undo/Redo..." << std::endl;
+    Document doc(800, 800, 72.0, false, Qt::transparent);
+
+    // 1. 縦に2分割のテスト (幅400, 高400, 間隔20px)
+    QPolygonF poly;
+    poly << QPointF(100, 100) << QPointF(500, 100) << QPointF(500, 500) << QPointF(100, 500);
+    auto p1 = doc.addPanelFolder(poly, 3.0f, Qt::black, "コマ 1");
+    assert(p1 != nullptr);
+
+    bool splitV = doc.splitPanelFolderEqually(p1, Qt::Vertical, 2, 20.0f);
+    assert(splitV);
+
+    // 分割後のコマ枠数: 2
+    std::vector<std::shared_ptr<GroupLayer>> panelsV;
+    for (const auto& l : doc.layers()) {
+        auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+        if (g && g->isPanelFolder()) panelsV.push_back(g);
+    }
+    assert(panelsV.size() == 2);
+
+    // 左コマ (p1): X=100..290 (幅190)
+    // 右コマ: X=310..500 (幅190)
+    QRectF rLeft = p1->panelPolygon().boundingRect();
+    QRectF rRight = panelsV[1]->panelPolygon().boundingRect();
+    assert(std::abs(rLeft.left() - 100.0) < 1.0);
+    assert(std::abs(rLeft.width() - 190.0) < 1.0);
+    assert(std::abs(rRight.left() - 310.0) < 1.0);
+    assert(std::abs(rRight.width() - 190.0) < 1.0);
+    assert(std::abs(rRight.left() - rLeft.right() - 20.0) < 1.0); // 間隔20px
+
+    // Undo のテスト
+    assert(doc.undoStack()->canUndo());
+    doc.undoStack()->undo();
+    assert(p1->panelPolygon().boundingRect().width() == 400.0);
+    int pCountAfterUndo = 0;
+    for (const auto& l : doc.layers()) {
+        auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+        if (g && g->isPanelFolder()) pCountAfterUndo++;
+    }
+    assert(pCountAfterUndo == 1);
+
+    // Redo のテスト
+    assert(doc.undoStack()->canRedo());
+    doc.undoStack()->redo();
+    assert(std::abs(p1->panelPolygon().boundingRect().width() - 190.0) < 1.0);
+
+    // 2. 横に3分割のテスト (高さ400, 間隔30px)
+    // p1 (幅190, 高400) を上下に3分割
+    bool splitH = doc.splitPanelFolderEqually(p1, Qt::Horizontal, 3, 30.0f);
+    assert(splitH);
+
+    // p1 を3分割したので、全体で 2 - 1 + 3 = 4 コマになる
+    std::vector<std::shared_ptr<GroupLayer>> panelsH;
+    for (const auto& l : doc.layers()) {
+        auto g = std::dynamic_pointer_cast<GroupLayer>(l);
+        if (g && g->isPanelFolder()) panelsH.push_back(g);
+    }
+    assert(panelsH.size() == 4);
+
+    // p1 の高さ: (400 - 2*30) / 3 = 340 / 3 ≈ 113.33px
+    QRectF rH1 = p1->panelPolygon().boundingRect();
+    assert(std::abs(rH1.top() - 100.0) < 1.0);
+    assert(std::abs(rH1.height() - (340.0 / 3.0)) < 1.0);
+
+    // 3分割を Undo
+    doc.undoStack()->undo();
+    assert(std::abs(p1->panelPolygon().boundingRect().height() - 400.0) < 1.0);
+
+    // 3. SplitPanelDialog のテスト
+    SplitPanelDialog dlg(p1, 15.0f, 25.0f);
+    assert(dlg.orientation() == Qt::Vertical);
+    assert(dlg.splitCount() == 2);
+    assert(std::abs(dlg.margin() - 15.0f) < 0.001f);
+
+    // 4. PanelSettingsWidget のシグナル接続テスト
+    PanelSettingsWidget settingsWidget;
+    bool sigV = false, sigH = false, sigCustom = false;
+    QObject::connect(&settingsWidget, &PanelSettingsWidget::splitPanelVerticalRequested, [&sigV]() { sigV = true; });
+    QObject::connect(&settingsWidget, &PanelSettingsWidget::splitPanelHorizontalRequested, [&sigH]() { sigH = true; });
+    QObject::connect(&settingsWidget, &PanelSettingsWidget::splitPanelCustomRequested, [&sigCustom]() { sigCustom = true; });
+
+    emit settingsWidget.splitPanelVerticalRequested();
+    emit settingsWidget.splitPanelHorizontalRequested();
+    emit settingsWidget.splitPanelCustomRequested();
+    assert(sigV && sigH && sigCustom);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
@@ -613,6 +704,7 @@ int main(int argc, char* argv[]) {
     testPanelFoldersUndoAndHierarchy();
     testLinkedPanelVertices();
     testMergePanelFolders();
+    testSplitPanelFolderEquallyAndUndo();
 
     std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

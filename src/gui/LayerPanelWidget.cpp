@@ -18,6 +18,7 @@
 #include <QColorDialog>
 #include <QMessageBox>
 #include "MergePanelDialog.hpp"
+#include "SplitPanelDialog.hpp"
 
 namespace Kaburagi {
 
@@ -1129,20 +1130,39 @@ QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {
     });
     actMergeDown->setEnabled(layerIndex > 0);
 
-    auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
-    if (grp && grp->isPanelFolder()) {
-        menu->addAction("隣接するコマ枠を結合...", this, [this, grp]() {
+    auto panelFolder = std::dynamic_pointer_cast<GroupLayer>(layer);
+    if (!panelFolder && layer->parentGroup() && layer->parentGroup()->isPanelFolder()) {
+        panelFolder = layer->parentGroup();
+    }
+    if (panelFolder && panelFolder->isPanelFolder()) {
+        menu->addSeparator();
+        menu->addAction("コマ枠を縦に2分割", this, [this, panelFolder]() {
             if (!m_document) return;
-            auto candidates = m_document->findAdjacentPanels(grp);
+            m_document->splitPanelFolderEqually(panelFolder, Qt::Vertical, 2, 20.0f);
+        });
+        menu->addAction("コマ枠を横に2分割", this, [this, panelFolder]() {
+            if (!m_document) return;
+            m_document->splitPanelFolderEqually(panelFolder, Qt::Horizontal, 2, 40.0f);
+        });
+        menu->addAction("コマ枠の詳細分割...", this, [this, panelFolder]() {
+            if (!m_document) return;
+            SplitPanelDialog dlg(panelFolder, 20.0f, 40.0f, this);
+            if (dlg.exec() == QDialog::Accepted) {
+                m_document->splitPanelFolderEqually(panelFolder, dlg.orientation(), dlg.splitCount(), dlg.margin());
+            }
+        });
+        menu->addAction("隣接するコマ枠を結合...", this, [this, panelFolder]() {
+            if (!m_document) return;
+            auto candidates = m_document->findAdjacentPanels(panelFolder);
             if (candidates.empty()) {
                 QMessageBox::information(this, "コマ枠の結合", "隣接するコマ枠が見つかりませんでした。");
                 return;
             }
-            MergePanelDialog dlg(grp, candidates, this);
+            MergePanelDialog dlg(panelFolder, candidates, this);
             if (dlg.exec() == QDialog::Accepted) {
                 auto target = dlg.selectedPanel();
                 if (target) {
-                    m_document->mergePanelFolders(grp, target);
+                    m_document->mergePanelFolders(panelFolder, target);
                 }
             }
         });

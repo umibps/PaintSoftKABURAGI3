@@ -69,6 +69,7 @@ public:
     };
     std::vector<std::shared_ptr<GroupLayer>> addPanelFolders(const std::vector<PanelCreationSpec>& specs);
     bool splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine, float marginX = 20.0f, float marginY = 40.0f);
+    bool splitPanelFolderEqually(const std::shared_ptr<GroupLayer>& panel, Qt::Orientation orientation, int count = 2, float margin = 20.0f);
     std::shared_ptr<GroupLayer> findPanelFolderAt(const QPointF& docPt) const;
 
     struct AdjacentPanelInfo {
@@ -181,6 +182,12 @@ private:
 
     bool m_isSelectionEditMode = false;
     mutable LayerPtr m_selectionMaskLayer;
+
+    bool splitPanelFolderInternal(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine,
+                                  float marginX, float marginY,
+                                  std::shared_ptr<GroupLayer>& outNewPanel,
+                                  std::shared_ptr<Layer>& outNewInnerLayer,
+                                  int& outInsertIndex);
 };
 
 } // namespace Kaburagi
