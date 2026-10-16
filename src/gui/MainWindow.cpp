@@ -3994,16 +3994,20 @@ void MainWindow::onNewPanelFolder() {
     auto panelSpecs = dlg.panels();
     if (panelSpecs.isEmpty()) return;
 
-    // 逆順（最後のコマから最初のコマ）で追加し、レイヤーリスト上で「コマ 1」が最上部に来るようにする
-    std::shared_ptr<GroupLayer> firstPanel = nullptr;
-    for (int i = panelSpecs.size() - 1; i >= 0; --i) {
-        const auto& spec = panelSpecs[i];
-        auto panel = m_document->addPanelFolder(spec.polygon, dlg.borderWidth(), dlg.borderColor(), spec.name);
-        if (panel) {
-            panel->setDrawPanelBorder(dlg.drawBorder());
-            firstPanel = panel;
-        }
+    std::vector<Document::PanelCreationSpec> specs;
+    specs.reserve(panelSpecs.size());
+    for (const auto& s : panelSpecs) {
+        Document::PanelCreationSpec cs;
+        cs.polygon = s.polygon;
+        cs.borderWidth = dlg.borderWidth();
+        cs.borderColor = dlg.borderColor();
+        cs.drawBorder = dlg.drawBorder();
+        cs.name = s.name;
+        specs.push_back(cs);
     }
+
+    auto createdPanels = m_document->addPanelFolders(specs);
+    std::shared_ptr<GroupLayer> firstPanel = createdPanels.empty() ? nullptr : createdPanels[0];
 
     if (firstPanel && m_panelSettings) {
         m_panelSettings->setFromPanel(firstPanel.get());

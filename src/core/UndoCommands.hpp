@@ -8,6 +8,7 @@
 #include "TileManager.hpp"
 #include "VectorLayer.hpp"
 #include "TextLayer.hpp"
+#include "GroupLayer.hpp"
 
 namespace Kaburagi {
 
@@ -118,6 +119,28 @@ private:
     Document* m_doc;
     LayerPtr m_layer;
     int m_index;
+    bool m_firstRun = true;
+};
+
+struct PanelFolderEntry {
+    std::shared_ptr<GroupLayer> panel;
+    std::shared_ptr<Layer> innerLayer;
+};
+
+/**
+ * @brief コマフォルダ一括追加コマンド
+ */
+class AddPanelFoldersCommand : public QUndoCommand {
+public:
+    AddPanelFoldersCommand(Document* doc, int baseIndex, const std::vector<PanelFolderEntry>& entries, QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    int m_baseIndex;
+    std::vector<PanelFolderEntry> m_entries;
     bool m_firstRun = true;
 };
 

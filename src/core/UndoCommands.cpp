@@ -209,6 +209,50 @@ void AddLayerCommand::redo() {
     m_doc->setUndoRedoInProgress(false);
 }
 
+AddPanelFoldersCommand::AddPanelFoldersCommand(Document* doc, int baseIndex, const std::vector<PanelFolderEntry>& entries, QUndoCommand* parent)
+    : QUndoCommand("新規コマフォルダ", parent)
+    , m_doc(doc)
+    , m_baseIndex(baseIndex)
+    , m_entries(entries)
+{
+}
+
+void AddPanelFoldersCommand::undo() {
+    if (!m_doc) return;
+    m_doc->setUndoRedoInProgress(true);
+    // 上位インデックスから順に削除（総レイヤー数は entries.size() * 2）
+    int totalLayers = static_cast<int>(m_entries.size()) * 2;
+    for (int i = totalLayers - 1; i >= 0; --i) {
+        m_doc->removeLayer(m_baseIndex + i);
+    }
+    m_doc->setUndoRedoInProgress(false);
+}
+
+void AddPanelFoldersCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc) return;
+    m_doc->setUndoRedoInProgress(true);
+    int currIdx = m_baseIndex;
+    for (const auto& entry : m_entries) {
+        m_doc->insertLayer(currIdx, entry.innerLayer);
+        m_doc->insertLayer(currIdx + 1, entry.panel);
+        m_doc->setLayerParentGroup(currIdx, entry.panel);
+        currIdx += 2;
+    }
+    // コマ1の内部レイヤーをアクティブにする
+    if (!m_entries.empty()) {
+        int activeIdx = m_baseIndex + static_cast<int>(m_entries.size() - 1) * 2;
+        m_doc->setActiveLayerIndex(activeIdx);
+    }
+    m_doc->setUndoRedoInProgress(false);
+    m_doc->composite();
+    emit m_doc->layerListChanged();
+    emit m_doc->activeLayerChanged(m_doc->activeLayerIndex());
+}
+
 RemoveLayerCommand::RemoveLayerCommand(Document* doc, LayerPtr layer, int index, QUndoCommand* parent)
     : QUndoCommand("レイヤー削除", parent)
     , m_doc(doc)

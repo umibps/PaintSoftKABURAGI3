@@ -60,6 +60,14 @@ public:
     std::shared_ptr<GroupLayer> addGroupLayer(const QString& name = QString());
     std::shared_ptr<ThreeDLayer> addThreeDLayer(const QString& name = QString());
     std::shared_ptr<GroupLayer> addPanelFolder(const QPolygonF& polygon, float borderWidth = 3.0f, const QColor& borderColor = Qt::black, const QString& name = QString());
+    struct PanelCreationSpec {
+        QPolygonF polygon;
+        float borderWidth = 3.0f;
+        QColor borderColor = Qt::black;
+        bool drawBorder = true;
+        QString name;
+    };
+    std::vector<std::shared_ptr<GroupLayer>> addPanelFolders(const std::vector<PanelCreationSpec>& specs);
     bool splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine, float marginX = 20.0f, float marginY = 40.0f);
     std::shared_ptr<GroupLayer> findPanelFolderAt(const QPointF& docPt) const;
     void setLayerParentGroup(int layerIndex, const std::shared_ptr<GroupLayer>& group);

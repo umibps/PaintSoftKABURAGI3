@@ -1314,7 +1314,14 @@ void Document::updateSelectionPathFromMask() {
     emit documentUpdated(QRect());
 }
 
-std::shared_ptr<GroupLayer> Document::addPanelFolder(const QPolygonF& polygon, float borderWidth, const QColor& borderColor, const QString& name) {
+std::vector<std::shared_ptr<GroupLayer>> Document::addPanelFolders(const std::vector<PanelCreationSpec>& specs) {
+    std::vector<std::shared_ptr<GroupLayer>> createdPanels;
+    if (specs.empty()) return createdPanels;
+
+    int baseIdx = (m_activeLayerIndex >= 0 && m_activeLayerIndex < static_cast<int>(m_layers.size()))
+                  ? (m_activeLayerIndex + 1)
+                  : static_cast<int>(m_layers.size());
+
     int panelCount = 0;
     for (const auto& l : m_layers) {
         if (l->type() == LayerType::Group) {
@@ -1322,33 +1329,62 @@ std::shared_ptr<GroupLayer> Document::addPanelFolder(const QPolygonF& polygon, f
             if (g && g->isPanelFolder()) panelCount++;
         }
     }
-    QString folderName = name.isEmpty() ? QString("コマ %1").arg(panelCount + 1) : name;
-    auto panel = std::make_shared<GroupLayer>(folderName, m_width, m_height);
-    panel->setPanelFolder(true);
-    panel->setPanelPolygon(polygon);
-    panel->setPanelBorderWidth(borderWidth);
-    panel->setPanelBorderColor(borderColor);
-    panel->setDrawPanelBorder(true);
 
-    int insertIdx = m_activeLayerIndex + 1;
-    if (insertIdx > static_cast<int>(m_layers.size())) {
-        insertIdx = static_cast<int>(m_layers.size());
+    std::vector<PanelFolderEntry> entries;
+    entries.reserve(specs.size());
+
+    // specs は「コマ 1」「コマ 2」...「コマ N」の順。
+    // UI上では「コマ 1」が一番上、「コマ N」が一番下になるよう、
+    // m_layers 内ではコマ N (下位インデックス) から コマ 1 (上位インデックス) へ積み上げる。
+    int currIdx = baseIdx;
+    for (int i = static_cast<int>(specs.size()) - 1; i >= 0; --i) {
+        const auto& spec = specs[i];
+        QString folderName = spec.name.isEmpty() ? QString("コマ %1").arg(panelCount + i + 1) : spec.name;
+        auto panel = std::make_shared<GroupLayer>(folderName, m_width, m_height);
+        panel->setPanelFolder(true);
+        panel->setPanelPolygon(spec.polygon);
+        panel->setPanelBorderWidth(spec.borderWidth);
+        panel->setPanelBorderColor(spec.borderColor);
+        panel->setDrawPanelBorder(spec.drawBorder);
+
+        auto innerLayer = std::make_shared<Layer>("レイヤー 1", m_width, m_height, LayerType::Raster);
+
+        m_layers.insert(m_layers.begin() + currIdx, innerLayer);
+        m_layers.insert(m_layers.begin() + currIdx + 1, panel);
+        setLayerParentGroup(currIdx, panel);
+
+        entries.push_back({panel, innerLayer});
+        createdPanels.push_back(panel);
+        currIdx += 2;
     }
 
-    // コマフォルダ内に初期描画用ラスターレイヤーを1枚作成（フォルダーの直下階層として配置）
-    auto innerLayer = std::make_shared<Layer>("レイヤー 1", m_width, m_height, LayerType::Raster);
-    m_layers.insert(m_layers.begin() + insertIdx, innerLayer);
+    // コマ 1 の内部レイヤーをアクティブレイヤーにする
+    m_activeLayerIndex = currIdx - 2;
 
-    // コマフォルダ本体を子レイヤーの上位インデックスに配置（UI上でフォルダーの下に子レイヤーが表示される）
-    m_layers.insert(m_layers.begin() + insertIdx + 1, panel);
-    setLayerParentGroup(insertIdx, panel);
+    // Undo スタックに登録
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        m_undoStack->push(new AddPanelFoldersCommand(this, baseIdx, entries));
+    }
 
-    m_activeLayerIndex = insertIdx;
-
+    composite(QRect(0, 0, m_width, m_height));
     emit layerListChanged();
     emit activeLayerChanged(m_activeLayerIndex);
     emit documentUpdated(QRect(0, 0, m_width, m_height));
-    return panel;
+
+    // createdPanels を specs と同じ順（コマ 1 から順）にして返す
+    std::reverse(createdPanels.begin(), createdPanels.end());
+    return createdPanels;
+}
+
+std::shared_ptr<GroupLayer> Document::addPanelFolder(const QPolygonF& polygon, float borderWidth, const QColor& borderColor, const QString& name) {
+    PanelCreationSpec spec;
+    spec.polygon = polygon;
+    spec.borderWidth = borderWidth;
+    spec.borderColor = borderColor;
+    spec.drawBorder = true;
+    spec.name = name;
+    auto panels = addPanelFolders({spec});
+    return panels.empty() ? nullptr : panels[0];
 }
 
 std::shared_ptr<GroupLayer> Document::findPanelFolderAt(const QPointF& docPt) const {

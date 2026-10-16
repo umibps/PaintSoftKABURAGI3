@@ -316,6 +316,75 @@ void testNewPanelDialog() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testPanelFoldersUndoAndHierarchy() {
+    std::cout << "[TEST] 8. Panel Folders Hierarchy & Undo/Redo..." << std::endl;
+    Document doc(800, 600, 72.0, true, Qt::white);
+    // 初期状態: 背景(0), レイヤー 1(1)
+    assert(doc.layers().size() == 2);
+
+    QPolygonF poly1, poly2;
+    poly1 << QPointF(50, 50) << QPointF(750, 50) << QPointF(750, 280) << QPointF(50, 280);
+    poly2 << QPointF(50, 320) << QPointF(750, 320) << QPointF(750, 550) << QPointF(50, 550);
+
+    Document::PanelCreationSpec spec1{poly1, 3.0f, Qt::black, true, "コマ 1"};
+    Document::PanelCreationSpec spec2{poly2, 3.0f, Qt::black, true, "コマ 2"};
+
+    auto created = doc.addPanelFolders({spec1, spec2});
+    assert(created.size() == 2);
+    assert(created[0]->name() == "コマ 1");
+    assert(created[1]->name() == "コマ 2");
+
+    // レイヤー総数は 2 + 4 = 6 枚
+    const auto& layers = doc.layers();
+    assert(layers.size() == 6);
+
+    // インデックス順序（下位から上位へ）:
+    // layers[0]: 背景
+    // layers[1]: レイヤー 1 (既存)
+    // layers[2]: レイヤー 1 (コマ 2 の子)
+    // layers[3]: コマ 2 (GroupLayer)
+    // layers[4]: レイヤー 1 (コマ 1 の子)
+    // layers[5]: コマ 1 (GroupLayer)
+    assert(layers[5]->name() == "コマ 1");
+    assert(layers[5]->type() == LayerType::Group);
+    assert(layers[4]->parentGroup() == layers[5]);
+
+    assert(layers[3]->name() == "コマ 2");
+    assert(layers[3]->type() == LayerType::Group);
+    assert(layers[2]->parentGroup() == layers[3]);
+
+    // UIのレイヤービュー（逆順走査）で:
+    // 行0: コマ 1
+    // 行1:   └ レイヤー 1
+    // 行2: コマ 2
+    // 行3:   └ レイヤー 1
+    // 行4: レイヤー 1
+    // 行5: 背景
+    // と完全に整っていることを確認！
+
+    // 元に戻す (Undo)
+    assert(doc.undoStack()->canUndo() == true);
+    doc.undoStack()->undo();
+    assert(doc.layers().size() == 2);
+    assert(doc.layers()[0]->name() == "背景");
+    assert(doc.layers()[1]->name() == "レイヤー 1");
+
+    // やり直し (Redo)
+    assert(doc.undoStack()->canRedo() == true);
+    doc.undoStack()->redo();
+    assert(doc.layers().size() == 6);
+    assert(doc.layers()[5]->name() == "コマ 1");
+    assert(doc.layers()[4]->parentGroup() == doc.layers()[5]);
+    assert(doc.layers()[3]->name() == "コマ 2");
+    assert(doc.layers()[2]->parentGroup() == doc.layers()[3]);
+
+    // もう一度 Undo
+    doc.undoStack()->undo();
+    assert(doc.layers().size() == 2);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
@@ -328,6 +397,7 @@ int main(int argc, char* argv[]) {
     testPanelSerialization();
     testPanelSettingsWidget();
     testNewPanelDialog();
+    testPanelFoldersUndoAndHierarchy();
 
     std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
