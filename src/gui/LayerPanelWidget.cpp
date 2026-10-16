@@ -611,6 +611,52 @@ void LayerListWidget::mousePressEvent(QMouseEvent* event) {
                 }
                 return; // 選択変更やドラッグ開始を行わず早期リターン
             }
+
+            // "[▼ グループ]" / "[▶ グループ]" 領域のクリック判定 (グループの展開/格納)
+            int rowIdx = row(item);
+            if (m_panel && m_panel->document()) {
+                int count = static_cast<int>(m_panel->document()->layers().size());
+                if (rowIdx >= 0 && rowIdx < count) {
+                    int layerIndex = count - 1 - rowIdx;
+                    auto layer = m_panel->document()->getLayer(layerIndex);
+                    if (layer && layer->type() == LayerType::Group) {
+                        auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+                        if (grp) {
+                            QString indent = "";
+                            auto p = layer->parentGroup();
+                            while (p) {
+                                indent = "  " + indent;
+                                p = p->parentGroup();
+                            }
+                            if (layer->parentGroup()) {
+                                indent += "└ ";
+                            }
+                            QString foldIcon = grp->isExpanded() ? "▼" : "▶";
+                            QString typePrefix = QString("[%1 グループ]").arg(foldIcon);
+
+                            QFont font = this->font();
+                            if (item->isSelected()) {
+                                font.setBold(true);
+                            }
+                            QFontMetrics fm(font);
+                            int baseLeft = r.left() + 68;
+                            int indentWidth = fm.horizontalAdvance(indent);
+                            int prefixWidth = fm.horizontalAdvance(typePrefix);
+                            int prefixStartX = baseLeft + indentWidth;
+                            int prefixEndX = prefixStartX + prefixWidth;
+
+                            // 多少の押しやすさを考慮してマージン±4px
+                            if (pos.x() >= prefixStartX - 4 && pos.x() <= prefixEndX + 4) {
+                                bool newExpanded = !grp->isExpanded();
+                                grp->setExpanded(newExpanded);
+                                m_panel->document()->setActiveLayerIndex(layerIndex);
+                                m_panel->onLayerListChanged();
+                                return; // 選択変更やドラッグ開始を行わず早期リターン
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     QListWidget::mousePressEvent(event);
@@ -621,6 +667,7 @@ void LayerListWidget::mouseMoveEvent(QMouseEvent* event) {
     QListWidgetItem* item = itemAt(pos);
     int hoveredEye = -1;
     int hoveredPin = -1;
+    bool isFoldHovered = false;
 
     if (item) {
         QRect r = visualItemRect(item);
@@ -633,7 +680,50 @@ void LayerListWidget::mouseMoveEvent(QMouseEvent* event) {
             }
             setCursor(Qt::PointingHandCursor);
         } else {
-            unsetCursor();
+            // "[▼ グループ]" / "[▶ グループ]" へのホバー判定
+            int rowIdx = row(item);
+            if (m_panel && m_panel->document()) {
+                int count = static_cast<int>(m_panel->document()->layers().size());
+                if (rowIdx >= 0 && rowIdx < count) {
+                    int layerIndex = count - 1 - rowIdx;
+                    auto layer = m_panel->document()->getLayer(layerIndex);
+                    if (layer && layer->type() == LayerType::Group) {
+                        auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+                        if (grp) {
+                            QString indent = "";
+                            auto p = layer->parentGroup();
+                            while (p) {
+                                indent = "  " + indent;
+                                p = p->parentGroup();
+                            }
+                            if (layer->parentGroup()) {
+                                indent += "└ ";
+                            }
+                            QString foldIcon = grp->isExpanded() ? "▼" : "▶";
+                            QString typePrefix = QString("[%1 グループ]").arg(foldIcon);
+
+                            QFont font = this->font();
+                            if (item->isSelected()) {
+                                font.setBold(true);
+                            }
+                            QFontMetrics fm(font);
+                            int baseLeft = r.left() + 68;
+                            int indentWidth = fm.horizontalAdvance(indent);
+                            int prefixWidth = fm.horizontalAdvance(typePrefix);
+                            int prefixStartX = baseLeft + indentWidth;
+                            int prefixEndX = prefixStartX + prefixWidth;
+
+                            if (pos.x() >= prefixStartX - 4 && pos.x() <= prefixEndX + 4) {
+                                isFoldHovered = true;
+                                setCursor(Qt::PointingHandCursor);
+                            }
+                        }
+                    }
+                }
+            }
+            if (!isFoldHovered) {
+                unsetCursor();
+            }
         }
     } else {
         unsetCursor();
@@ -674,10 +764,35 @@ void LayerListWidget::mouseDoubleClickEvent(QMouseEvent* event) {
                     int layerIndex = count - 1 - rowIdx;
                     auto layer = m_panel->document()->getLayer(layerIndex);
                     if (layer && layer->type() == LayerType::Group) {
-                        // アイコン領域 (r.left() + 28 以上 r.left() + 68 未満) でダブルクリックした場合は展開/折りたたみ
-                        if (event->pos().x() < r.left() + 68) {
-                            auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
-                            if (grp) {
+                        auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+                        if (grp) {
+                            QString indent = "";
+                            auto p = layer->parentGroup();
+                            while (p) {
+                                indent = "  " + indent;
+                                p = p->parentGroup();
+                            }
+                            if (layer->parentGroup()) {
+                                indent += "└ ";
+                            }
+                            QString foldIcon = grp->isExpanded() ? "▼" : "▶";
+                            QString typePrefix = QString("[%1 グループ]").arg(foldIcon);
+
+                            QFont font = this->font();
+                            if (item->isSelected()) font.setBold(true);
+                            QFontMetrics fm(font);
+                            int baseLeft = r.left() + 68;
+                            int indentWidth = fm.horizontalAdvance(indent);
+                            int prefixWidth = fm.horizontalAdvance(typePrefix);
+                            int prefixStartX = baseLeft + indentWidth;
+                            int prefixEndX = prefixStartX + prefixWidth;
+
+                            // "[▼ グループ]" 領域のダブルクリックはシングルクリックで処理済みのため無視（名前編集開始を防ぐ）
+                            if (event->pos().x() >= prefixStartX - 4 && event->pos().x() <= prefixEndX + 4) {
+                                return;
+                            }
+                            // アイコン領域 (r.left() + 28 以上 r.left() + 68 未満) でダブルクリックした場合は展開/折りたたみ
+                            if (event->pos().x() < r.left() + 68) {
                                 grp->setExpanded(!grp->isExpanded());
                                 m_panel->onLayerListChanged();
                                 return;
@@ -1136,6 +1251,45 @@ void LayerPanelWidget::onLayerListChanged() {
     }
 
     int activeRow = static_cast<int>(layers.size()) - 1 - m_document->activeLayerIndex();
+
+    // グループの展開/格納 (isExpanded) に応じて子レイヤーの表示/非表示を設定
+    for (int r = 0; r < static_cast<int>(layers.size()); ++r) {
+        int docIndex = static_cast<int>(layers.size()) - 1 - r;
+        auto layer = layers[docIndex];
+        bool isHidden = false;
+        auto p = layer ? layer->parentGroup() : nullptr;
+        while (p) {
+            if (!p->isExpanded()) {
+                isHidden = true;
+                break;
+            }
+            p = p->parentGroup();
+        }
+        m_layerListWidget->setRowHidden(r, isHidden);
+    }
+
+    // もしアクティブレイヤーが格納されたグループ内にある場合、可視な一番外側の親グループを選択状態にする
+    if (activeRow >= 0 && activeRow < m_layerListWidget->count() && m_layerListWidget->isRowHidden(activeRow)) {
+        auto layer = m_document->getLayer(m_document->activeLayerIndex());
+        auto p = layer ? layer->parentGroup() : nullptr;
+        std::shared_ptr<GroupLayer> visibleAncestor = nullptr;
+        while (p) {
+            if (!p->isExpanded()) {
+                visibleAncestor = p;
+            }
+            p = p->parentGroup();
+        }
+        if (visibleAncestor) {
+            for (int i = 0; i < static_cast<int>(layers.size()); ++i) {
+                if (layers[i] == visibleAncestor) {
+                    m_document->setActiveLayerIndex(i);
+                    activeRow = static_cast<int>(layers.size()) - 1 - i;
+                    break;
+                }
+            }
+        }
+    }
+
     m_layerListWidget->setCurrentRow(activeRow);
     m_layerListWidget->blockSignals(false);
 
@@ -1179,6 +1333,22 @@ void LayerPanelWidget::scrollToLayer(int index, bool center) {
 
 void LayerPanelWidget::onActiveLayerChanged(int index) {
     if (!m_document) return;
+    auto layer = m_document->getLayer(index);
+    if (layer) {
+        auto p = layer->parentGroup();
+        bool anyExpanded = false;
+        while (p) {
+            if (!p->isExpanded()) {
+                p->setExpanded(true);
+                anyExpanded = true;
+            }
+            p = p->parentGroup();
+        }
+        if (anyExpanded) {
+            onLayerListChanged();
+            return;
+        }
+    }
     int count = static_cast<int>(m_document->layers().size());
     int targetRow = count - 1 - index;
     if (m_layerListWidget->currentRow() != targetRow) {

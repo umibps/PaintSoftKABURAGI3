@@ -369,6 +369,108 @@ int main(int argc, char** argv) {
         PreferencesDialog::setTouchAction(PreferencesDialog::TouchAction::Draw);
     }
 
+    // 7. Test Group Expand / Collapse on Left-Click of "[▼ グループ]"
+    std::cout << "[TEST] Testing Group Expand/Collapse on Left-Click of '[▼ グループ]'..." << std::endl;
+    {
+        Document groupDoc(400, 400, 350.0);
+        LayerPanelWidget gPanel;
+        gPanel.setDocument(&groupDoc);
+        gPanel.resize(300, 400);
+        gPanel.show();
+        app.processEvents();
+
+        auto gListWidget = gPanel.findChild<LayerListWidget*>();
+        assert(gListWidget != nullptr);
+
+        // Add a group layer and 2 child layers
+        auto grp = groupDoc.addGroupLayer("グループ 1");
+        assert(grp != nullptr);
+        auto child1 = groupDoc.addRasterLayer("子レイヤー 1");
+        auto child2 = groupDoc.addRasterLayer("子レイヤー 2");
+
+        auto findIdx = [&](const LayerPtr& l) {
+            const auto& layers = groupDoc.layers();
+            for (size_t i = 0; i < layers.size(); ++i) {
+                if (layers[i] == l) return static_cast<int>(i);
+            }
+            return -1;
+        };
+
+        groupDoc.setLayerParentGroup(findIdx(child1), grp);
+        groupDoc.setLayerParentGroup(findIdx(child2), grp);
+        app.processEvents();
+
+        // Check initial state: grp is expanded
+        assert(grp->isExpanded() == true);
+
+        // Find the group row in gListWidget
+        int grpDocIdx = findIdx(grp);
+        int grpRow = static_cast<int>(groupDoc.layers().size()) - 1 - grpDocIdx;
+        auto grpItem = gListWidget->item(grpRow);
+        assert(grpItem != nullptr);
+        assert(grpItem->text().contains("[▼ グループ]"));
+
+        int child1DocIdx = findIdx(child1);
+        int child1Row = static_cast<int>(groupDoc.layers().size()) - 1 - child1DocIdx;
+        int child2DocIdx = findIdx(child2);
+        int child2Row = static_cast<int>(groupDoc.layers().size()) - 1 - child2DocIdx;
+
+        // Both children should initially be visible (not row hidden)
+        assert(gListWidget->isRowHidden(child1Row) == false);
+        assert(gListWidget->isRowHidden(child2Row) == false);
+
+        // Compute location of "[▼ グループ]" in visualItemRect
+        QRect rGrp = gListWidget->visualItemRect(grpItem);
+        QFontMetrics fm(gListWidget->font());
+        int prefixStart = rGrp.left() + 68; // no indent for root group
+        int prefixWidth = fm.horizontalAdvance("[▼ グループ]");
+        QPoint clickFoldPos(prefixStart + prefixWidth / 2, rGrp.center().y());
+
+        // Test hover cursor over "[▼ グループ]"
+        QMouseEvent hoverEv(QEvent::MouseMove, clickFoldPos, clickFoldPos, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        app.sendEvent(gListWidget->viewport(), &hoverEv);
+        assert(gListWidget->cursor().shape() == Qt::PointingHandCursor);
+        std::cout << "[PASS] Hovering over '[▼ グループ]' shows PointingHandCursor!" << std::endl;
+
+        // 1st click on "[▼ グループ]": should collapse group
+        QMouseEvent clickCollapse(QEvent::MouseButtonPress, clickFoldPos, clickFoldPos,
+                                 Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(gListWidget->viewport(), &clickCollapse);
+        app.processEvents();
+
+        assert(grp->isExpanded() == false);
+        grpItem = gListWidget->item(grpRow);
+        assert(grpItem->text().contains("[▶ グループ]"));
+        assert(gListWidget->isRowHidden(child1Row) == true);
+        assert(gListWidget->isRowHidden(child2Row) == true);
+        std::cout << "[PASS] Left-click on '[▼ グループ]' collapsed the group and hid child layers!" << std::endl;
+
+        // 2nd click on "[▶ グループ]": should expand group
+        int prefixWidthCollapsed = fm.horizontalAdvance("[▶ グループ]");
+        QPoint clickExpandPos(prefixStart + prefixWidthCollapsed / 2, rGrp.center().y());
+        QMouseEvent clickExpand(QEvent::MouseButtonPress, clickExpandPos, clickExpandPos,
+                               Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(gListWidget->viewport(), &clickExpand);
+        app.processEvents();
+
+        assert(grp->isExpanded() == true);
+        grpItem = gListWidget->item(grpRow);
+        assert(grpItem->text().contains("[▼ グループ]"));
+        assert(gListWidget->isRowHidden(child1Row) == false);
+        assert(gListWidget->isRowHidden(child2Row) == false);
+        std::cout << "[PASS] Left-click on '[▶ グループ]' expanded the group and restored child layers!" << std::endl;
+
+        // Click on group name text (far to the right of "[▼ グループ]"): should NOT collapse
+        QPoint clickNamePos(prefixStart + prefixWidth + 50, rGrp.center().y());
+        QMouseEvent clickName(QEvent::MouseButtonPress, clickNamePos, clickNamePos,
+                              Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        app.sendEvent(gListWidget->viewport(), &clickName);
+        app.processEvents();
+
+        assert(grp->isExpanded() == true);
+        std::cout << "[PASS] Left-click on group name did not toggle group expand/collapse!" << std::endl;
+    }
+
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }
