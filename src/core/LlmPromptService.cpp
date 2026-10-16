@@ -130,13 +130,25 @@ QStringList LlmPromptService::parseModelsResponse(LlmBackend backend, const QByt
     return result;
 }
 
-QString LlmPromptService::buildSystemPrompt(const QString& stylePreset) {
+QString LlmPromptService::buildSystemPrompt(const QString& stylePreset, bool isInpaintMode) {
     QString prompt =
-        "You are an expert prompt engineer specializing in Text-to-Image models (Stable Diffusion, SDXL, Illustrious, Animagine, Midjourney).\n"
-        "Your task is to transform the user's idea or description (which may be in Japanese or English) into an exceptionally detailed, high-quality image generation prompt in English.\n\n"
-        "Guidelines:\n"
-        "1. Write a comma-separated list of Danbooru tags, descriptive English keywords, subject details, clothing, pose, expression, environment, lighting (e.g. volumetric lighting, rim light), composition, and aesthetic quality tags.\n"
-        "2. Provide a suitable negative prompt (unwanted artifacts, worst quality, lowres, bad anatomy, deformed hands, extra limbs, etc.).\n";
+        "You are an expert prompt engineer specializing in Text-to-Image models (Stable Diffusion, SDXL, Illustrious, Animagine, Midjourney).\n";
+
+    if (isInpaintMode) {
+        prompt +=
+            "Your task is to generate optimal English Danbooru tags and descriptive keywords for INPAINTING a specific selected region of an existing artwork (such as changing eye color, facial expression, clothing detail, hairstyle, or background object).\n\n"
+            "Guidelines for Inpainting:\n"
+            "1. Focus specifically on the requested features, colors, lighting, and details for the target area (e.g. 'dark yellow eyes, golden iris, glowing eyes, sharp gaze, detailed pupils, soft eye reflection').\n"
+            "2. Do NOT invent new full-body character descriptions, multiple people, unrelated clothing, or conflicting whole-body poses, because inpainting only replaces the masked local area.\n"
+            "3. Include relevant aesthetic quality tags (e.g. 'masterpiece, best quality, highly detailed') to ensure high-fidelity rendering.\n"
+            "4. Provide a suitable negative prompt (unwanted artifacts, worst quality, lowres, bad anatomy, deformed iris, blurry).\n";
+    } else {
+        prompt +=
+            "Your task is to transform the user's idea or description (which may be in Japanese or English) into an exceptionally detailed, high-quality image generation prompt in English.\n\n"
+            "Guidelines:\n"
+            "1. Write a comma-separated list of Danbooru tags, descriptive English keywords, subject details, clothing, pose, expression, environment, lighting (e.g. volumetric lighting, rim light), composition, and aesthetic quality tags.\n"
+            "2. Provide a suitable negative prompt (unwanted artifacts, worst quality, lowres, bad anatomy, deformed hands, extra limbs, etc.).\n";
+    }
 
     if (!stylePreset.isEmpty() && stylePreset != "指定なし（自由）") {
         prompt += QString("3. Target Style Preset: %1. Make sure to tailor tags and aesthetics specifically to this style.\n").arg(stylePreset);
@@ -153,15 +165,26 @@ QString LlmPromptService::buildSystemPrompt(const QString& stylePreset) {
     return prompt;
 }
 
-QString LlmPromptService::buildRefineSystemPrompt(const QString& stylePreset) {
+QString LlmPromptService::buildRefineSystemPrompt(const QString& stylePreset, bool isInpaintMode) {
     QString prompt =
         "You are an expert prompt engineer specializing in iterative refinement of Text-to-Image prompts (Stable Diffusion, SDXL, Illustrious, Animagine, Midjourney).\n"
-        "Your role is to help the user improve an existing image prompt based on their feedback about the previously generated image, bringing the next generation closer to their ideal vision.\n\n"
-        "Refinement Guidelines:\n"
-        "1. Retain the core strengths, subjects, and artistic style of the previous prompt, unless the user specifically requested changes to them.\n"
-        "2. Add, modify, or replace specific Danbooru tags, keywords, expressions, lighting, composition, colors, or poses according to the user's modification request.\n"
-        "3. If the user mentions unwanted artifacts or features, add them to the negative prompt.\n"
-        "4. Always output detailed, high-quality descriptive tags in English.\n";
+        "Your role is to help the user improve an existing image prompt based on their feedback about the previously generated image, bringing the next generation closer to their ideal vision.\n\n";
+
+    if (isInpaintMode) {
+        prompt +=
+            "Refinement Guidelines for Inpainting:\n"
+            "1. Focus modifications specifically on the inpainting target elements (e.g. eye color, expression, local details) requested by the user.\n"
+            "2. Retain the core artistic style and quality tags while replacing or adjusting the specific tags for the selected area.\n"
+            "3. If the user mentions unwanted artifacts in the inpaint area, add them to the negative prompt.\n"
+            "4. Always output detailed, high-quality descriptive tags in English without adding conflicting full-body descriptors.\n";
+    } else {
+        prompt +=
+            "Refinement Guidelines:\n"
+            "1. Retain the core strengths, subjects, and artistic style of the previous prompt, unless the user specifically requested changes to them.\n"
+            "2. Add, modify, or replace specific Danbooru tags, keywords, expressions, lighting, composition, colors, or poses according to the user's modification request.\n"
+            "3. If the user mentions unwanted artifacts or features, add them to the negative prompt.\n"
+            "4. Always output detailed, high-quality descriptive tags in English.\n";
+    }
 
     if (!stylePreset.isEmpty() && stylePreset != "指定なし（自由）") {
         prompt += QString("5. Target Style Preset: %1.\n").arg(stylePreset);
@@ -181,7 +204,8 @@ QString LlmPromptService::buildRefineSystemPrompt(const QString& stylePreset) {
 QJsonObject LlmPromptService::buildChatRequestJson(const LlmConfig& config,
                                                    const QString& userIdea,
                                                    const QString& stylePreset,
-                                                   const QString& currentPrompt) {
+                                                   const QString& currentPrompt,
+                                                   bool isInpaintMode) {
     QJsonObject json;
     json["model"] = config.modelName.isEmpty() ? "llama3" : config.modelName;
 
@@ -190,11 +214,14 @@ QJsonObject LlmPromptService::buildChatRequestJson(const LlmConfig& config,
     // System prompt
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
-    sysMsg["content"] = buildSystemPrompt(stylePreset);
+    sysMsg["content"] = buildSystemPrompt(stylePreset, isInpaintMode);
     messages.append(sysMsg);
 
     // User prompt
     QString userContent = QString("User Idea / Request: %1").arg(userIdea);
+    if (isInpaintMode) {
+        userContent += "\nContext: Inpaint mode (modifying/replacing selected region of an existing artwork).";
+    }
     if (!currentPrompt.isEmpty()) {
         userContent += QString("\nExisting / Draft Prompt: %1\n(Please enhance or expand upon this draft if helpful)").arg(currentPrompt);
     }
@@ -214,7 +241,8 @@ QJsonObject LlmPromptService::buildRefineRequestJson(const LlmConfig& config,
                                                     const QString& previousPrompt,
                                                     const QString& previousNegative,
                                                     const QString& modificationRequest,
-                                                    const QString& stylePreset) {
+                                                    const QString& stylePreset,
+                                                    bool isInpaintMode) {
     QJsonObject json;
     json["model"] = config.modelName.isEmpty() ? "llama3" : config.modelName;
 
@@ -223,12 +251,15 @@ QJsonObject LlmPromptService::buildRefineRequestJson(const LlmConfig& config,
     // System prompt
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
-    sysMsg["content"] = buildRefineSystemPrompt(stylePreset);
+    sysMsg["content"] = buildRefineSystemPrompt(stylePreset, isInpaintMode);
     messages.append(sysMsg);
 
     // User prompt
     QString userContent = QString("User's Modification / Improvement Request:\n%1\n\nPrevious Prompt:\n%2")
                               .arg(modificationRequest, previousPrompt);
+    if (isInpaintMode) {
+        userContent += "\nContext: Inpaint mode (modifying/replacing selected region of an existing artwork).";
+    }
     if (!previousNegative.isEmpty()) {
         userContent += QString("\n\nPrevious Negative Prompt:\n%1").arg(previousNegative);
     }
@@ -248,7 +279,8 @@ QJsonObject LlmPromptService::buildRefineRequestJson(const LlmConfig& config,
 void LlmPromptService::generatePrompt(const LlmConfig& config,
                                       const QString& userIdea,
                                       const QString& stylePreset,
-                                      const QString& currentPrompt) {
+                                      const QString& currentPrompt,
+                                      bool isInpaintMode) {
     if (m_generateReply && m_generateReply->isRunning()) {
         m_generateReply->abort();
     }
@@ -268,7 +300,7 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
         chatEndpoint = base + "/v1/chat/completions";
     }
 
-    QJsonObject reqJson = buildChatRequestJson(config, userIdea, stylePreset, currentPrompt);
+    QJsonObject reqJson = buildChatRequestJson(config, userIdea, stylePreset, currentPrompt, isInpaintMode);
     reqJson["stream"] = true; // ストリーミング受信を有効化
     QByteArray body = QJsonDocument(reqJson).toJson(QJsonDocument::Compact);
 
@@ -290,7 +322,8 @@ void LlmPromptService::refinePrompt(const LlmConfig& config,
                                     const QString& previousPrompt,
                                     const QString& previousNegative,
                                     const QString& modificationRequest,
-                                    const QString& stylePreset) {
+                                    const QString& stylePreset,
+                                    bool isInpaintMode) {
     if (m_generateReply && m_generateReply->isRunning()) {
         m_generateReply->abort();
     }
@@ -310,7 +343,7 @@ void LlmPromptService::refinePrompt(const LlmConfig& config,
         chatEndpoint = base + "/v1/chat/completions";
     }
 
-    QJsonObject reqJson = buildRefineRequestJson(config, previousPrompt, previousNegative, modificationRequest, stylePreset);
+    QJsonObject reqJson = buildRefineRequestJson(config, previousPrompt, previousNegative, modificationRequest, stylePreset, isInpaintMode);
     reqJson["stream"] = true; // ストリーミング受信を有効化
     QByteArray body = QJsonDocument(reqJson).toJson(QJsonDocument::Compact);
 

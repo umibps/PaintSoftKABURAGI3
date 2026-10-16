@@ -1385,8 +1385,26 @@ void AiAssistantDockWidget::onGenerateClicked() {
     params.width = w;
     params.height = h;
 
+    // 選択範囲インペイントモードのバリデーション
+    if (params.mode == AiMode::Inpaint) {
+        if (!m_document || !m_document->hasSelection()) {
+            QMessageBox::warning(this, tr("選択範囲インペイント (Inpaint)"),
+                                 tr("選択範囲が見つかりません。\nキャンバス上で修正したい領域（目や装飾など）を選択ツール（投げ縄ツールや矩形選択など）で囲んでから生成を実行してください。"));
+            m_btnGenerate->setEnabled(true);
+            m_btnCancel->setEnabled(false);
+            return;
+        }
+    }
+
     params.initImage = getInitImageForCurrentMode();
     params.maskImage = getMaskImageForCurrentMode();
+
+    if (!params.initImage.isNull() && (params.initImage.width() != w || params.initImage.height() != h)) {
+        params.initImage = params.initImage.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+    if (!params.maskImage.isNull() && (params.maskImage.width() != w || params.maskImage.height() != h)) {
+        params.maskImage = params.maskImage.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
 
     if (m_chkControlNet && m_chkControlNet->isChecked()) {
         QString cnError;
@@ -1863,12 +1881,6 @@ void AiAssistantDockWidget::onApplyOverwriteClicked() {
         QImage img = m_currentResults[m_selectedIndex];
         if (m_document) {
             QSize targetSize(m_document->width(), m_document->height());
-            if (m_document->hasSelection()) {
-                QRect bounds = m_document->selection().boundingRect().toAlignedRect();
-                if (bounds.isValid() && !bounds.isEmpty()) {
-                    targetSize = bounds.size();
-                }
-            }
             if (img.size() != targetSize) {
                 QString method = m_comboUpscaleMethod ? m_comboUpscaleMethod->currentText() : "bicubic";
                 img = AiService::upscaleImage(img, targetSize, method);
@@ -1902,6 +1914,7 @@ void AiAssistantDockWidget::onPromptHistoryClicked() {
 
 void AiAssistantDockWidget::onPromptAssistClicked() {
     LlmPromptDialog dlg(this);
+    dlg.setAiMode(static_cast<AiMode>(m_comboMode->currentData().toInt()));
     dlg.setCurrentPrompt(m_editPrompt->toPlainText().trimmed(),
                          m_editNegativePrompt->toPlainText().trimmed(),
                          currentSelectedResultImage());

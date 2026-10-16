@@ -42,6 +42,13 @@ LlmPromptDialog::~LlmPromptDialog() {
     saveSettings();
 }
 
+void LlmPromptDialog::setAiMode(AiMode mode) {
+    m_aiMode = mode;
+    if (m_lblInpaintNotice) {
+        m_lblInpaintNotice->setVisible(m_aiMode == AiMode::Inpaint);
+    }
+}
+
 void LlmPromptDialog::setCurrentPrompt(const QString& prompt, const QString& negativePrompt, const QImage& lastImage) {
     m_existingPrompt = prompt;
     m_existingNegative = negativePrompt;
@@ -117,7 +124,13 @@ void LlmPromptDialog::setupUi() {
     auto scrollContent = new QWidget(scrollArea);
     auto mainLayout = new QVBoxLayout(scrollContent);
     mainLayout->setContentsMargins(4, 4, 4, 4);
-    mainLayout->setSpacing(8);
+    // インペイント時の案内ラベル
+    m_lblInpaintNotice = new QLabel(tr("🎨 <b>制作モード: 選択範囲インペイント (Inpaint)</b><br>"
+                                       "選択した領域（目や装飾など）の変更に特化した Danbooru タグを生成します。<br>"
+                                       "変更したい色や特徴（例:「暗めの黄色の目」「微笑み」など）を入力してください。"), scrollContent);
+    m_lblInpaintNotice->setStyleSheet("QLabel { background-color: #1e3a5f; color: #b3e5fc; padding: 10px; border-radius: 6px; border: 1px solid #0288d1; font-size: 12px; }");
+    m_lblInpaintNotice->setVisible(m_aiMode == AiMode::Inpaint);
+    mainLayout->addWidget(m_lblInpaintNotice);
 
     // 1. モード選択
     auto grpMode = new QGroupBox(tr("作業モード"), scrollContent);
@@ -407,11 +420,12 @@ void LlmPromptDialog::onGenerateClicked() {
     m_editResultNegative->clear();
 
     QString style = m_comboStyle->currentText();
+    bool isInpaint = (m_aiMode == AiMode::Inpaint);
     if (refine) {
-        m_llmService->refinePrompt(cfg, m_existingPrompt, m_existingNegative, req, style);
+        m_llmService->refinePrompt(cfg, m_existingPrompt, m_existingNegative, req, style, isInpaint);
     } else {
         // 新規考案モードでは前回のプロンプトを渡さず、入力されたアイデアのみから真っ新に考案する
-        m_llmService->generatePrompt(cfg, idea, style, QString());
+        m_llmService->generatePrompt(cfg, idea, style, QString(), isInpaint);
     }
 }
 

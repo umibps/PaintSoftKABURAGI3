@@ -133,7 +133,7 @@ public:
     static QImage base64ToImage(const QString& b64);
     static QJsonObject buildWebUiTxt2ImgJson(const AiGenerateParams& params);
     static QJsonObject buildWebUiImg2ImgJson(const AiGenerateParams& params);
-    static QJsonObject buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage = QString(), const QString& uploadedControlNetImage = QString());
+    static QJsonObject buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage = QString(), const QString& uploadedMaskImage = QString(), const QString& uploadedControlNetImage = QString());
     static QJsonObject buildOpenAiJson(const AiGenerateParams& params);
     static QString findControlNetModelPath(ControlNetType type, bool isSdxl = false, const QString& explicitDir = QString());
     static bool isModelSdxl(const QString& modelName);

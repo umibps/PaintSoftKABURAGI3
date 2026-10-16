@@ -4122,14 +4122,33 @@ void MainWindow::onAiApplyAsNewLayer(const QImage& image, const QJsonObject& aiP
     QImage layerImg = image;
     QPoint offset(0, 0);
 
-    if (m_document->hasSelection()) {
+    bool isCanvasSized = (image.size() == QSize(m_document->width(), m_document->height()));
+    bool isCroppedToSelection = (m_document->hasSelection() &&
+                                 image.size() == m_document->selectionBounds().toRect().size() &&
+                                 !isCanvasSized);
+
+    if (isCroppedToSelection) {
         QRect bounds = m_document->selectionBounds().toRect();
-        if (bounds.isValid() && bounds.width() > 0 && bounds.height() > 0) {
-            layerImg = image.scaled(bounds.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            offset = bounds.topLeft();
+        offset = bounds.topLeft();
+    } else {
+        if (layerImg.size() != QSize(m_document->width(), m_document->height())) {
+            layerImg = image.scaled(m_document->width(), m_document->height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         }
-    } else if (layerImg.size() != QSize(m_document->width(), m_document->height())) {
-        layerImg = image.scaled(m_document->width(), m_document->height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        if (m_document->hasSelection()) {
+            // 選択範囲がある場合、選択範囲外のピクセルを透明化して
+            // 修正部分（目など）だけが単独で乗った透明レイヤーとして追加する
+            if (layerImg.format() != QImage::Format_ARGB32_Premultiplied) {
+                layerImg = layerImg.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            }
+            for (int y = 0; y < layerImg.height(); ++y) {
+                QRgb* scanLine = reinterpret_cast<QRgb*>(layerImg.scanLine(y));
+                for (int x = 0; x < layerImg.width(); ++x) {
+                    if (!m_document->isPixelSelected(x, y)) {
+                        scanLine[x] = 0; // 完全透明
+                    }
+                }
+            }
+        }
     }
 
     auto newLayer = m_document->addRasterLayerWithImage(layerImg, tr("AI Generated Layer"), offset, aiParams);
@@ -4153,38 +4172,63 @@ void MainWindow::onAiApplyOverwriteSelection(const QImage& image, const QJsonObj
 
     TileManager preTiles = activeLayer->tileManager().clone();
 
+    bool isCanvasSized = (image.size() == QSize(m_document->width(), m_document->height()));
+    bool isCroppedToSelection = (m_document->hasSelection() &&
+                                 image.size() == m_document->selectionBounds().toRect().size() &&
+                                 !isCanvasSized);
+
     QRect targetRect(0, 0, m_document->width(), m_document->height());
     QImage scaledImg = image;
-    if (m_document->hasSelection()) {
+
+    if (isCroppedToSelection) {
+        // 画像があらかじめ選択範囲の矩形サイズに切り抜かれている場合（テスト等）
         QRect bounds = m_document->selectionBounds().toRect();
-        if (bounds.isValid() && bounds.width() > 0 && bounds.height() > 0) {
-            targetRect = bounds;
-            scaledImg = image.scaled(targetRect.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        targetRect = bounds;
+        int left = targetRect.left();
+        int top = targetRect.top();
+        int w = scaledImg.width();
+        int h = scaledImg.height();
+
+        for (int y = 0; y < h; ++y) {
+            int docY = top + y;
+            if (docY < 0 || docY >= m_document->height()) continue;
+            const QRgb* srcLine = reinterpret_cast<const QRgb*>(scaledImg.constScanLine(y));
+            for (int x = 0; x < w; ++x) {
+                int docX = left + x;
+                if (docX < 0 || docX >= m_document->width()) continue;
+
+                if (m_document->hasSelection() && !m_document->isPixelSelected(docX, docY)) {
+                    continue;
+                }
+
+                activeLayer->tileManager().setPixel(docX, docY, static_cast<uint32_t>(srcLine[x]));
+            }
         }
     } else {
+        // 通常のAI生成（Inpaint等）：キャンバス全体に対応する画像
         if (scaledImg.size() != QSize(m_document->width(), m_document->height())) {
             scaledImg = image.scaled(m_document->width(), m_document->height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         }
-    }
 
-    int left = targetRect.left();
-    int top = targetRect.top();
-    int w = scaledImg.width();
-    int h = scaledImg.height();
+        if (m_document->hasSelection()) {
+            targetRect = m_document->selectionBounds().toRect();
+        } else {
+            targetRect = QRect(0, 0, m_document->width(), m_document->height());
+        }
 
-    for (int y = 0; y < h; ++y) {
-        int docY = top + y;
-        if (docY < 0 || docY >= m_document->height()) continue;
-        const QRgb* srcLine = reinterpret_cast<const QRgb*>(scaledImg.constScanLine(y));
-        for (int x = 0; x < w; ++x) {
-            int docX = left + x;
-            if (docX < 0 || docX >= m_document->width()) continue;
+        int left = std::max(0, targetRect.left());
+        int top = std::max(0, targetRect.top());
+        int right = std::min(m_document->width() - 1, targetRect.right());
+        int bottom = std::min(m_document->height() - 1, targetRect.bottom());
 
-            if (m_document->hasSelection() && !m_document->isPixelSelected(docX, docY)) {
-                continue;
+        for (int y = top; y <= bottom; ++y) {
+            const QRgb* srcLine = reinterpret_cast<const QRgb*>(scaledImg.constScanLine(y));
+            for (int x = left; x <= right; ++x) {
+                if (m_document->hasSelection() && !m_document->isPixelSelected(x, y)) {
+                    continue;
+                }
+                activeLayer->tileManager().setPixel(x, y, static_cast<uint32_t>(srcLine[x]));
             }
-
-            activeLayer->tileManager().setPixel(docX, docY, static_cast<uint32_t>(srcLine[x]));
         }
     }
 

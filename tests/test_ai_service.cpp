@@ -292,6 +292,24 @@ void testCanvasIntegration() {
     uint32_t pxUndone = doc->activeLayer()->tileManager().getPixel(60, 60);
     assert(pxUndone != pxIn);
 
+    // 2b. Full-canvas sized Inpaint overwrite test:
+    // Canvas is 400x300, selection is (50, 50, 100, 100).
+    // An inpaint image of 400x300 has green pixel at (70, 70) (inside), and green pixel at (200, 200) (outside).
+    QImage fullCanvasInpaintImg(400, 300, QImage::Format_ARGB32_Premultiplied);
+    fullCanvasInpaintImg.fill(Qt::black);
+    fullCanvasInpaintImg.setPixelColor(70, 70, Qt::green);
+    fullCanvasInpaintImg.setPixelColor(200, 200, Qt::green);
+
+    win.onAiApplyOverwriteSelection(fullCanvasInpaintImg);
+
+    // Pixel at (70, 70) inside selection must be green
+    uint32_t pxInSelection = doc->activeLayer()->tileManager().getPixel(70, 70);
+    assert(QColor(pxInSelection) == Qt::green);
+
+    // Pixel at (200, 200) outside selection must NOT be green
+    uint32_t pxOutSelection = doc->activeLayer()->tileManager().getPixel(200, 200);
+    assert(QColor(pxOutSelection) != Qt::green);
+
     // 3. RoughToClean mode: 2nd generation layer fallback & white background test
     auto roughLayer = doc->addRasterLayer("ラフ");
     // Draw black pixel on transparent rough layer
@@ -955,12 +973,29 @@ void testSketchToLineartAndBrightnessToAlpha() {
 
     // 2b. batchCount > 1 の時に RepeatLatentBatch (Node 12) が挿入されることの検証
     comfyParams.batchCount = 4;
-    QJsonObject batchComfy = AiService::buildComfyUiPromptJson(comfyParams, "init.png", "cn.png");
+    QJsonObject batchComfy = AiService::buildComfyUiPromptJson(comfyParams, "init.png", QString(), "cn.png");
     QJsonObject batchPrompt = batchComfy["prompt"].toObject();
     assert(batchPrompt.contains("12"));
     assert(batchPrompt["12"].toObject()["class_type"].toString() == "RepeatLatentBatch");
     assert(batchPrompt["12"].toObject()["inputs"].toObject()["amount"].toInt() == 4);
     assert(batchPrompt["3"].toObject()["inputs"].toObject()["latent_image"].toArray()[0].toString() == "12");
+
+    // 2c. Inpaint モード時に LoadImage(マスク) + ImageToMask + SetLatentNoiseMask が挿入されることの検証
+    AiGenerateParams inpaintParams;
+    inpaintParams.mode = AiMode::Inpaint;
+    inpaintParams.initImage = src;
+    inpaintParams.maskImage = src;
+    QJsonObject inpaintComfy = AiService::buildComfyUiPromptJson(inpaintParams, "init_canvas.png", "mask_eyes.png");
+    QJsonObject inpaintPrompt = inpaintComfy["prompt"].toObject();
+    assert(inpaintPrompt.contains("13")); // LoadImage (mask)
+    assert(inpaintPrompt["13"].toObject()["class_type"].toString() == "LoadImage");
+    assert(inpaintPrompt["13"].toObject()["inputs"].toObject()["image"].toString() == "mask_eyes.png");
+    assert(inpaintPrompt.contains("14")); // ImageToMask
+    assert(inpaintPrompt["14"].toObject()["class_type"].toString() == "ImageToMask");
+    assert(inpaintPrompt["14"].toObject()["inputs"].toObject()["channel"].toString() == "red");
+    assert(inpaintPrompt.contains("15")); // SetLatentNoiseMask
+    assert(inpaintPrompt["15"].toObject()["class_type"].toString() == "SetLatentNoiseMask");
+    assert(inpaintPrompt["3"].toObject()["inputs"].toObject()["latent_image"].toArray()[0].toString() == "15");
 
     // 3. AiAssistantDockWidget でのモード切り替え検証
     AiAssistantDockWidget dock;

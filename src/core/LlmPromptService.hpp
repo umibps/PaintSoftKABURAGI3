@@ -50,14 +50,16 @@ public:
     void generatePrompt(const LlmConfig& config,
                         const QString& userIdea,
                         const QString& stylePreset = QString(),
-                        const QString& currentPrompt = QString());
+                        const QString& currentPrompt = QString(),
+                        bool isInpaintMode = false);
 
     // 前回の画像・プロンプトからの修正・改善リクエストの送信 (Iterative Refinement)
     void refinePrompt(const LlmConfig& config,
                       const QString& previousPrompt,
                       const QString& previousNegative,
                       const QString& modificationRequest,
-                      const QString& stylePreset = QString());
+                      const QString& stylePreset = QString(),
+                      bool isInpaintMode = false);
 
     // キャンセル
     void cancel();
@@ -67,14 +69,16 @@ public:
     static QJsonObject buildChatRequestJson(const LlmConfig& config,
                                             const QString& userIdea,
                                             const QString& stylePreset,
-                                            const QString& currentPrompt);
+                                            const QString& currentPrompt,
+                                            bool isInpaintMode = false);
     static QJsonObject buildRefineRequestJson(const LlmConfig& config,
                                               const QString& previousPrompt,
                                               const QString& previousNegative,
                                               const QString& modificationRequest,
-                                              const QString& stylePreset);
-    static QString buildSystemPrompt(const QString& stylePreset);
-    static QString buildRefineSystemPrompt(const QString& stylePreset);
+                                              const QString& stylePreset,
+                                              bool isInpaintMode = false);
+    static QString buildSystemPrompt(const QString& stylePreset, bool isInpaintMode = false);
+    static QString buildRefineSystemPrompt(const QString& stylePreset, bool isInpaintMode = false);
     static LlmPromptResult parseChatResponseJson(const QByteArray& responseData, QString* outError = nullptr);
     static QStringList parseModelsResponse(LlmBackend backend, const QByteArray& responseData);
 

@@ -530,15 +530,14 @@ QJsonObject AiService::buildWebUiImg2ImgJson(const AiGenerateParams& params) {
         json["mask"] = imageToBase64Png(params.maskImage);
         json["mask_blur"] = 4;
         json["inpainting_fill"] = 1; // 1: original
-        json["inpaint_full_res"] = true;
-        json["inpaint_full_res_padding"] = 32;
+        json["inpaint_full_res"] = 0; // 0: Whole picture (returns full image matching canvas coordinates)
         json["inpainting_mask_invert"] = 0; // 0: inpaint masked area
     }
 
     return json;
 }
 
-QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage, const QString& uploadedControlNetImage) {
+QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, const QString& uploadedInitImage, const QString& uploadedMaskImage, const QString& uploadedControlNetImage) {
     QJsonObject prompt;
 
     // Node 4: CheckpointLoaderSimple
@@ -628,9 +627,10 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     int latentOutIndex = 0;
 
     bool isImg2Img = (params.mode == AiMode::RoughToClean || params.mode == AiMode::Inpaint || params.mode == AiMode::Colorization || params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
+    bool isInpaint = (params.mode == AiMode::Inpaint) && !uploadedMaskImage.isEmpty();
 
     if (isImg2Img && !uploadedInitImage.isEmpty()) {
-        // Node 10: LoadImage
+        // Node 10: LoadImage (Init Image)
         QJsonObject node10;
         node10["class_type"] = "LoadImage";
         QJsonObject node10Inputs;
@@ -649,21 +649,56 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
         node11["inputs"] = node11Inputs;
         prompt["11"] = node11;
 
+        QString currentLatentNode = "11";
+
         if (params.batchCount > 1) {
             // Node 12: RepeatLatentBatch (img2img/線画化モードで複数枚バッチ生成を有効化)
             QJsonObject node12;
             node12["class_type"] = "RepeatLatentBatch";
             QJsonObject node12Inputs;
-            QJsonArray latentLink; latentLink.append("11"); latentLink.append(0);
+            QJsonArray latentLink; latentLink.append(currentLatentNode); latentLink.append(0);
             node12Inputs["samples"] = latentLink;
             node12Inputs["amount"] = std::clamp(params.batchCount, 1, 8);
             node12["inputs"] = node12Inputs;
             prompt["12"] = node12;
 
-            latentNodeId = "12";
-        } else {
-            latentNodeId = "11";
+            currentLatentNode = "12";
         }
+
+        if (isInpaint) {
+            // Node 13: LoadImage (Mask Image)
+            QJsonObject node13;
+            node13["class_type"] = "LoadImage";
+            QJsonObject node13Inputs;
+            node13Inputs["image"] = uploadedMaskImage;
+            node13["inputs"] = node13Inputs;
+            prompt["13"] = node13;
+
+            // Node 14: ImageToMask (channel: "red" -> 白(255)が1.0、黒(0)が0.0のマスクテンソルを生成)
+            QJsonObject node14;
+            node14["class_type"] = "ImageToMask";
+            QJsonObject node14Inputs;
+            QJsonArray maskImgLink; maskImgLink.append("13"); maskImgLink.append(0);
+            node14Inputs["image"] = maskImgLink;
+            node14Inputs["channel"] = "red";
+            node14["inputs"] = node14Inputs;
+            prompt["14"] = node14;
+
+            // Node 15: SetLatentNoiseMask (マスク領域のみノイズを乗せて再生成、マスク外は完全に元のLatentを維持)
+            QJsonObject node15;
+            node15["class_type"] = "SetLatentNoiseMask";
+            QJsonObject node15Inputs;
+            QJsonArray latentSampleLink; latentSampleLink.append(currentLatentNode); latentSampleLink.append(0);
+            QJsonArray maskLink; maskLink.append("14"); maskLink.append(0);
+            node15Inputs["samples"] = latentSampleLink;
+            node15Inputs["mask"] = maskLink;
+            node15["inputs"] = node15Inputs;
+            prompt["15"] = node15;
+
+            currentLatentNode = "15";
+        }
+
+        latentNodeId = currentLatentNode;
     } else {
         // Node 5: EmptyLatentImage
         QJsonObject node5;
@@ -1044,14 +1079,15 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
                       params.mode == AiMode::Inpaint ||
                       params.mode == AiMode::Colorization ||
                       params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
+    bool isInpaint = (params.mode == AiMode::Inpaint) && !params.maskImage.isNull();
     bool hasControlNet = params.enableControlNet && !params.controlNetImage.isNull();
 
-    auto postPromptJson = [this, params, urlStr](const QString& uploadedInit, const QString& uploadedCn) {
+    auto postPromptJson = [this, params, urlStr](const QString& uploadedInit, const QString& uploadedMask, const QString& uploadedCn) {
         QUrl pUrl(urlStr + "/prompt");
         QNetworkRequest pReq(pUrl);
         pReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-        QJsonObject pBody = buildComfyUiPromptJson(params, uploadedInit, uploadedCn);
+        QJsonObject pBody = buildComfyUiPromptJson(params, uploadedInit, uploadedMask, uploadedCn);
         if (!m_comfyClientId.isEmpty()) {
             pBody["client_id"] = m_comfyClientId;
         }
@@ -1108,21 +1144,29 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
         });
     };
 
-    if (isImg2Img && hasControlNet) {
-        emit generationProgress(10, tr("初期画像をComfyUIへアップロード中..."));
-        uploadImageToComfy(params.initImage, "kaburagi_init.png", [this, params, hasControlNet, uploadImageToComfy, postPromptJson](const QString& initName) {
-            emit generationProgress(15, tr("ControlNet参照画像をComfyUIへアップロード中..."));
-            uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [initName, postPromptJson](const QString& cnName) {
-                postPromptJson(initName, cnName);
-            });
-        });
-        return;
-    }
-
     if (isImg2Img) {
-        emit generationProgress(10, tr("初期画像をComfyUIへアップロード中..."));
-        uploadImageToComfy(params.initImage, "kaburagi_init.png", [postPromptJson](const QString& initName) {
-            postPromptJson(initName, QString());
+        emit generationProgress(8, tr("初期画像をComfyUIへアップロード中..."));
+        uploadImageToComfy(params.initImage, "kaburagi_init.png", [this, params, isInpaint, hasControlNet, uploadImageToComfy, postPromptJson](const QString& initName) {
+            if (isInpaint) {
+                emit generationProgress(12, tr("マスク画像をComfyUIへアップロード中..."));
+                uploadImageToComfy(params.maskImage, "kaburagi_mask.png", [this, params, initName, hasControlNet, uploadImageToComfy, postPromptJson](const QString& maskName) {
+                    if (hasControlNet) {
+                        emit generationProgress(16, tr("ControlNet参照画像をComfyUIへアップロード中..."));
+                        uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [initName, maskName, postPromptJson](const QString& cnName) {
+                            postPromptJson(initName, maskName, cnName);
+                        });
+                    } else {
+                        postPromptJson(initName, maskName, QString());
+                    }
+                });
+            } else if (hasControlNet) {
+                emit generationProgress(15, tr("ControlNet参照画像をComfyUIへアップロード中..."));
+                uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [initName, postPromptJson](const QString& cnName) {
+                    postPromptJson(initName, QString(), cnName);
+                });
+            } else {
+                postPromptJson(initName, QString(), QString());
+            }
         });
         return;
     }
@@ -1130,13 +1174,13 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
     if (hasControlNet) {
         emit generationProgress(10, tr("ControlNet参照画像をComfyUIへアップロード中..."));
         uploadImageToComfy(params.controlNetImage, "kaburagi_controlnet.png", [postPromptJson](const QString& cnName) {
-            postPromptJson(QString(), cnName);
+            postPromptJson(QString(), QString(), cnName);
         });
         return;
     }
 
     // txt2img (ControlNetなし)
-    postPromptJson(QString(), QString());
+    postPromptJson(QString(), QString(), QString());
 }
 
 void AiService::executeEmbeddedInference(const AiGenerateParams& params) {

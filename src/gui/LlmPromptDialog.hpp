@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QString>
 #include "LlmPromptService.hpp"
+#include "AiService.hpp"
 
 class QComboBox;
 class QLineEdit;
@@ -20,6 +21,9 @@ class LlmPromptDialog : public QDialog {
 public:
     explicit LlmPromptDialog(QWidget* parent = nullptr);
     ~LlmPromptDialog() override;
+
+    void setAiMode(AiMode mode);
+    AiMode aiMode() const { return m_aiMode; }
 
     void setCurrentPrompt(const QString& prompt, const QString& negativePrompt, const QImage& lastImage = QImage());
 
@@ -95,6 +99,8 @@ private:
     QString m_existingNegative;
     QImage m_lastImage;
     bool m_initialized = false;
+    AiMode m_aiMode = AiMode::BackgroundAndNew;
+    QLabel* m_lblInpaintNotice = nullptr;
 };
 
 } // namespace Kaburagi

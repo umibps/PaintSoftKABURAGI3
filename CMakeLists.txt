@@ -211,6 +211,7 @@ target_link_libraries(PaintSoftKABURAGI PRIVATE
 add_executable(test_undo
     tests/test_undo.cpp
     ${CORE_SOURCES}
+    ${GUI_SOURCES}
 )
 target_link_libraries(test_undo PRIVATE
     Qt6::Core
