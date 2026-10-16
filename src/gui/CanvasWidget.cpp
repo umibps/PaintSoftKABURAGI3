@@ -4175,15 +4175,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
             return;
         }
 
-        activeL = m_document ? m_document->activeLayer() : nullptr;
-        if (activeL && activeL->type() == LayerType::Group) {
-            m_isMovingLayer = true;
-            m_layerMoveStartDocPos = docPt;
-            m_accumulatedDx = 0;
-            m_accumulatedDy = 0;
-            event->accept();
-            return;
-        }
+
 
         if (m_currentTool == ToolType::Pipette) {
             if (m_document) {
@@ -4667,6 +4659,16 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                 }
                 update();
             }
+            event->accept();
+            return;
+        }
+
+        activeL = m_document ? m_document->activeLayer() : nullptr;
+        if (activeL && activeL->type() == LayerType::Group) {
+            m_isMovingLayer = true;
+            m_layerMoveStartDocPos = docPt;
+            m_accumulatedDx = 0;
+            m_accumulatedDy = 0;
             event->accept();
             return;
         }
