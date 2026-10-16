@@ -110,6 +110,7 @@ public slots:
     void onNewLayerFromVisible();
     void onDuplicateLayer();
     void onMergeDown();
+    void onMergePanels();
     void onDeleteLayer();
     void onSelectOpaque();
     void onAddOpaqueToSelection();
@@ -233,6 +234,7 @@ private:
     QAction* m_newLayerFromVisibleAction = nullptr;
     QAction* m_duplicateLayerAction = nullptr;
     QAction* m_mergeDownAction = nullptr;
+    QAction* m_mergePanelsAction = nullptr;
     QAction* m_deleteLayerAction = nullptr;
     QAction* m_selectOpaqueAction = nullptr;
     QAction* m_addOpaqueToSelectionAction = nullptr;

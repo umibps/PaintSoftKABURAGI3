@@ -40,6 +40,7 @@
 #include "PreviewWindow.hpp"
 #include "ReferenceImageWindow.hpp"
 #include "CanvasDialogs.hpp"
+#include "MergePanelDialog.hpp"
 
 namespace Kaburagi {
 
@@ -363,6 +364,7 @@ void MainWindow::createMenuBar() {
 
     m_duplicateLayerAction = layerMenu->addAction(tr("&Duplicate Layer"), this, &MainWindow::onDuplicateLayer);
     m_mergeDownAction = layerMenu->addAction(tr("&Merge Down"), this, &MainWindow::onMergeDown);
+    m_mergePanelsAction = layerMenu->addAction(tr("Merge &Panel Frames..."), this, &MainWindow::onMergePanels);
     m_deleteLayerAction = layerMenu->addAction(tr("&Delete Layer"), this, &MainWindow::onDeleteLayer);
 
     layerMenu->addSeparator();
@@ -1647,6 +1649,7 @@ void MainWindow::setupLayout() {
 
     // コマ設定とキャンバスの連動
     connect(m_panelSettings, &PanelSettingsWidget::settingsChanged, m_canvasWidget, &CanvasWidget::applyPanelSettingsToSelected);
+    connect(m_panelSettings, &PanelSettingsWidget::mergePanelsRequested, this, &MainWindow::onMergePanels);
 
     // AI アシスタント ドック
     m_aiAssistantDock = new AiAssistantDockWidget(this);
@@ -3929,6 +3932,12 @@ void MainWindow::updateLayerMenuActions() {
     if (m_mergeDownAction) {
         m_mergeDownAction->setEnabled(hasDoc && activeIdx > 0);
     }
+    if (m_mergePanelsAction) {
+        bool isPanel = activeL && activeL->type() == LayerType::Group &&
+                       std::dynamic_pointer_cast<GroupLayer>(activeL) &&
+                       std::dynamic_pointer_cast<GroupLayer>(activeL)->isPanelFolder();
+        m_mergePanelsAction->setEnabled(hasDoc && isPanel);
+    }
     if (m_deleteLayerAction) {
         m_deleteLayerAction->setEnabled(hasDoc && layerCount > 1 && activeL != nullptr && activeL->name() != "背景");
     }
@@ -4049,6 +4058,39 @@ void MainWindow::onDuplicateLayer() {
 void MainWindow::onMergeDown() {
     if (m_document && m_document->activeLayerIndex() > 0) {
         m_document->mergeDown(m_document->activeLayerIndex());
+    }
+}
+
+void MainWindow::onMergePanels() {
+    if (!m_document) return;
+    auto activeL = m_document->activeLayer();
+    auto activePanel = std::dynamic_pointer_cast<GroupLayer>(activeL);
+
+    // 選択中レイヤーがコマフォルダ内の子レイヤーなら、親のコマフォルダを対象にする
+    if (!activePanel && activeL && activeL->parentGroup() && activeL->parentGroup()->isPanelFolder()) {
+        activePanel = activeL->parentGroup();
+    }
+
+    if (!activePanel || !activePanel->isPanelFolder()) {
+        QMessageBox::information(this, tr("コマ枠の結合"), tr("結合元となるコマ枠フォルダを選択してください。"));
+        return;
+    }
+
+    auto candidates = m_document->findAdjacentPanels(activePanel);
+    if (candidates.empty()) {
+        QMessageBox::information(this, tr("コマ枠の結合"), tr("隣接するコマ枠が見つかりませんでした。"));
+        return;
+    }
+
+    MergePanelDialog dlg(activePanel, candidates, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        auto target = dlg.selectedPanel();
+        if (target) {
+            float mx = m_panelSettings ? m_panelSettings->marginHorizontal() : 20.0f;
+            float my = m_panelSettings ? m_panelSettings->marginVertical() : 40.0f;
+            float maxGap = std::max(mx, my) * 2.0f;
+            m_document->mergePanelFolders(activePanel, target, maxGap);
+        }
     }
 }
 

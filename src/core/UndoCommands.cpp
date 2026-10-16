@@ -1,5 +1,6 @@
 #include "UndoCommands.hpp"
 #include "Document.hpp"
+#include <iostream>
 #include "Layer.hpp"
 #include "VectorLayer.hpp"
 #include "TextLayer.hpp"
@@ -785,6 +786,70 @@ void ModifyPanelPolygonsCommand::redo() {
         }
     }
     m_doc->composite();
+}
+
+// ----------------------------------------------------------------------------
+// MergePanelFoldersCommand
+// ----------------------------------------------------------------------------
+MergePanelFoldersCommand::MergePanelFoldersCommand(Document* doc,
+                                                   std::shared_ptr<GroupLayer> panelA,
+                                                   const QPolygonF& oldPolyA,
+                                                   const QPolygonF& newPolyA,
+                                                   std::shared_ptr<GroupLayer> panelB,
+                                                   int panelBIndex,
+                                                   std::vector<LayerPtr> childLayersB,
+                                                   const QString& text,
+                                                   QUndoCommand* parent)
+    : QUndoCommand(text, parent)
+    , m_doc(doc)
+    , m_panelA(panelA)
+    , m_oldPolyA(oldPolyA)
+    , m_newPolyA(newPolyA)
+    , m_panelB(panelB)
+    , m_panelBIndex(panelBIndex)
+    , m_childLayersB(std::move(childLayersB))
+{
+}
+
+void MergePanelFoldersCommand::undo() {
+    if (!m_doc || !m_panelA || !m_panelB) return;
+    m_doc->setUndoRedoInProgress(true);
+    m_doc->insertLayer(m_panelBIndex, m_panelB);
+    for (auto& child : m_childLayersB) {
+        if (child) {
+            m_panelA->removeChild(child);
+            m_panelB->addChild(child);
+        }
+    }
+    m_panelA->setPanelPolygon(m_oldPolyA);
+    m_doc->setUndoRedoInProgress(false);
+    m_doc->composite();
+    emit m_doc->layerListChanged();
+}
+
+void MergePanelFoldersCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc || !m_panelA || !m_panelB) return;
+    m_doc->setUndoRedoInProgress(true);
+    for (auto& child : m_childLayersB) {
+        if (child) {
+            m_panelB->removeChild(child);
+            m_panelA->addChild(child);
+        }
+    }
+    for (int i = 0; i < static_cast<int>(m_doc->layers().size()); ++i) {
+        if (m_doc->layers()[i] == m_panelB) {
+            m_doc->removeLayer(i);
+            break;
+        }
+    }
+    m_panelA->setPanelPolygon(m_newPolyA);
+    m_doc->setUndoRedoInProgress(false);
+    m_doc->composite();
+    emit m_doc->layerListChanged();
 }
 
 } // namespace Kaburagi

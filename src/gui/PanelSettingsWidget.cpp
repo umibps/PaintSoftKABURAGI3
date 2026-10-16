@@ -76,6 +76,10 @@ void PanelSettingsWidget::setupUI() {
     m_linkAdjacentPanelsCheck->setChecked(true);
     mainLayout->addWidget(m_linkAdjacentPanelsCheck);
 
+    // コマ枠結合ボタン
+    m_mergeAdjacentBtn = new QPushButton("隣接するコマ枠を結合...", this);
+    mainLayout->addWidget(m_mergeAdjacentBtn);
+
     mainLayout->addStretch();
 
     // シグナル接続
@@ -86,6 +90,7 @@ void PanelSettingsWidget::setupUI() {
     connect(m_marginVSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &PanelSettingsWidget::settingsChanged);
     connect(m_snapToBleedCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
     connect(m_linkAdjacentPanelsCheck, &QCheckBox::toggled, this, &PanelSettingsWidget::settingsChanged);
+    connect(m_mergeAdjacentBtn, &QPushButton::clicked, this, &PanelSettingsWidget::mergePanelsRequested);
 }
 
 void PanelSettingsWidget::setToolType(ToolType tool) {

@@ -169,6 +169,8 @@ set(GUI_SOURCES
     src/gui/NewCanvasDialog.cpp
     src/gui/NewPanelDialog.hpp
     src/gui/NewPanelDialog.cpp
+    src/gui/MergePanelDialog.hpp
+    src/gui/MergePanelDialog.cpp
     src/gui/PreferencesDialog.hpp
     src/gui/PreferencesDialog.cpp
     src/gui/ScatterSettingsWidget.hpp

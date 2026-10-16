@@ -501,6 +501,85 @@ void testLinkedPanelVertices() {
     std::cout << "  -> PASSED!" << std::endl;
 }
 
+void testMergePanelFolders() {
+    std::cout << "[TEST] 10. Merge Adjacent Panel Folders & Undo/Redo..." << std::endl;
+
+    Document doc(120, 120);
+
+    auto makePoly = [](double x, double y, double w, double h) {
+        QPolygonF p;
+        p << QPointF(x, y) << QPointF(x + w, y) << QPointF(x + w, y + h) << QPointF(x, y + h);
+        return p;
+    };
+
+    // 上下2コマ (コマ1: y=10..50, コマ2: y=60..100, 間隔 10px)
+    std::vector<Document::PanelCreationSpec> specs = {
+        {makePoly(10, 10, 80, 40), 1.0f, Qt::black, true, "コマ 1"},
+        {makePoly(10, 60, 80, 40), 1.0f, Qt::black, true, "コマ 2"}
+    };
+    auto panels = doc.addPanelFolders(specs);
+    std::cout << "panels returned size = " << panels.size() << std::endl;
+    for (size_t i = 0; i < panels.size(); ++i) {
+        std::cout << "  panels[" << i << "] = " << panels[i]->name().toStdString() << " rect=" << panels[i]->panelPolygon().boundingRect().left() << "," << panels[i]->panelPolygon().boundingRect().top() << std::endl;
+    }
+    assert(panels.size() == 2);
+    auto p1 = panels[0];
+    auto p2 = panels[1];
+    std::cout << "  p1 name = " << p1->name().toStdString() << ", p2 name = " << p2->name().toStdString() << std::endl;
+
+    auto candidates = doc.findAdjacentPanels(p1);
+    std::cout << "  step 1: candidates count = " << candidates.size() << std::endl;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        std::cout << "    c[" << i << "]: " << candidates[i].panel->name().toStdString() << " dir=" << candidates[i].direction.toStdString() << " dist=" << candidates[i].distance << std::endl;
+    }
+    assert(!candidates.empty());
+    assert(candidates[0].panel == p2);
+    assert(candidates[0].direction == "下");
+    assert(std::abs(candidates[0].distance - 10.0f) < 1e-4);
+
+    // 結合前のレイヤー構成確認
+    // m_layers: [0:背景, 1:通常レイヤー1, 2:コマ2子, 3:コマ2, 4:コマ1子, 5:コマ1] (計6枚)
+    assert(doc.layers().size() == 6);
+
+    std::cout << "  step 2: merging..." << std::endl;
+    bool ok = doc.mergePanelFolders(p1, p2, 30.0f);
+    assert(ok == true);
+
+    std::cout << "  step 3: merged layers size = " << doc.layers().size() << std::endl;
+    for (size_t i = 0; i < doc.layers().size(); ++i) {
+        std::cout << "    layer[" << i << "]: " << doc.layers()[i]->name().toStdString() << " (group=" << (doc.layers()[i]->parentGroup() ? doc.layers()[i]->parentGroup()->name().toStdString() : "none") << ")" << std::endl;
+    }
+    assert(doc.layers().size() == 5);
+    assert(doc.layers()[4] == p1);
+    assert(doc.layers()[2]->parentGroup() == p1);
+    assert(doc.layers()[3]->parentGroup() == p1);
+
+    std::cout << "  step 4: merged polygon..." << std::endl;
+    QRectF mergedRect = p1->panelPolygon().boundingRect();
+    std::cout << "    mergedRect: " << mergedRect.left() << "," << mergedRect.top() << " " << mergedRect.width() << "x" << mergedRect.height() << std::endl;
+    assert(std::abs(mergedRect.left() - 10.0) < 1e-4);
+    assert(std::abs(mergedRect.top() - 10.0) < 1e-4);
+    assert(std::abs(mergedRect.width() - 80.0) < 1e-4);
+    assert(std::abs(mergedRect.height() - 90.0) < 1e-4); // 40 + 10 + 40 = 90
+
+    std::cout << "  step 5: undo..." << std::endl;
+    assert(doc.undoStack()->canUndo() == true);
+    doc.undoStack()->undo();
+    assert(doc.layers().size() == 6);
+    assert(doc.layers()[3] == p2);
+    assert(doc.layers()[2]->parentGroup() == p2); // コマ2の子レイヤーが復元
+    assert(p1->panelPolygon().boundingRect().height() == 40.0); // コマ1のサイズ復元
+
+    std::cout << "  step 6: redo..." << std::endl;
+    assert(doc.undoStack()->canRedo() == true);
+    doc.undoStack()->redo();
+    assert(doc.layers().size() == 5);
+    assert(p1->panelPolygon().boundingRect().height() == 90.0);
+    assert(doc.layers()[2]->parentGroup() == p1);
+
+    std::cout << "  -> PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
@@ -515,6 +594,7 @@ int main(int argc, char* argv[]) {
     testNewPanelDialog();
     testPanelFoldersUndoAndHierarchy();
     testLinkedPanelVertices();
+    testMergePanelFolders();
 
     std::cout << "[ALL PANEL & FRAME TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

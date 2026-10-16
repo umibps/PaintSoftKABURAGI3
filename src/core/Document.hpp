@@ -70,6 +70,14 @@ public:
     std::vector<std::shared_ptr<GroupLayer>> addPanelFolders(const std::vector<PanelCreationSpec>& specs);
     bool splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const QLineF& cutLine, float marginX = 20.0f, float marginY = 40.0f);
     std::shared_ptr<GroupLayer> findPanelFolderAt(const QPointF& docPt) const;
+
+    struct AdjacentPanelInfo {
+        std::shared_ptr<GroupLayer> panel;
+        QString direction; // "上", "下", "左", "右", "隣接"
+        float distance = 0.0f;
+    };
+    std::vector<AdjacentPanelInfo> findAdjacentPanels(const std::shared_ptr<GroupLayer>& panel, float maxDistance = 100.0f) const;
+    bool mergePanelFolders(const std::shared_ptr<GroupLayer>& panelA, const std::shared_ptr<GroupLayer>& panelB, float maxGap = 80.0f);
     void setLayerParentGroup(int layerIndex, const std::shared_ptr<GroupLayer>& group);
     void insertLayer(int index, LayerPtr layer);
     void removeLayer(int index);

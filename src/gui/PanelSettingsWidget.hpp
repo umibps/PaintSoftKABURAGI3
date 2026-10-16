@@ -42,6 +42,7 @@ public:
 
 signals:
     void settingsChanged();
+    void mergePanelsRequested();
 
 private slots:
     void chooseBorderColor();
@@ -61,6 +62,7 @@ private:
     QDoubleSpinBox* m_marginVSpin = nullptr;
     QCheckBox* m_snapToBleedCheck = nullptr;
     QCheckBox* m_linkAdjacentPanelsCheck = nullptr;
+    QPushButton* m_mergeAdjacentBtn = nullptr;
 };
 
 } // namespace Kaburagi

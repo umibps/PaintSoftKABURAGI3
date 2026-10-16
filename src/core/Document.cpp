@@ -1508,6 +1508,202 @@ bool Document::splitPanelFolder(const std::shared_ptr<GroupLayer>& panel, const 
     return true;
 }
 
+std::vector<Document::AdjacentPanelInfo> Document::findAdjacentPanels(const std::shared_ptr<GroupLayer>& panel, float maxDistance) const {
+    std::vector<AdjacentPanelInfo> result;
+    if (!panel || !panel->isPanelFolder() || panel->panelPolygon().isEmpty()) return result;
+
+    QRectF rA = panel->panelPolygon().boundingRect();
+
+    for (const auto& l : m_layers) {
+        auto grp = std::dynamic_pointer_cast<GroupLayer>(l);
+        if (!grp || !grp->isPanelFolder() || grp == panel || grp->panelPolygon().isEmpty()) continue;
+
+        QRectF rB = grp->panelPolygon().boundingRect();
+
+        float distTop = rA.top() - rB.bottom();
+        float distBottom = rB.top() - rA.bottom();
+        float distLeft = rA.left() - rB.right();
+        float distRight = rB.left() - rA.right();
+
+        float overlapX = std::min(rA.right(), rB.right()) - std::max(rA.left(), rB.left());
+        float overlapY = std::min(rA.bottom(), rB.bottom()) - std::max(rA.top(), rB.top());
+
+        QString dir;
+        float d = 999999.0f;
+
+        if (distBottom >= -5.0f && distBottom <= maxDistance && overlapX > 0) {
+            dir = "下";
+            d = std::max(0.0f, distBottom);
+        } else if (distTop >= -5.0f && distTop <= maxDistance && overlapX > 0) {
+            dir = "上";
+            d = std::max(0.0f, distTop);
+        } else if (distLeft >= -5.0f && distLeft <= maxDistance && overlapY > 0) {
+            dir = "左";
+            d = std::max(0.0f, distLeft);
+        } else if (distRight >= -5.0f && distRight <= maxDistance && overlapY > 0) {
+            dir = "右";
+            d = std::max(0.0f, distRight);
+        } else {
+            QPointF cA = rA.center();
+            QPointF cB = rB.center();
+            float centerDist = std::hypot(cA.x() - cB.x(), cA.y() - cB.y());
+            float approxDist = std::max(0.0f, static_cast<float>(centerDist - (rA.width() + rB.width() + rA.height() + rB.height()) * 0.25f));
+            if (approxDist <= maxDistance) {
+                dir = "隣接";
+                d = approxDist;
+            }
+        }
+
+        if (!dir.isEmpty()) {
+            AdjacentPanelInfo info;
+            info.panel = grp;
+            info.direction = dir;
+            info.distance = d;
+            result.push_back(info);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), [](const AdjacentPanelInfo& a, const AdjacentPanelInfo& b) {
+        return a.distance < b.distance;
+    });
+
+    return result;
+}
+
+bool Document::mergePanelFolders(const std::shared_ptr<GroupLayer>& panelA, const std::shared_ptr<GroupLayer>& panelB, float maxGap) {
+    if (!panelA || !panelB || panelA == panelB) return false;
+    if (!panelA->isPanelFolder() || !panelB->isPanelFolder()) return false;
+
+    const QPolygonF& polyA = panelA->panelPolygon();
+    const QPolygonF& polyB = panelB->panelPolygon();
+    if (polyA.isEmpty() || polyB.isEmpty()) return false;
+
+    // 1. ポリゴンの結合
+    QPolygonF mergedPoly;
+    QRectF rA = polyA.boundingRect();
+    QRectF rB = polyB.boundingRect();
+
+    bool isRectA = (polyA.size() == 4);
+    bool isRectB = (polyB.size() == 4);
+
+    if (isRectA && isRectB) {
+        bool hAligned = std::abs(rA.left() - rB.left()) <= 8.0 && std::abs(rA.right() - rB.right()) <= 8.0;
+        bool vAdjacent = (rA.bottom() <= rB.top() + 5.0 && (rB.top() - rA.bottom()) <= maxGap) ||
+                         (rB.bottom() <= rA.top() + 5.0 && (rA.top() - rB.bottom()) <= maxGap);
+        if (hAligned && vAdjacent) {
+            QRectF u = rA.united(rB);
+            mergedPoly << u.topLeft() << u.topRight() << u.bottomRight() << u.bottomLeft();
+        } else {
+            bool vAligned = std::abs(rA.top() - rB.top()) <= 8.0 && std::abs(rA.bottom() - rB.bottom()) <= 8.0;
+            bool hAdjacent = (rA.right() <= rB.left() + 5.0 && (rB.left() - rA.right()) <= maxGap) ||
+                             (rB.right() <= rA.left() + 5.0 && (rA.left() - rB.right()) <= maxGap);
+            if (vAligned && hAdjacent) {
+                QRectF u = rA.united(rB);
+                mergedPoly << u.topLeft() << u.topRight() << u.bottomRight() << u.bottomLeft();
+            }
+        }
+    }
+
+    if (mergedPoly.isEmpty()) {
+        QPainterPath pathA;
+        pathA.addPolygon(polyA);
+        pathA.closeSubpath();
+
+        QPainterPath pathB;
+        pathB.addPolygon(polyB);
+        pathB.closeSubpath();
+
+        QPainterPath bridgePath;
+        for (int i = 0; i < polyA.size(); ++i) {
+            QPointF a1 = polyA[i];
+            QPointF a2 = polyA[(i + 1) % polyA.size()];
+            for (int j = 0; j < polyB.size(); ++j) {
+                QPointF b1 = polyB[j];
+                QPointF b2 = polyB[(j + 1) % polyB.size()];
+
+                QPointF midA = (a1 + a2) * 0.5;
+                QPointF midB = (b1 + b2) * 0.5;
+                double dist = std::hypot(midA.x() - midB.x(), midA.y() - midB.y());
+                if (dist <= maxGap * 1.5) {
+                    double d1 = std::hypot(a1.x() - b1.x(), a1.y() - b1.y()) + std::hypot(a2.x() - b2.x(), a2.y() - b2.y());
+                    double d2 = std::hypot(a1.x() - b2.x(), a1.y() - b2.y()) + std::hypot(a2.x() - b1.x(), a2.y() - b1.y());
+                    QPolygonF br;
+                    if (d1 <= d2) {
+                        br << a1 << a2 << b2 << b1;
+                    } else {
+                        br << a1 << a2 << b1 << b2;
+                    }
+                    bridgePath.addPolygon(br);
+                    bridgePath.closeSubpath();
+                }
+            }
+        }
+
+        QPainterPath combined = pathA.united(pathB).united(bridgePath).simplified();
+        auto subPolys = combined.toSubpathPolygons();
+        if (!subPolys.isEmpty()) {
+            int bestIdx = 0;
+            double maxArea = 0;
+            for (int k = 0; k < subPolys.size(); ++k) {
+                QRectF br = subPolys[k].boundingRect();
+                double area = br.width() * br.height();
+                if (area > maxArea) {
+                    maxArea = area;
+                    bestIdx = k;
+                }
+            }
+            mergedPoly = subPolys[bestIdx];
+        } else {
+            QRectF u = rA.united(rB);
+            mergedPoly << u.topLeft() << u.topRight() << u.bottomRight() << u.bottomLeft();
+        }
+    }
+
+    // 2. パネルBの子レイヤーを収集し、親をパネルAに付け替える
+    std::vector<LayerPtr> childLayersB;
+    for (auto& l : m_layers) {
+        if (l && l->parentGroup() == panelB) {
+            childLayersB.push_back(l);
+            l->setParentGroup(panelA);
+        }
+    }
+
+    // 3. パネルBのインデックスを特定してレイヤーリストから削除
+    int panelBIndex = -1;
+    for (int i = 0; i < static_cast<int>(m_layers.size()); ++i) {
+        if (m_layers[i] == panelB) {
+            panelBIndex = i;
+            break;
+        }
+    }
+    if (panelBIndex < 0) return false;
+
+    QPolygonF oldPolyA = polyA;
+    panelA->setPanelPolygon(mergedPoly);
+    m_layers.erase(m_layers.begin() + panelBIndex);
+
+    if (m_activeLayerIndex == panelBIndex) {
+        for (int i = 0; i < static_cast<int>(m_layers.size()); ++i) {
+            if (m_layers[i] == panelA) {
+                m_activeLayerIndex = i;
+                break;
+            }
+        }
+    } else if (m_activeLayerIndex > panelBIndex) {
+        m_activeLayerIndex--;
+    }
+
+    // 4. Undo コマンドの登録
+    if (m_undoStack && !m_isUndoRedoInProgress) {
+        m_undoStack->push(new MergePanelFoldersCommand(this, panelA, oldPolyA, mergedPoly, panelB, panelBIndex, childLayersB));
+    }
+
+    composite(QRect(0, 0, m_width, m_height));
+    emit layerListChanged();
+    emit activeLayerChanged(m_activeLayerIndex);
+    return true;
+}
+
 void Document::setColorMode(CanvasColorMode mode) {
     if (m_colorMode == mode) return;
     m_colorMode = mode;

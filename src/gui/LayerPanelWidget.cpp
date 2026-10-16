@@ -15,6 +15,8 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QColorDialog>
+#include <QMessageBox>
+#include "MergePanelDialog.hpp"
 
 namespace Kaburagi {
 
@@ -880,6 +882,25 @@ QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {
         if (m_document && layerIndex > 0) m_document->mergeDown(layerIndex);
     });
     actMergeDown->setEnabled(layerIndex > 0);
+
+    auto grp = std::dynamic_pointer_cast<GroupLayer>(layer);
+    if (grp && grp->isPanelFolder()) {
+        menu->addAction("隣接するコマ枠を結合...", this, [this, grp]() {
+            if (!m_document) return;
+            auto candidates = m_document->findAdjacentPanels(grp);
+            if (candidates.empty()) {
+                QMessageBox::information(this, "コマ枠の結合", "隣接するコマ枠が見つかりませんでした。");
+                return;
+            }
+            MergePanelDialog dlg(grp, candidates, this);
+            if (dlg.exec() == QDialog::Accepted) {
+                auto target = dlg.selectedPanel();
+                if (target) {
+                    m_document->mergePanelFolders(grp, target);
+                }
+            }
+        });
+    }
 
     auto actDelete = menu->addAction("レイヤーを削除", this, [this, layerIndex, layer]() {
         if (m_document && m_document->layers().size() > 1 && layer->name() != "背景") {

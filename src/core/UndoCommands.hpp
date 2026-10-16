@@ -457,4 +457,33 @@ private:
     bool m_firstRun = true;
 };
 
+/**
+ * @brief コマ枠結合の元に戻す/やり直しコマンド
+ */
+class MergePanelFoldersCommand : public QUndoCommand {
+public:
+    MergePanelFoldersCommand(Document* doc,
+                             std::shared_ptr<GroupLayer> panelA,
+                             const QPolygonF& oldPolyA,
+                             const QPolygonF& newPolyA,
+                             std::shared_ptr<GroupLayer> panelB,
+                             int panelBIndex,
+                             std::vector<LayerPtr> childLayersB,
+                             const QString& text = "コマ枠を結合",
+                             QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    std::shared_ptr<GroupLayer> m_panelA;
+    QPolygonF m_oldPolyA;
+    QPolygonF m_newPolyA;
+    std::shared_ptr<GroupLayer> m_panelB;
+    int m_panelBIndex;
+    std::vector<LayerPtr> m_childLayersB;
+    bool m_firstRun = true;
+};
+
 } // namespace Kaburagi
