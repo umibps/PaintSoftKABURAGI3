@@ -64,7 +64,23 @@ void SaiToolButton::mousePressEvent(QMouseEvent* event) {
 }
 
 void SaiToolButton::contextMenuEvent(QContextMenuEvent* event) {
-    if (m_item.isEmpty || m_slotIndex < 0) {
+    if (m_slotIndex < 0) {
+        event->accept();
+        return;
+    }
+
+    if (m_item.isEmpty) {
+        QMenu menu(this);
+        menu.setStyleSheet("QMenu { font-size: 11px; }");
+        auto actNew = menu.addAction("ブラシの新規作成...");
+        menu.addSeparator();
+        auto actReset = menu.addAction("ツールスロットを初期状態に戻す");
+        QAction* selected = menu.exec(event->globalPos());
+        if (selected == actNew) {
+            emit settingsRequested(m_slotIndex);
+        } else if (selected == actReset) {
+            emit resetRequested();
+        }
         event->accept();
         return;
     }
@@ -74,6 +90,8 @@ void SaiToolButton::contextMenuEvent(QContextMenuEvent* event) {
     auto actSettings = menu.addAction("ブラシの設定");
     auto actDuplicate = menu.addAction("ブラシを複製");
     auto actDelete = menu.addAction("ブラシを削除");
+    menu.addSeparator();
+    auto actReset = menu.addAction("ツールスロットを初期状態に戻す");
 
     QAction* selected = menu.exec(event->globalPos());
     if (selected == actSettings) {
@@ -82,6 +100,8 @@ void SaiToolButton::contextMenuEvent(QContextMenuEvent* event) {
         emit duplicateRequested(m_slotIndex);
     } else if (selected == actDelete) {
         emit deleteRequested(m_slotIndex);
+    } else if (selected == actReset) {
+        emit resetRequested();
     }
     event->accept();
 }
@@ -957,6 +977,7 @@ void ToolBoxWidget::updateToolTableForLayer(LayerType type) {
             connect(btn, &SaiToolButton::settingsRequested, this, &ToolBoxWidget::onSlotSettingsRequested);
             connect(btn, &SaiToolButton::duplicateRequested, this, &ToolBoxWidget::onSlotDuplicateRequested);
             connect(btn, &SaiToolButton::deleteRequested, this, &ToolBoxWidget::onSlotDeleteRequested);
+            connect(btn, &SaiToolButton::resetRequested, this, &ToolBoxWidget::resetSlotsToDefault);
         }
 
         if (m_currentSlotIndex >= 0 && m_currentSlotIndex < TOTAL_SLOTS &&
@@ -1166,6 +1187,28 @@ void ToolBoxWidget::onSlotDeleteRequested(int slotIndex) {
             }
         }
     }
+}
+
+void ToolBoxWidget::resetSlotsToDefault() {
+    auto reply = QMessageBox::question(
+        this,
+        "ツールスロットの初期化",
+        "ツールスロットの配置を初期状態に戻しますか？\n（カスタム追加したブラシ設定もリセットされます）",
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+    );
+    if (reply != QMessageBox::Yes) return;
+
+    initDefaultSlots();
+
+    for (size_t i = 0; i < m_slotButtons.size() && i < m_rasterSlots.size(); ++i) {
+        m_slotButtons[i]->setSlotItem(m_rasterSlots[i]);
+    }
+
+    QSettings settings;
+    saveSlots(settings);
+
+    setCurrentSlot(0);
 }
 
 bool ToolBoxWidget::handleShortcutKey(const QKeySequence& seq) {

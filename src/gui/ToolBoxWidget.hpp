@@ -101,6 +101,7 @@ signals:
     void settingsRequested(int slotIndex);
     void duplicateRequested(int slotIndex);
     void deleteRequested(int slotIndex);
+    void resetRequested();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -141,6 +142,7 @@ public:
 
     void duplicateSlot(int slotIndex) { onSlotDuplicateRequested(slotIndex); }
     void deleteSlot(int slotIndex) { onSlotDeleteRequested(slotIndex); }
+    void resetSlotsToDefault();
 
     bool handleShortcutKey(const QKeySequence& seq);
 

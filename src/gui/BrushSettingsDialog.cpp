@@ -17,10 +17,15 @@ static const struct {
     { ToolType::Marker, "ブラシ" },
     { ToolType::Eraser, "消しゴム" },
     { ToolType::Bucket, "バケツ" },
+    { ToolType::PatternFill, "パターン" },
     { ToolType::Blur, "ぼかし" },
     { ToolType::Blend, "指先" },
     { ToolType::Gradient, "グラデーション" },
-    { ToolType::CompositeBrush, "合成ブラシ" }
+    { ToolType::CompositeBrush, "合成ブラシ" },
+    { ToolType::Text, "テキスト" },
+    { ToolType::PanelFrame, "コマ枠" },
+    { ToolType::PanelSplit, "コマ分割" },
+    { ToolType::ThreeD, "3D操作" }
 };
 
 BrushSettingsDialog::BrushSettingsDialog(const ToolSlotItem& item, QWidget* parent)
