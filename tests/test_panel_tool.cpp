@@ -286,27 +286,45 @@ void testNewPanelDialog() {
     assert(p4[1].polygon.boundingRect().top() < p4[2].polygon.boundingRect().top());
     assert(p4[2].polygon.boundingRect().top() < p4[3].polygon.boundingRect().top());
 
-    // 2. 2-column 4-koma (index 1) -> 8 panels
+    // 2. 4-koma with title (index 1) -> 5 panels (1 title + 4 panels)
     tplCombo->setCurrentIndex(1);
+    auto p5_title = dlg.panels();
+    assert(p5_title.size() == 5);
+    assert(p5_title[0].name == "タイトル");
+    assert(p5_title[1].name == "コマ 1");
+    assert(p5_title[4].name == "コマ 4");
+    assert(p5_title[0].polygon.boundingRect().top() < p5_title[1].polygon.boundingRect().top());
+
+    // 3. 2-column 4-koma (index 2) -> 8 panels
+    tplCombo->setCurrentIndex(2);
     auto p8 = dlg.panels();
     assert(p8.size() == 8);
 
-    // 3. 3-tier (index 2) -> 3 panels
-    tplCombo->setCurrentIndex(2);
+    // 4. 2-column 4-koma with title (index 3) -> 10 panels
+    tplCombo->setCurrentIndex(3);
+    auto p10_title = dlg.panels();
+    assert(p10_title.size() == 10);
+    assert(p10_title[0].name == "タイトル 1");
+    assert(p10_title[1].name == "コマ 1");
+    assert(p10_title[5].name == "タイトル 2");
+    assert(p10_title[6].name == "コマ 5");
+
+    // 5. 3-tier (index 4) -> 3 panels
+    tplCombo->setCurrentIndex(4);
     auto p3 = dlg.panels();
     assert(p3.size() == 3);
 
-    // 4. Standard 5 panels (index 6) -> 5 panels
-    tplCombo->setCurrentIndex(6);
+    // 6. Standard 5 panels (index 8) -> 5 panels
+    tplCombo->setCurrentIndex(8);
     auto p5 = dlg.panels();
     assert(p5.size() == 5);
 
-    // 5. Single panel (index 10) -> 1 panel
-    tplCombo->setCurrentIndex(10);
+    // 7. Single panel (index 12) -> 1 panel
+    tplCombo->setCurrentIndex(12);
     auto p1 = dlg.panels();
     assert(p1.size() == 1);
 
-    // 6. Grid mode: 2 cols x 3 rows -> 6 panels
+    // 8. Grid mode: 2 cols x 3 rows -> 6 panels
     gridRadio->setChecked(true);
     colsSpin->setValue(2);
     rowsSpin->setValue(3);

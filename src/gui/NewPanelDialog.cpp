@@ -80,10 +80,18 @@ protected:
             p.setBrush(QColor(220, 235, 252, 200));
             p.drawPolygon(spec.polygon);
 
-            // コマ番号
+            // コマ番号またはタイトル
             QRectF br = spec.polygon.boundingRect();
             p.setPen(QColor(45, 75, 130));
-            p.drawText(br, Qt::AlignCenter, QString::number(idx));
+            QString labelText;
+            if (spec.name.startsWith("タイトル")) {
+                labelText = spec.name;
+            } else if (spec.name.startsWith("コマ ")) {
+                labelText = spec.name.mid(3);
+            } else {
+                labelText = QString::number(idx);
+            }
+            p.drawText(br, Qt::AlignCenter, labelText);
             idx++;
         }
         p.restore();
@@ -143,7 +151,9 @@ void NewPanelDialog::setupUI() {
     m_templateCombo = new QComboBox(modeGroup);
     m_templateCombo->setObjectName("templateCombo");
     m_templateCombo->addItem("四コマ漫画 (1列 × 4コマ)");
+    m_templateCombo->addItem("四コマ漫画 (タイトル枠あり)");
     m_templateCombo->addItem("四コマ漫画 2本 (2列 × 4コマ)");
+    m_templateCombo->addItem("四コマ漫画 2本 (タイトル枠あり)");
     m_templateCombo->addItem("3段均等 (1列 × 3コマ)");
     m_templateCombo->addItem("2段均等 (1列 × 2コマ)");
     m_templateCombo->addItem("6コマ均等 (2列 × 3コマ)");
@@ -292,33 +302,39 @@ void NewPanelDialog::onTemplateChanged(int index) {
         m_templateDescLabel->setText("縦1列・4段の伝統的な四コマ漫画レイアウトです。");
         break;
     case 1:
-        m_templateDescLabel->setText("左右2列・各4段の計8コマ構成です。見開きや2話掲載向け。");
+        m_templateDescLabel->setText("上部にタイトル用の横長コマ枠、下部に4コマを配置した構成です。");
         break;
     case 2:
-        m_templateDescLabel->setText("縦1列・3段均等。ストーリー漫画で最も汎用性の高い段組みです。");
+        m_templateDescLabel->setText("左右2列・各4段の計8コマ構成です。見開きや2話掲載向け。");
         break;
     case 3:
-        m_templateDescLabel->setText("上下2段均等。ワイドな大ゴマを配置したいシーン向け。");
+        m_templateDescLabel->setText("左右2列にそれぞれタイトル枠と4コマを配置した計10コマ構成です。");
         break;
     case 4:
-        m_templateDescLabel->setText("左右2列 × 上下3段の計6コマ。情報量の多い展開向け。");
+        m_templateDescLabel->setText("縦1列・3段均等。ストーリー漫画で最も汎用性の高い段組みです。");
         break;
     case 5:
-        m_templateDescLabel->setText("2列 × 2段の計4コマ。イラスト風やアメコミスタイルの構成。");
+        m_templateDescLabel->setText("上下2段均等。ワイドな大ゴマを配置したいシーン向け。");
         break;
     case 6:
-        m_templateDescLabel->setText("上段1コマ、中段2コマ、下段2コマの王道ストーリー漫画構成。");
+        m_templateDescLabel->setText("左右2列 × 上下3段の計6コマ。情報量の多い展開向け。");
         break;
     case 7:
-        m_templateDescLabel->setText("上段2コマ、中段2コマ、下段に大きなオチや見せ場を置く構成。");
+        m_templateDescLabel->setText("2列 × 2段の計4コマ。イラスト風やアメコミスタイルの構成。");
         break;
     case 8:
-        m_templateDescLabel->setText("上段1コマ、中段左右2コマ、下段1コマの安定した会話・展開用構成。");
+        m_templateDescLabel->setText("上段1コマ、中段2コマ、下段2コマの王道ストーリー漫画構成。");
         break;
     case 9:
-        m_templateDescLabel->setText("上段に約6割の大きな見せゴマ、下段に会話・状況説明用2コマ。");
+        m_templateDescLabel->setText("上段2コマ、中段2コマ、下段に大きなオチや見せ場を置く構成。");
         break;
     case 10:
+        m_templateDescLabel->setText("上段1コマ、中段左右2コマ、下段1コマの安定した会話・展開用構成。");
+        break;
+    case 11:
+        m_templateDescLabel->setText("上段に約6割の大きな見せゴマ、下段に会話・状況説明用2コマ。");
+        break;
+    case 12:
         m_templateDescLabel->setText("ページ全体を1つのコマ枠として作成します (分割なし)。");
         break;
     default:
@@ -406,7 +422,19 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 1: { // 四コマ漫画 2本 (2列 × 4コマ)
+    case 1: { // 四コマ漫画 (タイトル枠あり)
+        double availH = h - 4 * my;
+        double cellH = std::max(5.0, availH / 4.6);
+        double titleH = std::max(5.0, availH - 4.0 * cellH);
+        result.append({makePoly(QRectF(left, top, w, titleH)), "タイトル"});
+        for (int r = 0; r < 4; ++r) {
+            double y0 = top + titleH + my + r * (cellH + my);
+            QRectF cr(left, y0, w, cellH);
+            result.append({makePoly(cr), QString("コマ %1").arg(r + 1)});
+        }
+        break;
+    }
+    case 2: { // 四コマ漫画 2本 (2列 × 4コマ)
         double cellW = std::max(5.0, (w - mx) * 0.5);
         double cellH = std::max(5.0, (h - 3 * my) / 4.0);
         int num = 1;
@@ -422,7 +450,28 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 2: { // 3段均等 (1列 × 3コマ)
+    case 3: { // 四コマ漫画 2本 (タイトル枠あり)
+        double cellW = std::max(5.0, (w - mx) * 0.5);
+        double availH = h - 4 * my;
+        double cellH = std::max(5.0, availH / 4.6);
+        double titleH = std::max(5.0, availH - 4.0 * cellH);
+        // 右列 (第1話: タイトル 1, コマ 1〜4)
+        result.append({makePoly(QRectF(left + cellW + mx, top, cellW, titleH)), "タイトル 1"});
+        for (int r = 0; r < 4; ++r) {
+            double y0 = top + titleH + my + r * (cellH + my);
+            QRectF cr(left + cellW + mx, y0, cellW, cellH);
+            result.append({makePoly(cr), QString("コマ %1").arg(r + 1)});
+        }
+        // 左列 (第2話: タイトル 2, コマ 5〜8)
+        result.append({makePoly(QRectF(left, top, cellW, titleH)), "タイトル 2"});
+        for (int r = 0; r < 4; ++r) {
+            double y0 = top + titleH + my + r * (cellH + my);
+            QRectF cr(left, y0, cellW, cellH);
+            result.append({makePoly(cr), QString("コマ %1").arg(r + 5)});
+        }
+        break;
+    }
+    case 4: { // 3段均等 (1列 × 3コマ)
         double cellH = std::max(5.0, (h - 2 * my) / 3.0);
         for (int r = 0; r < 3; ++r) {
             QRectF cr(left, top + r * (cellH + my), w, cellH);
@@ -430,7 +479,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 3: { // 2段均等 (1列 × 2コマ)
+    case 5: { // 2段均等 (1列 × 2コマ)
         double cellH = std::max(5.0, (h - my) * 0.5);
         for (int r = 0; r < 2; ++r) {
             QRectF cr(left, top + r * (cellH + my), w, cellH);
@@ -438,7 +487,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 4: { // 6コマ均等 (2列 × 3コマ)
+    case 6: { // 6コマ均等 (2列 × 3コマ)
         double cellW = std::max(5.0, (w - mx) * 0.5);
         double cellH = std::max(5.0, (h - 2 * my) / 3.0);
         int num = 1;
@@ -452,7 +501,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 5: { // 4コマグリッド (2列 × 2コマ)
+    case 7: { // 4コマグリッド (2列 × 2コマ)
         double cellW = std::max(5.0, (w - mx) * 0.5);
         double cellH = std::max(5.0, (h - my) * 0.5);
         int num = 1;
@@ -464,7 +513,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         }
         break;
     }
-    case 6: { // 定番5コマ (上1 / 中2 / 下2)
+    case 8: { // 定番5コマ (上1 / 中2 / 下2)
         double cellH = std::max(5.0, (h - 2 * my) / 3.0);
         double halfW = std::max(5.0, (w - mx) * 0.5);
         // 上1
@@ -477,7 +526,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         result.append({makePoly(QRectF(left, top + (cellH + my) * 2, halfW, cellH)), "コマ 5"});
         break;
     }
-    case 7: { // 定番5コマ (上2 / 中2 / 下1)
+    case 9: { // 定番5コマ (上2 / 中2 / 下1)
         double cellH = std::max(5.0, (h - 2 * my) / 3.0);
         double halfW = std::max(5.0, (w - mx) * 0.5);
         // 上2
@@ -490,7 +539,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         result.append({makePoly(QRectF(left, top + (cellH + my) * 2, w, cellH)), "コマ 5"});
         break;
     }
-    case 8: { // 定番4コマ変則 (上1 / 中2 / 下1)
+    case 10: { // 定番4コマ変則 (上1 / 中2 / 下1)
         double cellH = std::max(5.0, (h - 2 * my) / 3.0);
         double halfW = std::max(5.0, (w - mx) * 0.5);
         // 上1
@@ -502,7 +551,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         result.append({makePoly(QRectF(left, top + (cellH + my) * 2, w, cellH)), "コマ 4"});
         break;
     }
-    case 9: { // 見せ場3コマ (上大ゴマ / 下2コマ)
+    case 11: { // 見せ場3コマ (上大ゴマ / 下2コマ)
         double topH = std::max(10.0, (h - my) * 0.58);
         double bottomH = std::max(5.0, h - my - topH);
         double halfW = std::max(5.0, (w - mx) * 0.5);
@@ -513,7 +562,7 @@ QList<PanelSpec> NewPanelDialog::calculatePanels() const {
         result.append({makePoly(QRectF(left, top + topH + my, halfW, bottomH)), "コマ 3"});
         break;
     }
-    case 10: // 単一コマ枠 (分割なし)
+    case 12: // 単一コマ枠 (分割なし)
     default: {
         result.append({makePoly(outer), "コマ 1"});
         break;

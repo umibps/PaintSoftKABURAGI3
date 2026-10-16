@@ -2,6 +2,7 @@
 #include "GroupLayer.hpp"
 #include "PreferencesDialog.hpp"
 #include "UndoCommands.hpp"
+#include <QScrollBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMenu>
@@ -372,6 +373,9 @@ LayerListWidget::LayerListWidget(QWidget* parent)
     setDropIndicatorShown(true);
     setDefaultDropAction(Qt::MoveAction);
     setSelectionMode(QAbstractItemView::SingleSelection);
+
+    m_autoScrollTimer = new QTimer(this);
+    connect(m_autoScrollTimer, &QTimer::timeout, this, &LayerListWidget::onAutoScrollTimeout);
 }
 
 void LayerListWidget::setScrollBarPosition(bool onLeft) {
@@ -390,17 +394,110 @@ bool LayerListWidget::isScrollBarOnLeft() const {
 }
 
 int LayerListWidget::getBackgroundRow() const {
-        if (!m_panel || !m_panel->document()) return count() - 1;
-        const auto& layers = m_panel->document()->layers();
-        int c = static_cast<int>(layers.size());
-        for (int r = 0; r < c; ++r) {
-            int docIdx = c - 1 - r;
-            if (docIdx >= 0 && docIdx < c && layers[docIdx]->name() == "背景") {
-                return r;
+    if (!m_panel || !m_panel->document()) return count() - 1;
+    const auto& layers = m_panel->document()->layers();
+    int c = static_cast<int>(layers.size());
+    for (int r = 0; r < c; ++r) {
+        int docIdx = c - 1 - r;
+        if (docIdx >= 0 && docIdx < c && layers[docIdx]->name() == "背景") {
+            return r;
+        }
+    }
+    return count() - 1;
+}
+
+void LayerListWidget::setDropSlot(int slot) {
+    int bgRow = getBackgroundRow();
+    if (slot > bgRow) {
+        slot = bgRow;
+    }
+    if (slot < 0) {
+        slot = 0;
+    }
+    if (m_dropSlot != slot) {
+        m_dropSlot = slot;
+        viewport()->update();
+    }
+}
+
+void LayerListWidget::updateDropSlotFromPos(const QPoint& pos) {
+    int slot = count();
+    if (pos.y() <= 0) {
+        slot = 0;
+    } else if (pos.y() >= viewport()->height()) {
+        slot = getBackgroundRow();
+    } else {
+        QListWidgetItem* targetItem = itemAt(pos);
+        if (targetItem) {
+            int targetRow = row(targetItem);
+            QRect rect = visualItemRect(targetItem);
+            if (pos.y() < rect.center().y()) {
+                slot = targetRow;
+            } else {
+                slot = targetRow + 1;
             }
         }
-        return count() - 1;
     }
+
+    setDropSlot(slot);
+}
+
+void LayerListWidget::startAutoScroll() {
+    if (m_autoScrollTimer && !m_autoScrollTimer->isActive()) {
+        m_autoScrollTimer->start(50); // 50msごとにスクロールを少しずつ移動
+    }
+}
+
+void LayerListWidget::stopAutoScroll() {
+    if (m_autoScrollTimer && m_autoScrollTimer->isActive()) {
+        m_autoScrollTimer->stop();
+    }
+    m_autoScrollDirection = 0;
+}
+
+void LayerListWidget::onAutoScrollTimeout() {
+    if (m_dragStartRow < 0) {
+        stopAutoScroll();
+        return;
+    }
+
+    auto sb = verticalScrollBar();
+    if (!sb || !sb->isVisible() || sb->maximum() <= sb->minimum()) {
+        return;
+    }
+
+    QPoint globalPos = m_mockCursorPos.has_value() ? *m_mockCursorPos : QCursor::pos();
+    QPoint vpPos = viewport()->mapFromGlobal(globalPos);
+    int y = vpPos.y();
+    int vh = viewport()->height();
+
+    // 左右マージンチェック: 水平方向に離れすぎていないか
+    int x = vpPos.x();
+    int vw = viewport()->width();
+    if (x < -150 || x > vw + 150) {
+        return;
+    }
+
+    const int margin = 25; // 上端・下端付近の判定マージン
+
+    if (y < margin) {
+        // スクロールの上外側、または上端付近 -> 少しずつ上にスクロール
+        m_autoScrollDirection = -1;
+        int step = (y < 0) ? std::min(3, 1 + (-y) / 40) : 1;
+        int oldVal = sb->value();
+        sb->setValue(oldVal - step);
+        updateDropSlotFromPos(QPoint(x, 0));
+    } else if (y > vh - margin) {
+        // スクロールの下外側、または下端付近 -> 少しずつ下にスクロール
+        m_autoScrollDirection = 1;
+        int step = (y > vh) ? std::min(3, 1 + (y - vh) / 40) : 1;
+        int oldVal = sb->value();
+        sb->setValue(oldVal + step);
+        updateDropSlotFromPos(QPoint(x, vh));
+    } else {
+        m_autoScrollDirection = 0;
+    }
+}
 
 void LayerListWidget::startDrag(Qt::DropActions supportedActions) {
     Q_UNUSED(supportedActions);
@@ -441,7 +538,9 @@ void LayerListWidget::startDrag(Qt::DropActions supportedActions) {
         drag->setHotSpot(QPoint(24, rect.height() / 2));
     }
 
+    startAutoScroll();
     drag->exec(Qt::MoveAction);
+    stopAutoScroll();
     m_dragStartRow = -1;
     m_dropSlot = -1;
     viewport()->update();
@@ -451,6 +550,7 @@ void LayerListWidget::dragEnterEvent(QDragEnterEvent* event) {
     if (event->source() == this && event->mimeData()->hasFormat("application/x-kaburagi-layer")) {
         event->setDropAction(Qt::MoveAction);
         event->accept();
+        startAutoScroll();
     } else {
         event->ignore();
     }
@@ -462,28 +562,8 @@ void LayerListWidget::dragMoveEvent(QDragMoveEvent* event) {
         event->accept();
 
         QPoint pos = event->position().toPoint();
-        QListWidgetItem* targetItem = itemAt(pos);
-        int slot = count();
-        if (targetItem) {
-            int targetRow = row(targetItem);
-            QRect rect = visualItemRect(targetItem);
-            if (pos.y() < rect.center().y()) {
-                slot = targetRow;
-            } else {
-                slot = targetRow + 1;
-            }
-        }
-
-        // 背景レイヤーより下には配置できないため背景の直上にクランプ
-        int bgRow = getBackgroundRow();
-        if (slot > bgRow) {
-            slot = bgRow;
-        }
-
-        if (m_dropSlot != slot) {
-            m_dropSlot = slot;
-            viewport()->update();
-        }
+        updateDropSlotFromPos(pos);
+        startAutoScroll();
     } else {
         event->ignore();
     }
@@ -491,11 +571,22 @@ void LayerListWidget::dragMoveEvent(QDragMoveEvent* event) {
 
 void LayerListWidget::dragLeaveEvent(QDragLeaveEvent* event) {
     Q_UNUSED(event);
-    m_dropSlot = -1;
-    viewport()->update();
+    QPoint globalPos = m_mockCursorPos.has_value() ? *m_mockCursorPos : QCursor::pos();
+    QPoint vpPos = viewport()->mapFromGlobal(globalPos);
+    int y = vpPos.y();
+    int vh = viewport()->height();
+    // 上外側または下外側にカーソルがある場合はオートスクロールを維持する
+    if (y < 0 || y > vh) {
+        startAutoScroll();
+    } else {
+        stopAutoScroll();
+        m_dropSlot = -1;
+        viewport()->update();
+    }
 }
 
 void LayerListWidget::dropEvent(QDropEvent* event) {
+    stopAutoScroll();
     if (event->source() != this || m_dragStartRow < 0) {
         event->ignore();
         return;
@@ -518,6 +609,12 @@ void LayerListWidget::dropEvent(QDropEvent* event) {
                 slot = targetRow;
             } else {
                 slot = targetRow + 1;
+            }
+        } else {
+            if (pos.y() <= 0) {
+                slot = 0;
+            } else if (pos.y() >= viewport()->height()) {
+                slot = getBackgroundRow();
             }
         }
     }
@@ -959,6 +1056,40 @@ LayerPanelWidget::LayerPanelWidget(QWidget* parent)
             delete menu;
         }
     });
+
+    setAcceptDrops(true);
+}
+
+void LayerPanelWidget::dragEnterEvent(QDragEnterEvent* event) {
+    if (event->mimeData()->hasFormat("application/x-kaburagi-layer")) {
+        event->acceptProposedAction();
+        if (m_layerListWidget) {
+            m_layerListWidget->startAutoScroll();
+        }
+    }
+}
+
+void LayerPanelWidget::dragMoveEvent(QDragMoveEvent* event) {
+    if (event->mimeData()->hasFormat("application/x-kaburagi-layer")) {
+        event->acceptProposedAction();
+        if (m_layerListWidget) {
+            m_layerListWidget->startAutoScroll();
+            QPoint listPos = m_layerListWidget->viewport()->mapFromGlobal(mapToGlobal(event->position().toPoint()));
+            if (listPos.y() < 0) {
+                m_layerListWidget->setDropSlot(0);
+            } else if (listPos.y() > m_layerListWidget->viewport()->height()) {
+                m_layerListWidget->setDropSlot(m_layerListWidget->getBackgroundRow());
+            }
+        }
+    }
+}
+
+void LayerPanelWidget::dropEvent(QDropEvent* event) {
+    if (event->mimeData()->hasFormat("application/x-kaburagi-layer")) {
+        if (m_layerListWidget) {
+            m_layerListWidget->dropEvent(event);
+        }
+    }
 }
 
 QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {

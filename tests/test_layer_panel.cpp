@@ -471,6 +471,86 @@ int main(int argc, char** argv) {
         std::cout << "[PASS] Left-click on group name did not toggle group expand/collapse!" << std::endl;
     }
 
+    // --- Test Drag & Drop Auto-Scroll ---
+    {
+        std::cout << "[TEST] Testing drag & drop auto-scrolling..." << std::endl;
+        Document scrollDoc(800, 600, 350.0);
+        LayerPanelWidget scrollPanel;
+        scrollPanel.setDocument(&scrollDoc);
+        scrollPanel.resize(300, 200);
+        scrollPanel.show();
+
+        // Add enough layers to require vertical scrolling
+        for (int i = 0; i < 30; ++i) {
+            scrollDoc.addRasterLayer();
+        }
+        app.processEvents();
+
+        auto sListWidget = scrollPanel.findChild<LayerListWidget*>();
+        assert(sListWidget != nullptr);
+        QScrollBar* vbar = sListWidget->verticalScrollBar();
+        assert(vbar != nullptr);
+        assert(vbar->maximum() > 0);
+
+        // Position scrollbar in the middle
+        int midVal = vbar->maximum() / 2;
+        vbar->setValue(midVal);
+        app.processEvents();
+        assert(vbar->value() == midVal);
+
+        // Start auto-scroll with active drag
+        sListWidget->setDragStartRow(5);
+        sListWidget->startAutoScroll();
+
+        // 1. Cursor above viewport (upper outside) -> should scroll up
+        QPoint aboveViewport = sListWidget->viewport()->mapToGlobal(QPoint(50, -20));
+        sListWidget->setMockCursorPos(aboveViewport);
+        sListWidget->onAutoScrollTimeout();
+        app.processEvents();
+        int afterScrollUp = vbar->value();
+        if (afterScrollUp >= midVal) {
+            std::cerr << "FAILED: auto-scroll up did not decrease scroll value! midVal=" << midVal << ", afterScrollUp=" << afterScrollUp << std::endl;
+            return 1;
+        }
+        std::cout << "[PASS] Auto-scroll scrolled UP when cursor is above viewport (from "
+                  << midVal << " to " << afterScrollUp << ")!" << std::endl;
+
+        // 2. Cursor below viewport (lower outside) -> should scroll down
+        int vh = sListWidget->viewport()->height();
+        QPoint belowViewport = sListWidget->viewport()->mapToGlobal(QPoint(50, vh + 30));
+        sListWidget->setMockCursorPos(belowViewport);
+        sListWidget->onAutoScrollTimeout();
+        app.processEvents();
+        int afterScrollDown = vbar->value();
+        if (afterScrollDown <= afterScrollUp) {
+            std::cerr << "FAILED: auto-scroll down did not increase scroll value! afterScrollUp=" << afterScrollUp << ", afterScrollDown=" << afterScrollDown << std::endl;
+            return 1;
+        }
+        std::cout << "[PASS] Auto-scroll scrolled DOWN when cursor is below viewport (from "
+                  << afterScrollUp << " to " << afterScrollDown << ")!" << std::endl;
+
+        // 3. Stop auto-scroll
+        sListWidget->stopAutoScroll();
+        sListWidget->setDragStartRow(-1);
+        sListWidget->setMockCursorPos(std::nullopt);
+
+        // Drop slot checking when cursor is above viewport
+        sListWidget->updateDropSlotFromPos(QPoint(50, -10));
+        if (sListWidget->dropSlot() != 0) {
+            std::cerr << "FAILED: dropSlot should be 0 when above viewport, got " << sListWidget->dropSlot() << std::endl;
+            return 1;
+        }
+        std::cout << "[PASS] Drop slot is set to top slot (0) when above viewport!" << std::endl;
+
+        // Drop slot checking when cursor is below viewport
+        sListWidget->updateDropSlotFromPos(QPoint(50, vh + 50));
+        if (sListWidget->dropSlot() > sListWidget->getBackgroundRow()) {
+            std::cerr << "FAILED: dropSlot should be clamped to background row, got " << sListWidget->dropSlot() << std::endl;
+            return 1;
+        }
+        std::cout << "[PASS] Drop slot is clamped to valid row range when below viewport!" << std::endl;
+    }
+
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }
