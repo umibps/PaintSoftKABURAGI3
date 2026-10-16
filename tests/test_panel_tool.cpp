@@ -9,6 +9,7 @@
 #include "GroupLayer.hpp"
 #include "DocumentSerializer.hpp"
 #include "PanelSettingsWidget.hpp"
+#include "ToolBoxWidget.hpp"
 
 using namespace Kaburagi;
 
@@ -230,6 +231,18 @@ void testPanelSettingsWidget() {
     assert(widget.drawBorder() == false);
     assert(std::abs(widget.borderWidth() - 8.5f) < 0.001f);
     assert(widget.borderColor() == QColor(10, 20, 30));
+
+    // ToolType switching test (PanelFrame vs PanelSplit)
+    assert(widget.isBorderGroupVisible() == true);
+    assert(widget.isMarginGroupVisible() == false);
+
+    widget.setToolType(ToolType::PanelSplit);
+    assert(widget.isBorderGroupVisible() == false);
+    assert(widget.isMarginGroupVisible() == true);
+
+    widget.setToolType(ToolType::PanelFrame);
+    assert(widget.isBorderGroupVisible() == true);
+    assert(widget.isMarginGroupVisible() == false);
 
     std::cout << "  -> PASSED!" << std::endl;
 }

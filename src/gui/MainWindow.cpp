@@ -3774,6 +3774,9 @@ void MainWindow::onToolChanged(ToolType tool) {
         } else if (tool == ToolType::Text || tool == ToolType::TextBalloon) {
             m_toolSettingsStack->setCurrentWidget(m_textSettings);
         } else if (tool == ToolType::PanelFrame || tool == ToolType::PanelSplit) {
+            if (m_panelSettings) {
+                m_panelSettings->setToolType(tool);
+            }
             m_toolSettingsStack->setCurrentWidget(m_panelSettings);
         } else if (tool == ToolType::ThreeD) {
             m_toolSettingsStack->setCurrentWidget(m_threeDSettings);
