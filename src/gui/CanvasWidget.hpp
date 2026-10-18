@@ -523,6 +523,8 @@ public:
     void testStrokeBegin(const QPointF& docPos, float pressure = 1.0f) { strokeBegin(docPos, pressure); }
     void testStrokeMove(const QPointF& docPos, float pressure = 1.0f) { strokeMove(docPos, pressure); }
     void testStrokeEnd() { strokeEnd(); }
+    void cancelCurrentStroke();
+    bool isTouchPointerEvent(const QEvent* event) const;
     void selectLayerAtPixel(const QPointF& docPt);
     QPointF lastStrokeEndPos() const { return m_lastStrokeEndPos; }
     bool hasLastStrokeEndPos() const { return m_hasLastStrokeEndPos; }
@@ -1124,7 +1126,7 @@ private:
     QPointF evaluateMLS(const QPointF& pt, const std::vector<QPointF>& origPts, const std::vector<QPointF>& curPts) const;
     bool m_rightClickEyedropperEnabled = true;
     bool m_isRightClickEyedropper = false;
-    TouchAction m_touchAction = TouchAction::Draw;
+    TouchAction m_touchAction = TouchAction::PanZoomRotate;
 };
 
 } // namespace Kaburagi

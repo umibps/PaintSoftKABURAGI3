@@ -88,8 +88,8 @@ PreferencesDialog::PreferencesDialog(QWidget* parent)
     auto touchForm = new QFormLayout(touchGroup);
 
     m_comboTouchAction = new QComboBox(this);
-    m_comboTouchAction->addItem(tr("ブラシを描画 (現状の仕様)"), static_cast<int>(TouchAction::Draw));
-    m_comboTouchAction->addItem(tr("移動、拡大縮小、回転"), static_cast<int>(TouchAction::PanZoomRotate));
+    m_comboTouchAction->addItem(tr("移動、拡大縮小、回転 (推奨)"), static_cast<int>(TouchAction::PanZoomRotate));
+    m_comboTouchAction->addItem(tr("ブラシを描画"), static_cast<int>(TouchAction::Draw));
     m_comboTouchAction->addItem(tr("何もしない"), static_cast<int>(TouchAction::None));
     touchForm->addRow(tr("タッチ入力の動作:"), m_comboTouchAction);
 
@@ -513,8 +513,8 @@ bool PreferencesDialog::isRightClickEyedropperEnabled() {
 
 PreferencesDialog::TouchAction PreferencesDialog::touchAction() {
     QSettings settings = getSettings();
-    int val = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::Draw)).toInt();
-    if (val < 0 || val > 2) return TouchAction::Draw;
+    int val = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::PanZoomRotate)).toInt();
+    if (val < 0 || val > 2) return TouchAction::PanZoomRotate;
     return static_cast<TouchAction>(val);
 }
 
@@ -785,7 +785,7 @@ void PreferencesDialog::loadSettings() {
 
     m_chkRightClickEyedropper->setChecked(settings.value("Preferences/rightClickEyedropper", true).toBool());
 
-    int touchVal = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::Draw)).toInt();
+    int touchVal = settings.value("Preferences/touchAction", static_cast<int>(TouchAction::PanZoomRotate)).toInt();
     int tIdx = m_comboTouchAction->findData(touchVal);
     if (tIdx >= 0) {
         m_comboTouchAction->setCurrentIndex(tIdx);

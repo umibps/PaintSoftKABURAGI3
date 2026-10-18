@@ -13,6 +13,8 @@
 #include <QMouseEvent>
 #include <QTouchEvent>
 #include <QWheelEvent>
+#include <QPointingDevice>
+#include <QInputDevice>
 #include <QGuiApplication>
 #include <QRandomGenerator>
 #include <cmath>
@@ -851,6 +853,82 @@ void CanvasWidget::strokeEnd() {
         m_lastStrokeEndPos = m_lastFilteredPoint.pos;
         m_hasLastStrokeEndPos = true;
     }
+}
+
+void CanvasWidget::cancelCurrentStroke() {
+    if (!m_isDrawing) return;
+
+    if (m_airbrushTimer && m_airbrushTimer->isActive()) {
+        m_airbrushTimer->stop();
+    }
+    m_hasWatercolorColor = false;
+    m_hasCompositeBrushColor = false;
+    m_isDrawing = false;
+
+    // ストローク累積用バッファの解放
+    for (auto& pair : m_strokeAlphaTiles) {
+        TileMemoryPool::instance().freeTile(pair.second);
+    }
+    m_strokeAlphaTiles.clear();
+    m_strokeTileSnapshots.clear();
+
+    auto activeL = effectiveTargetLayer();
+    if (activeL) {
+        if (activeL->type() == LayerType::Vector) {
+            auto vecLayer = std::dynamic_pointer_cast<VectorLayer>(activeL);
+            if (vecLayer) {
+                vecLayer->tileManager() = m_strokePreTiles.clone();
+            }
+            m_currentVectorStroke = VectorStroke();
+            m_beforeVectorStrokes.clear();
+            m_vectorEraserTrajectory.clear();
+            m_strokePreTiles = TileManager(0, 0);
+        } else if (activeL->type() == LayerType::Raster) {
+            activeL->tileManager() = m_strokePreTiles.clone();
+            m_strokePreTiles = TileManager(0, 0);
+            activeL->invalidateContentBounds();
+        }
+    }
+
+    m_strokeDirtyRect = QRect();
+    m_hasLastStrokeEndPos = false;
+    if (m_document) {
+        m_document->composite();
+    }
+    update();
+}
+
+bool CanvasWidget::isTouchPointerEvent(const QEvent* event) const {
+    if (!event) return false;
+
+    // 1. タッチイベントそのもの
+    if (event->type() == QEvent::TouchBegin || 
+        event->type() == QEvent::TouchUpdate || 
+        event->type() == QEvent::TouchEnd || 
+        event->type() == QEvent::TouchCancel) {
+        return true;
+    }
+
+    // 2. マウスイベントの合成元フラグ
+    if (auto me = dynamic_cast<const QMouseEvent*>(event)) {
+        if (me->source() == Qt::MouseEventSynthesizedByQt ||
+            me->source() == Qt::MouseEventSynthesizedBySystem) {
+            return true;
+        }
+    }
+
+    // 3. QPointerEvent 経由でのデバイス情報
+    if (auto pe = dynamic_cast<const QPointerEvent*>(event)) {
+        if (auto dev = pe->pointingDevice()) {
+            if (dev->type() == QInputDevice::DeviceType::TouchScreen ||
+                dev->type() == QInputDevice::DeviceType::TouchPad ||
+                dev->pointerType() == QPointingDevice::PointerType::Finger) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void CanvasWidget::paintBrushSegment(const QPointF& p0, const QPointF& p1, float w0, float w1, float dens0, float dens1, uint32_t color) {
@@ -3715,6 +3793,11 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
 }
 
 void CanvasWidget::tabletEvent(QTabletEvent* event) {
+    if (isTouchPointerEvent(event)) {
+        event->ignore();
+        return;
+    }
+
     auto activeL = m_document ? m_document->activeLayer() : nullptr;
 
     bool isCtrlShift = (event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) == (Qt::ControlModifier | Qt::ShiftModifier);
@@ -3869,7 +3952,7 @@ void CanvasWidget::leaveEvent(QEvent* /*event*/) {
 }
 
 void CanvasWidget::mousePressEvent(QMouseEvent* event) {
-    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+    if (isTouchPointerEvent(event) && m_touchAction != TouchAction::Draw) {
         event->accept();
         return;
     }
@@ -4710,7 +4793,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
-    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+    if (isTouchPointerEvent(event) && m_touchAction != TouchAction::Draw) {
         event->accept();
         return;
     }
@@ -5542,7 +5625,7 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
-    if (event->source() == Qt::MouseEventSynthesizedByQt && m_touchAction != TouchAction::Draw) {
+    if (isTouchPointerEvent(event) && m_touchAction != TouchAction::Draw) {
         event->accept();
         return;
     }
@@ -6360,9 +6443,14 @@ void CanvasWidget::keyReleaseEvent(QKeyEvent* event) {
 
 bool CanvasWidget::event(QEvent* event) {
     // タッチ入力処理
-    if (event->type() == QEvent::TouchBegin || event->type() == QEvent::TouchUpdate || event->type() == QEvent::TouchEnd) {
+    if (event->type() == QEvent::TouchBegin || event->type() == QEvent::TouchUpdate || 
+        event->type() == QEvent::TouchEnd || event->type() == QEvent::TouchCancel) {
+        
         // 1. 「何もしない」設定の場合
         if (m_touchAction == TouchAction::None) {
+            if (m_isDrawing) {
+                cancelCurrentStroke();
+            }
             event->accept();
             return true;
         }
@@ -6370,8 +6458,13 @@ bool CanvasWidget::event(QEvent* event) {
         QTouchEvent* touch = static_cast<QTouchEvent*>(event);
         const auto& points = touch->points();
 
-        // 2. 「移動、拡大縮小、回転」設定の場合
+        // 2. 「移動、拡大縮小、回転」設定の場合 (TouchAction::PanZoomRotate)
         if (m_touchAction == TouchAction::PanZoomRotate) {
+            // タッチ操作による画面移動・操作中は、万一開始されたストロークがあれば即座にキャンセル
+            if (m_isDrawing) {
+                cancelCurrentStroke();
+            }
+
             if (points.size() == 1 && event->type() == QEvent::TouchUpdate) {
                 // 1本指によるキャンバスの移動（パン）
                 auto p = points[0];
@@ -6416,8 +6509,13 @@ bool CanvasWidget::event(QEvent* event) {
             return true;
         }
 
-        // 3. 「ブラシを描画 (現状の仕様)」設定の場合 (TouchAction::Draw)
-        if (points.size() == 2) {
+        // 3. 「ブラシを描画」設定の場合 (TouchAction::Draw)
+        if (points.size() >= 2) {
+            // 2本指以上が検出されたら、1本目の指で誤って開始された可能性のあるストロークを即座に破棄・元に戻す
+            if (m_isDrawing) {
+                cancelCurrentStroke();
+            }
+
             if (event->type() == QEvent::TouchUpdate) {
                 // 2本指によるピンチズーム・回転・パン
                 auto p1 = points[0];
