@@ -7,6 +7,7 @@
 #include "AiService.hpp"
 
 class QRadioButton;
+class QGroupBox;
 class QLineEdit;
 class QComboBox;
 class QPlainTextEdit;
@@ -96,6 +97,7 @@ private slots:
     void onBrowseIpAdapterFile();
     void onControlNetSourceChanged(int index);
     void onIpAdapterSourceChanged(int index);
+    void onQuickExpandCanvasClicked();
 
     QImage currentSelectedResultImage() const;
 
@@ -139,6 +141,11 @@ private:
     QPushButton* m_btnPromptAssist = nullptr;
     QPushButton* m_btnPromptHistory = nullptr;
     QString m_lastLlmPrompt;
+
+    // Outpainting
+    QGroupBox* m_grpOutpainting = nullptr;
+    QSpinBox* m_spinOutpaintBlendWidth = nullptr;
+    QPushButton* m_btnQuickExpandCanvas = nullptr;
 
     // ControlNet
     QCheckBox* m_chkControlNet = nullptr;

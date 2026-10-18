@@ -1,5 +1,6 @@
 #include "AiService.hpp"
 #include <QBuffer>
+#include <QPainter>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
@@ -526,10 +527,10 @@ QJsonObject AiService::buildWebUiImg2ImgJson(const AiGenerateParams& params) {
 
     json["denoising_strength"] = params.denoisingStrength;
 
-    if (!params.maskImage.isNull() && params.mode == AiMode::Inpaint) {
+    if (!params.maskImage.isNull() && (params.mode == AiMode::Inpaint || params.mode == AiMode::Outpainting)) {
         json["mask"] = imageToBase64Png(params.maskImage);
-        json["mask_blur"] = 4;
-        json["inpainting_fill"] = 1; // 1: original
+        json["mask_blur"] = (params.mode == AiMode::Outpainting) ? 8 : 4;
+        json["inpainting_fill"] = 1; // 1: original (with edge bleed/padding)
         json["inpaint_full_res"] = 0; // 0: Whole picture (returns full image matching canvas coordinates)
         json["inpainting_mask_invert"] = 0; // 0: inpaint masked area
     }
@@ -626,8 +627,8 @@ QJsonObject AiService::buildComfyUiPromptJson(const AiGenerateParams& params, co
     QString latentNodeId = "5";
     int latentOutIndex = 0;
 
-    bool isImg2Img = (params.mode == AiMode::RoughToClean || params.mode == AiMode::Inpaint || params.mode == AiMode::Colorization || params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
-    bool isInpaint = (params.mode == AiMode::Inpaint) && !uploadedMaskImage.isEmpty();
+    bool isImg2Img = (params.mode == AiMode::RoughToClean || params.mode == AiMode::Inpaint || params.mode == AiMode::Colorization || params.mode == AiMode::SketchToLineart || params.mode == AiMode::Outpainting) && !params.initImage.isNull();
+    bool isInpaint = (params.mode == AiMode::Inpaint || params.mode == AiMode::Outpainting) && !uploadedMaskImage.isEmpty();
 
     if (isImg2Img && !uploadedInitImage.isEmpty()) {
         // Node 10: LoadImage (Init Image)
@@ -1039,7 +1040,8 @@ void AiService::executeGenerate(const AiGenerateParams& params) {
         bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                           params.mode == AiMode::Inpaint ||
                           params.mode == AiMode::Colorization ||
-                          params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
+                          params.mode == AiMode::SketchToLineart ||
+                          params.mode == AiMode::Outpainting) && !params.initImage.isNull();
 
         QUrl url(urlStr + (isImg2Img ? "/sdapi/v1/img2img" : "/sdapi/v1/txt2img"));
         QNetworkRequest request(url);
@@ -1078,8 +1080,9 @@ void AiService::executeComfyUiGenerate(const AiGenerateParams& params) {
     bool isImg2Img = (params.mode == AiMode::RoughToClean ||
                       params.mode == AiMode::Inpaint ||
                       params.mode == AiMode::Colorization ||
-                      params.mode == AiMode::SketchToLineart) && !params.initImage.isNull();
-    bool isInpaint = (params.mode == AiMode::Inpaint) && !params.maskImage.isNull();
+                      params.mode == AiMode::SketchToLineart ||
+                      params.mode == AiMode::Outpainting) && !params.initImage.isNull();
+    bool isInpaint = (params.mode == AiMode::Inpaint || params.mode == AiMode::Outpainting) && !params.maskImage.isNull();
     bool hasControlNet = params.enableControlNet && !params.controlNetImage.isNull();
 
     auto postPromptJson = [this, params, urlStr](const QString& uploadedInit, const QString& uploadedMask, const QString& uploadedCn) {
@@ -2026,6 +2029,139 @@ std::vector<GgmlDevice> AiService::detectEmbeddedDevices(const QString& embedded
     }
 
     return devices;
+}
+
+QImage AiService::createOutpaintMask(const QImage& sourceComposite, const QPainterPath& selectionPath, int blendWidth) {
+    if (sourceComposite.isNull()) return QImage();
+
+    int w = sourceComposite.width();
+    int h = sourceComposite.height();
+    QImage initialMask(w, h, QImage::Format_Grayscale8);
+    initialMask.fill(0); // 0: 保持領域 (黒)
+
+    bool hasSelection = !selectionPath.isEmpty();
+    if (hasSelection) {
+        // ユーザー指定の選択範囲がある場合: 選択範囲パスを白 (255: 再生成領域) とする
+        QPainter p(&initialMask);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        p.setBrush(Qt::white);
+        p.setPen(Qt::NoPen);
+        p.drawPath(selectionPath);
+        p.end();
+    } else {
+        // 選択範囲がない場合: sourceComposite の透明ピクセル (alpha < 16) を自動検出して白 (255) とする
+        QImage argb = sourceComposite.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        for (int y = 0; y < h; ++y) {
+            const QRgb* line = reinterpret_cast<const QRgb*>(argb.constScanLine(y));
+            uchar* maskLine = initialMask.scanLine(y);
+            for (int x = 0; x < w; ++x) {
+                if (qAlpha(line[x]) < 16) {
+                    maskLine[x] = 255; // 未描画・余白領域
+                } else {
+                    maskLine[x] = 0;   // 描画済み領域
+                }
+            }
+        }
+    }
+
+    if (blendWidth <= 0) {
+        return initialMask;
+    }
+
+    // 境界自動ブレンディング処理:
+    // 余白領域 (255) から描画済み領域 (0) の内側に向かって blendWidth 分だけマスクを膨張 (Dilation) し、
+    // 境界オーバーラップ領域に滑らかなフェザーグラデーションを付与して継ぎ目を馴染ませる
+    int radius = std::clamp(blendWidth, 2, 128);
+    QImage dilated = initialMask;
+    {
+        QImage temp = dilated;
+        int d = radius;
+        // 水平方向膨張
+        for (int y = 0; y < h; ++y) {
+            const uchar* src = dilated.constScanLine(y);
+            uchar* dst = temp.scanLine(y);
+            for (int x = 0; x < w; ++x) {
+                if (src[x] == 255) {
+                    int xStart = std::max(0, x - d);
+                    int xEnd = std::min(w - 1, x + d);
+                    for (int k = xStart; k <= xEnd; ++k) {
+                        dst[k] = 255;
+                    }
+                }
+            }
+        }
+        // 垂直方向膨張
+        dilated.fill(0);
+        for (int y = 0; y < h; ++y) {
+            const uchar* src = temp.constScanLine(y);
+            for (int x = 0; x < w; ++x) {
+                if (src[x] == 255) {
+                    int yStart = std::max(0, y - d);
+                    int yEnd = std::min(h - 1, y + d);
+                    for (int k = yStart; k <= yEnd; ++k) {
+                        dilated.scanLine(k)[x] = 255;
+                    }
+                }
+            }
+        }
+    }
+
+    // ダウンサンプリング平滑化で境界グラデーションを生成
+    int scaleDown = std::max(1, std::min(w / 8, h / 8));
+    int sw = std::max(1, w / (scaleDown > 0 ? scaleDown : 1));
+    int sh = std::max(1, h / (scaleDown > 0 ? scaleDown : 1));
+    QImage soft = initialMask.scaled(sw, sh, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    soft = soft.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+
+    QImage finalMask(w, h, QImage::Format_Grayscale8);
+    finalMask.fill(0);
+
+    for (int y = 0; y < h; ++y) {
+        const uchar* initLine = initialMask.constScanLine(y);
+        const uchar* dilLine = dilated.constScanLine(y);
+        const uchar* softLine = soft.constScanLine(y);
+        uchar* outLine = finalMask.scanLine(y);
+        for (int x = 0; x < w; ++x) {
+            if (initLine[x] == 255) {
+                outLine[x] = 255; // 元々の拡張領域は完全生成
+            } else if (dilLine[x] == 255) {
+                // 境界オーバーラップ領域: softLine に応じた滑らかなグラデーション
+                int v = softLine[x];
+                int blendVal = std::clamp(static_cast<int>(v * 1.6), 64, 255);
+                outLine[x] = static_cast<uchar>(blendVal);
+            } else {
+                outLine[x] = 0;   // 保持領域
+            }
+        }
+    }
+
+    return finalMask;
+}
+
+QImage AiService::prepareOutpaintInitImage(const QImage& sourceComposite, int blendWidth) {
+    if (sourceComposite.isNull()) return QImage();
+
+    int w = sourceComposite.width();
+    int h = sourceComposite.height();
+    QImage argb = sourceComposite.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+
+    // 描画済み領域から色調を広げた下地（エッジカラーブリード/パディング）を作成
+    // 余白領域を白や黒ではなく、既存画像の平均色・周辺色調で満たすことで、
+    // VAEエンコード時の境界ハローや色断絶アーティファクトを防止する
+    int sw = std::max(1, w / 16);
+    int sh = std::max(1, h / 16);
+    QImage blurred = argb.scaled(sw, sh, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    blurred = blurred.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+
+    QImage result(w, h, QImage::Format_RGB32);
+    result.fill(Qt::white);
+
+    QPainter p(&result);
+    p.drawImage(0, 0, blurred);
+    p.drawImage(0, 0, argb);
+    p.end();
+
+    return result;
 }
 
 } // namespace Kaburagi

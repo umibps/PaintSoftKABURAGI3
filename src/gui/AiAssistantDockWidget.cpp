@@ -190,6 +190,7 @@ void AiAssistantDockWidget::setupUi() {
     m_comboMode->addItem(tr("自動着彩 / カラーラフ (Colorization)"), static_cast<int>(AiMode::Colorization));
     m_comboMode->addItem(tr("テクスチャ・シームレス (Seamless Pattern)"), static_cast<int>(AiMode::SeamlessTexture));
     m_comboMode->addItem(tr("背景 / 新規生成 (Background / New)"), static_cast<int>(AiMode::BackgroundAndNew));
+    m_comboMode->addItem(tr("外側拡張 / 構図拡張 (Outpainting)"), static_cast<int>(AiMode::Outpainting));
     connect(m_comboMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AiAssistantDockWidget::onModeChanged);
     layMode->addWidget(m_comboMode);
     mainLayout->addWidget(grpMode);
@@ -226,6 +227,33 @@ void AiAssistantDockWidget::setupUi() {
     layPrompt->addWidget(lblNeg);
     layPrompt->addWidget(m_editNegativePrompt);
     mainLayout->addWidget(grpPrompt);
+
+    // 3.5 外側拡張 (Outpainting) 設定
+    m_grpOutpainting = new QGroupBox(tr("外側拡張 (Outpainting) 設定"), mainContainer);
+    auto layOutpaint = new QVBoxLayout(m_grpOutpainting);
+
+    auto formOutpaint = new QFormLayout();
+    m_spinOutpaintBlendWidth = new QSpinBox(m_grpOutpainting);
+    m_spinOutpaintBlendWidth->setRange(4, 128);
+    m_spinOutpaintBlendWidth->setValue(24);
+    m_spinOutpaintBlendWidth->setSuffix(" px");
+    m_spinOutpaintBlendWidth->setToolTip(tr("既存の絵と外側の拡張領域をつなぐ境界の重なり（オーバーラップ/フェザーぼかし）の幅です。\n境界線を滑らかに馴染ませて継ぎ目を消します。"));
+    formOutpaint->addRow(tr("境界ブレンディング幅:"), m_spinOutpaintBlendWidth);
+    layOutpaint->addLayout(formOutpaint);
+
+    m_btnQuickExpandCanvas = new QPushButton(tr("↔ キャンバスサイズを広げる..."), m_grpOutpainting);
+    m_btnQuickExpandCanvas->setToolTip(tr("キャンバスサイズ変更ダイアログを開き、描き足したい方向へキャンバスを広げます"));
+    m_btnQuickExpandCanvas->setStyleSheet("QPushButton { font-weight: bold; padding: 5px; background-color: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px; } QPushButton:hover { background-color: #c8e6c9; }");
+    connect(m_btnQuickExpandCanvas, &QPushButton::clicked, this, &AiAssistantDockWidget::onQuickExpandCanvasClicked);
+    layOutpaint->addWidget(m_btnQuickExpandCanvas);
+
+    auto lblOutpaintHint = new QLabel(tr("💡 透明な余白領域を自動認識して外側に絵を描き足します。\n選択ツールで特定の外側のみを指定して拡張することも可能です。"), m_grpOutpainting);
+    lblOutpaintHint->setStyleSheet("color: #555; font-size: 11px;");
+    lblOutpaintHint->setWordWrap(true);
+    layOutpaint->addWidget(lblOutpaintHint);
+
+    m_grpOutpainting->setVisible(false);
+    mainLayout->addWidget(m_grpOutpainting);
 
     // 4. ControlNet 設定
     auto grpCN = new QGroupBox(tr("ControlNet 設定"), mainContainer);
@@ -662,6 +690,14 @@ void AiAssistantDockWidget::updateUiForMode(AiMode mode) {
     case AiMode::BackgroundAndNew:
         m_spinDenoising->setValue(1.0);
         break;
+    case AiMode::Outpainting:
+        selectCanvasAspectResolution();
+        m_spinDenoising->setValue(0.95);
+        break;
+    }
+
+    if (m_grpOutpainting) {
+        m_grpOutpainting->setVisible(mode == AiMode::Outpainting);
     }
 }
 
@@ -1396,6 +1432,38 @@ void AiAssistantDockWidget::onGenerateClicked() {
         }
     }
 
+    // 外側拡張 (Outpainting) モードのバリデーション
+    if (params.mode == AiMode::Outpainting) {
+        if (!m_document) {
+            QMessageBox::warning(this, tr("外側拡張 (Outpainting)"), tr("キャンバスが開かれていません。"));
+            m_btnGenerate->setEnabled(true);
+            m_btnCancel->setEnabled(false);
+            return;
+        }
+        QImage mask = getMaskImageForCurrentMode();
+        bool hasOutpaintArea = false;
+        if (!mask.isNull()) {
+            for (int y = 0; y < mask.height() && !hasOutpaintArea; ++y) {
+                const uchar* line = mask.constScanLine(y);
+                for (int x = 0; x < mask.width(); ++x) {
+                    if (line[x] > 0) {
+                        hasOutpaintArea = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!hasOutpaintArea) {
+            QMessageBox::warning(this, tr("外側拡張 (Outpainting)"),
+                                 tr("拡張対象の透明な余白領域、または選択範囲が見つかりません。\n"
+                                    "「↔ キャンバスサイズを広げる...」ボタンからキャンバスを拡張するか、\n"
+                                    "選択ツールで描き足したい外側領域を指定してから生成を実行してください。"));
+            m_btnGenerate->setEnabled(true);
+            m_btnCancel->setEnabled(false);
+            return;
+        }
+    }
+
     params.initImage = getInitImageForCurrentMode();
     params.maskImage = getMaskImageForCurrentMode();
 
@@ -1485,6 +1553,12 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
         return whiteCanvas;
     }
 
+    // 「外側拡張 (Outpainting)」モードでは、境界ブレンディング（エッジカラーパディング）処理を適用した画像を渡す
+    if (mode == AiMode::Outpainting) {
+        int blendWidth = m_spinOutpaintBlendWidth ? m_spinOutpaintBlendWidth->value() : 24;
+        return AiService::prepareOutpaintInitImage(m_document->compositeBuffer().toQImage(), blendWidth);
+    }
+
     // 「自動着彩 / カラーラフ」および「選択範囲インペイント」モードでは、各パーツが別レイヤーで分かれていることが多いため、
     // キャンバス全体の可視レイヤー合成画像（compositeBuffer）をベース画像として渡す
     if (mode == AiMode::Colorization || mode == AiMode::Inpaint) {
@@ -1545,24 +1619,48 @@ QImage AiAssistantDockWidget::getInitImageForCurrentMode() {
 }
 
 QImage AiAssistantDockWidget::getMaskImageForCurrentMode() {
-    if (!m_document || !m_document->hasSelection()) return QImage();
+    if (!m_document) return QImage();
 
     AiMode mode = static_cast<AiMode>(m_comboMode->currentData().toInt());
-    if (mode != AiMode::Inpaint) return QImage();
+    if (mode == AiMode::Inpaint) {
+        if (!m_document->hasSelection()) return QImage();
 
-    int w = m_document->width();
-    int h = m_document->height();
-    QImage mask(w, h, QImage::Format_ARGB32_Premultiplied);
-    mask.fill(Qt::black); // 黒 = 保持
+        int w = m_document->width();
+        int h = m_document->height();
+        QImage mask(w, h, QImage::Format_ARGB32_Premultiplied);
+        mask.fill(Qt::black); // 黒 = 保持
 
-    QPainter p(&mask);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    p.setBrush(Qt::white); // 白 = 再生成
-    p.setPen(Qt::NoPen);
-    p.drawPath(m_document->selection());
-    p.end();
+        QPainter p(&mask);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setBrush(Qt::white); // 白 = 再生成
+        p.setPen(Qt::NoPen);
+        p.drawPath(m_document->selection());
+        p.end();
 
-    return mask;
+        return mask;
+    }
+
+    if (mode == AiMode::Outpainting) {
+        int blendWidth = m_spinOutpaintBlendWidth ? m_spinOutpaintBlendWidth->value() : 24;
+        QPainterPath sel = m_document->hasSelection() ? m_document->selection() : QPainterPath();
+        return AiService::createOutpaintMask(m_document->compositeBuffer().toQImage(), sel, blendWidth);
+    }
+
+    return QImage();
+}
+
+void AiAssistantDockWidget::onQuickExpandCanvasClicked() {
+    if (!m_document) {
+        QMessageBox::information(this, tr("キャンバスサイズ変更"), tr("キャンバスが開かれていません。"));
+        return;
+    }
+    if (m_mainWindow) {
+        m_mainWindow->onChangeCanvasSize();
+    } else {
+        MainWindow* mw = qobject_cast<MainWindow*>(parent());
+        if (!mw) mw = qobject_cast<MainWindow*>(window());
+        if (mw) mw->onChangeCanvasSize();
+    }
 }
 
 void AiAssistantDockWidget::onBrowseControlNetFile() {

@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QByteArray>
+#include <QPainterPath>
 #include <cstdint>
 
 class QNetworkAccessManager;
@@ -31,7 +32,8 @@ enum class AiMode {
     Colorization = 2,     // 自動着色・カラーラフ生成 (img2img / ControlNet)
     SeamlessTexture = 3,  // テクスチャ・シームレスパターン生成 (txt2img tiling)
     BackgroundAndNew = 4, // 背景・新規生成 (txt2img)
-    SketchToLineart = 5   // ラフから線画生成 (Sketch2Lineart / 白紙ベース+ControlNet)
+    SketchToLineart = 5,  // ラフから線画生成 (Sketch2Lineart / 白紙ベース+ControlNet)
+    Outpainting = 6       // 外側拡張・構図拡張 (Outpainting with boundary blending)
 };
 
 enum class ControlNetType {
@@ -124,6 +126,12 @@ public:
 
     // 線画用透明化ユーティリティ（白を透明、黒を主線に変換する「輝度を透明度に変換」処理）
     static QImage convertBrightnessToAlpha(const QImage& source, const QColor& lineColor = Qt::black);
+
+    // 外側拡張(Outpaint)用マスク生成（透明余白の自動検出または選択範囲指定、および境界自動ブレンディング）
+    static QImage createOutpaintMask(const QImage& sourceComposite, const QPainterPath& selectionPath = QPainterPath(), int blendWidth = 24);
+
+    // 外側拡張(Outpaint)用初期画像生成（エッジカラーブリード/パディング処理による継ぎ目アーティファクト防止）
+    static QImage prepareOutpaintInitImage(const QImage& sourceComposite, int blendWidth = 24);
 
     // 組み込み推論エンジン(sd.exe)が利用可能な計算デバイス検出
     static std::vector<GgmlDevice> detectEmbeddedDevices(const QString& embeddedExePath = QString());
