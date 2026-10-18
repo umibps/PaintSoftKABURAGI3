@@ -32,6 +32,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void tabletEvent(QTabletEvent* event) override;
     QSize sizeHint() const override { return QSize(160, 160); }
     QSize minimumSizeHint() const override { return QSize(120, 120); }
 
@@ -39,6 +40,7 @@ private:
     void handleMousePos(const QPointF& pos);
     QRectF getInnerSquare() const;
     void drawSaiRingMarker(QPainter& painter, const QPointF& pos);
+    void invalidateCache();
 
     float m_hue = 210.0f;      // デフォルト: SAI風の青空色
     float m_saturation = 0.8f; // 0.0 ~ 1.0
@@ -46,6 +48,12 @@ private:
 
     enum class DragMode { None, HueRing, SVBox };
     DragMode m_dragMode = DragMode::None;
+
+    QPixmap m_cachedRingPixmap;
+    QSize m_cachedRingWidgetSize;
+    QImage m_cachedSvImage;
+    float m_cachedSvHue = -1.0f;
+    QSize m_cachedSvSize;
 };
 
 } // namespace Kaburagi

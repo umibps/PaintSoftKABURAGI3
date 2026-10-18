@@ -2,6 +2,7 @@
 #include "DisplayFilterManager.hpp"
 #include <QPainter>
 #include <QMouseEvent>
+#include <QTabletEvent>
 #include <QPainterPath>
 #include <QConicalGradient>
 #include <cmath>
@@ -62,7 +63,18 @@ double ColorWheelWidget::hueToWheelAngle(double hue) {
 ColorWheelWidget::ColorWheelWidget(QWidget* parent)
     : QWidget(parent) {
     setAttribute(Qt::WA_OpaquePaintEvent, false);
-    connect(&DisplayFilterManager::instance(), &DisplayFilterManager::filterChanged, this, QOverload<>::of(&QWidget::update));
+    connect(&DisplayFilterManager::instance(), &DisplayFilterManager::filterChanged, this, [this]() {
+        invalidateCache();
+        update();
+    });
+}
+
+void ColorWheelWidget::invalidateCache() {
+    m_cachedRingPixmap = QPixmap();
+    m_cachedRingWidgetSize = QSize();
+    m_cachedSvImage = QImage();
+    m_cachedSvHue = -1.0f;
+    m_cachedSvSize = QSize();
 }
 
 QColor ColorWheelWidget::currentColor() const {
@@ -71,11 +83,18 @@ QColor ColorWheelWidget::currentColor() const {
 
 void ColorWheelWidget::setColor(const QColor& color) {
     if (color.isValid()) {
-        m_hue = color.hueF() >= 0 ? color.hueF() * 360.0f : 0.0f;
-        m_saturation = color.saturationF();
-        m_value = color.valueF();
-        update();
-        emit colorChanged(currentColor());
+        float newHue = color.hueF() >= 0 ? color.hueF() * 360.0f : 0.0f;
+        float newSat = color.saturationF();
+        float newVal = color.valueF();
+        if (std::abs(newHue - m_hue) > 0.01f ||
+            std::abs(newSat - m_saturation) > 0.001f ||
+            std::abs(newVal - m_value) > 0.001f) {
+            m_hue = newHue;
+            m_saturation = newSat;
+            m_value = newVal;
+            update();
+            emit colorChanged(currentColor());
+        }
     }
 }
 
@@ -122,46 +141,64 @@ void ColorWheelWidget::paintEvent(QPaintEvent* /*event*/) {
     qreal outerR = side * 0.5 - 3.0;
     qreal innerR = outerR * 0.73;
 
-    // 1. SAI風 外周色相リングの描画 (ConicalGradient, 180° = 9時方向開始)
-    // QtのQConicalGradientは反時計回りに進むため、(360 - angle) / 360 で時計回りのSAI配置に補正
-    QConicalGradient cGrad(center, 180.0);
-    for (const auto& pair : s_map) {
-        double pos = (360.0 - pair.angle) / 360.0;
-        if (pos >= 1.0) pos = 0.0;
-        cGrad.setColorAt(pos, filterMgr.applyFilter(QColor::fromHsvF(pair.hue / 360.0f, 1.0f, 1.0f)));
+    // 1. SAI風 外周色相リングの描画 (静的キャッシュ)
+    if (m_cachedRingPixmap.isNull() || m_cachedRingWidgetSize != size()) {
+        m_cachedRingPixmap = QPixmap(size());
+        m_cachedRingPixmap.fill(Qt::transparent);
+        m_cachedRingWidgetSize = size();
+
+        QPainter rp(&m_cachedRingPixmap);
+        rp.setRenderHint(QPainter::Antialiasing, true);
+
+        QConicalGradient cGrad(center, 180.0);
+        for (const auto& pair : s_map) {
+            double pos = (360.0 - pair.angle) / 360.0;
+            if (pos >= 1.0) pos = 0.0;
+            cGrad.setColorAt(pos, filterMgr.applyFilter(QColor::fromHsvF(pair.hue / 360.0f, 1.0f, 1.0f)));
+        }
+        cGrad.setColorAt(1.0, filterMgr.applyFilter(QColor::fromHsvF(0.0f, 1.0f, 1.0f))); // 9時 (赤)
+
+        QPainterPath ringPath;
+        ringPath.setFillRule(Qt::OddEvenFill);
+        ringPath.addEllipse(center, outerR, outerR);
+        ringPath.addEllipse(center, innerR, innerR);
+
+        rp.fillPath(ringPath, cGrad);
+
+        // 外周リングの境界線
+        rp.setBrush(Qt::NoBrush);
+        rp.setPen(QPen(QColor(180, 180, 180), 1.0));
+        rp.drawEllipse(center, outerR, outerR);
+        rp.setPen(QPen(QColor(190, 190, 190), 1.0));
+        rp.drawEllipse(center, innerR, innerR);
     }
-    cGrad.setColorAt(1.0, filterMgr.applyFilter(QColor::fromHsvF(0.0f, 1.0f, 1.0f))); // 9時 (赤)
 
-    QPainterPath ringPath;
-    ringPath.addEllipse(center, outerR, outerR);
-    QPainterPath holePath;
-    holePath.addEllipse(center, innerR, innerR);
-    ringPath = ringPath.subtracted(holePath);
+    painter.drawPixmap(0, 0, m_cachedRingPixmap);
 
-    painter.fillPath(ringPath, cGrad);
-
-    // 外周リングの境界線 (内側・外側の細いグレー境界線)
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(QColor(180, 180, 180), 1.0));
-    painter.drawEllipse(center, outerR, outerR);
-    painter.setPen(QPen(QColor(190, 190, 190), 1.0));
-    painter.drawEllipse(center, innerR, innerR);
-
-    // 2. 内側のSV正方形描画
+    // 2. 内側のSV正方形描画 (色相が変わらなければ画像再生成をスキップ)
     QRectF svRect = getInnerSquare();
     int iw = static_cast<int>(svRect.width());
     int ih = static_cast<int>(svRect.height());
     if (iw > 0 && ih > 0) {
-        QImage svImage(iw, ih, QImage::Format_RGB32);
-        for (int y = 0; y < ih; ++y) {
-            float v = 1.0f - static_cast<float>(y) / (ih - 1);
-            for (int x = 0; x < iw; ++x) {
-                float s = static_cast<float>(x) / (iw - 1);
-                svImage.setPixelColor(x, y, QColor::fromHsvF(m_hue / 360.0f, s, v));
+        if (m_cachedSvImage.size() != QSize(iw, ih) || std::abs(m_cachedSvHue - m_hue) > 0.001f) {
+            m_cachedSvImage = QImage(iw, ih, QImage::Format_RGB32);
+            m_cachedSvHue = m_hue;
+            m_cachedSvSize = QSize(iw, ih);
+
+            float h = m_hue / 360.0f;
+            for (int y = 0; y < ih; ++y) {
+                float v = 1.0f - static_cast<float>(y) / (ih > 1 ? (ih - 1) : 1);
+                uint32_t* line = reinterpret_cast<uint32_t*>(m_cachedSvImage.scanLine(y));
+                for (int x = 0; x < iw; ++x) {
+                    float s = static_cast<float>(x) / (iw > 1 ? (iw - 1) : 1);
+                    QColor c = QColor::fromHsvF(h, s, v);
+                    line[x] = c.rgb();
+                }
             }
+            m_cachedSvImage = filterMgr.applyFilter(m_cachedSvImage);
         }
-        svImage = filterMgr.applyFilter(svImage);
-        painter.drawImage(svRect.topLeft(), svImage);
+
+        painter.drawImage(svRect.topLeft(), m_cachedSvImage);
 
         // 正方形の外枠線
         painter.setPen(QPen(QColor(120, 120, 120), 1.0));
@@ -170,7 +207,6 @@ void ColorWheelWidget::paintEvent(QPaintEvent* /*event*/) {
 
     // 3. SAI風 色相リング上の選択マーカー
     double curWheelAngle = hueToWheelAngle(m_hue);
-    // 0° = 9時 (左) なので、数学的ラジアン変換: 180° + curWheelAngle
     double rad = (180.0 + curWheelAngle) * M_PI / 180.0;
     double midR = (outerR + innerR) * 0.5;
     QPointF hueMarker(center.x() + midR * std::cos(rad), center.y() + midR * std::sin(rad));
@@ -190,6 +226,8 @@ void ColorWheelWidget::handleMousePos(const QPointF& pos) {
 
     QRectF svRect = getInnerSquare();
 
+    QColor oldColor = currentColor();
+
     if (m_dragMode == DragMode::HueRing || (m_dragMode == DragMode::None && dist >= svRect.width() * 0.55)) {
         m_dragMode = DragMode::HueRing;
 
@@ -199,15 +237,28 @@ void ColorWheelWidget::handleMousePos(const QPointF& pos) {
         float wheelAngle = standardAngle - 180.0f;
         if (wheelAngle < 0.0f) wheelAngle += 360.0f;
 
-        m_hue = static_cast<float>(wheelAngleToHue(wheelAngle));
-        update();
-        emit colorChanged(currentColor());
+        float newHue = static_cast<float>(wheelAngleToHue(wheelAngle));
+        if (std::abs(newHue - m_hue) > 0.01f) {
+            m_hue = newHue;
+            update();
+            QColor newColor = currentColor();
+            if (newColor != oldColor) {
+                emit colorChanged(newColor);
+            }
+        }
     } else {
         m_dragMode = DragMode::SVBox;
-        m_saturation = std::clamp(static_cast<float>((pos.x() - svRect.left()) / svRect.width()), 0.0f, 1.0f);
-        m_value = std::clamp(static_cast<float>(1.0f - (pos.y() - svRect.top()) / svRect.height()), 0.0f, 1.0f);
-        update();
-        emit colorChanged(currentColor());
+        float newSat = std::clamp(static_cast<float>((pos.x() - svRect.left()) / svRect.width()), 0.0f, 1.0f);
+        float newVal = std::clamp(static_cast<float>(1.0f - (pos.y() - svRect.top()) / svRect.height()), 0.0f, 1.0f);
+        if (std::abs(newSat - m_saturation) > 0.0005f || std::abs(newVal - m_value) > 0.0005f) {
+            m_saturation = newSat;
+            m_value = newVal;
+            update();
+            QColor newColor = currentColor();
+            if (newColor != oldColor) {
+                emit colorChanged(newColor);
+            }
+        }
     }
 }
 
@@ -225,6 +276,21 @@ void ColorWheelWidget::mouseMoveEvent(QMouseEvent* event) {
 
 void ColorWheelWidget::mouseReleaseEvent(QMouseEvent* /*event*/) {
     m_dragMode = DragMode::None;
+}
+
+void ColorWheelWidget::tabletEvent(QTabletEvent* event) {
+    if (event->type() == QEvent::TabletPress) {
+        handleMousePos(event->position());
+        event->accept();
+    } else if (event->type() == QEvent::TabletMove) {
+        if (m_dragMode != DragMode::None) {
+            handleMousePos(event->position());
+        }
+        event->accept();
+    } else if (event->type() == QEvent::TabletRelease) {
+        m_dragMode = DragMode::None;
+        event->accept();
+    }
 }
 
 } // namespace Kaburagi

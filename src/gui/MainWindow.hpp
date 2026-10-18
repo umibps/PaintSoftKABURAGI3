@@ -154,6 +154,7 @@ private:
 
     void initDefaultToolConfigs();
     void saveSettings();
+    void scheduleSaveSettings();
     void loadSettings();
     void saveCurrentToolConfig();
     void updateLayerTools();
@@ -337,6 +338,7 @@ private:
     QMenu* m_recentFilesMenu = nullptr;
     QStringList m_recentFiles;
     QTimer m_autoBackupTimer;
+    QTimer m_saveSettingsTimer;
 
     QActionGroup* m_displayFilterActionGroup = nullptr;
     QAction* m_filterNoneAction = nullptr;

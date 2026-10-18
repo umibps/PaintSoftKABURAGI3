@@ -159,6 +159,12 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&m_autoBackupTimer, &QTimer::timeout, this, &MainWindow::onAutoBackupTimer);
     restartAutoBackupTimer();
 
+    // 設定保存遅延タイマー初期化
+    m_saveSettingsTimer.setSingleShot(true);
+    connect(&m_saveSettingsTimer, &QTimer::timeout, this, [this]() {
+        saveSettings();
+    });
+
     // 最近使ったファイル履歴の読み込み
     QSettings histSettings;
     m_recentFiles = histSettings.value("RecentFiles/list").toStringList();
@@ -1051,7 +1057,7 @@ void MainWindow::setupLayout() {
             if (m_paletteWidget) {
                 m_paletteWidget->setCurrentColor(colorBox->primaryColor());
             }
-            saveSettings();
+            scheduleSaveSettings();
         });
 
         // ColorBoxの描画色が変更されたとき -> キャンバスに反映
@@ -1062,7 +1068,7 @@ void MainWindow::setupLayout() {
             if (m_paletteWidget) {
                 m_paletteWidget->setCurrentColor(color);
             }
-            saveSettings();
+            scheduleSaveSettings();
         });
 
         // ColorBoxの背景色が変更されたとき -> キャンバスに反映
@@ -1070,7 +1076,7 @@ void MainWindow::setupLayout() {
             if (m_canvasWidget) {
                 m_canvasWidget->setSecondaryColor(color);
             }
-            saveSettings();
+            scheduleSaveSettings();
         });
 
         // ColorBoxの編集対象色が変わったとき -> カラーホイールに反映
@@ -1761,6 +1767,11 @@ void MainWindow::saveCurrentToolConfig() {
     if (m_brushSettings) {
         m_toolConfigs[m_currentTool] = m_brushSettings->config();
     }
+}
+
+void MainWindow::scheduleSaveSettings() {
+    if (m_isRestoringSettings) return;
+    m_saveSettingsTimer.start(300);
 }
 
 void MainWindow::saveSettings() {
@@ -2795,6 +2806,9 @@ void MainWindow::showEvent(QShowEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (m_saveSettingsTimer.isActive()) {
+        m_saveSettingsTimer.stop();
+    }
     if (maybeSave()) {
         saveSettings();
         QMainWindow::closeEvent(event);
@@ -3617,7 +3631,7 @@ void MainWindow::onColorChanged(const QColor& color) {
     if (m_canvasWidget) {
         m_canvasWidget->setCurrentColor(color);
     }
-    saveSettings();
+    scheduleSaveSettings();
 }
 
 void MainWindow::updateLayerTools() {
