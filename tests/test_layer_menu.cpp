@@ -220,6 +220,59 @@ int main(int argc, char** argv) {
 
     doc->clearSelection();
 
+    // 7.5. グループの不透明部分を選択範囲にする
+    {
+        std::cout << "[TEST] Testing Select Opaque for Layer Group..." << std::endl;
+        auto grp = doc->addGroupLayer("テストグループ");
+        auto child1 = doc->addRasterLayer("子レイヤー1");
+        doc->setLayerParentGroup(doc->activeLayerIndex(), grp);
+        for (int y = 70; y < 80; ++y) {
+            for (int x = 70; x < 80; ++x) {
+                int tx = x / TileMemoryPool::TILE_WIDTH;
+                int ty = y / TileMemoryPool::TILE_HEIGHT;
+                Tile* tile = child1->tileManager().getTileForWrite(tx, ty);
+                int lx = x % TileMemoryPool::TILE_WIDTH;
+                int ly = y % TileMemoryPool::TILE_HEIGHT;
+                reinterpret_cast<uint32_t*>(tile->writeBuffer())[ly * TileMemoryPool::TILE_WIDTH + lx] = 0xFFFF0000;
+            }
+        }
+        child1->invalidateContentBounds();
+
+        auto child2 = doc->addRasterLayer("子レイヤー2");
+        doc->setLayerParentGroup(doc->activeLayerIndex(), grp);
+        for (int y = 90; y < 100; ++y) {
+            for (int x = 90; x < 100; ++x) {
+                int tx = x / TileMemoryPool::TILE_WIDTH;
+                int ty = y / TileMemoryPool::TILE_HEIGHT;
+                Tile* tile = child2->tileManager().getTileForWrite(tx, ty);
+                int lx = x % TileMemoryPool::TILE_WIDTH;
+                int ly = y % TileMemoryPool::TILE_HEIGHT;
+                reinterpret_cast<uint32_t*>(tile->writeBuffer())[ly * TileMemoryPool::TILE_WIDTH + lx] = 0xFF00FF00;
+            }
+        }
+        child2->invalidateContentBounds();
+
+        doc->composite();
+
+        int grpIdx = -1;
+        for (size_t i = 0; i < doc->layers().size(); ++i) {
+            if (doc->layers()[i] == grp) {
+                grpIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        assert(grpIdx >= 0);
+        doc->setActiveLayerIndex(grpIdx);
+        win.onSelectOpaque();
+
+        assert(doc->hasSelection());
+        assert(doc->isPixelSelected(75, 75)); // from child1
+        assert(doc->isPixelSelected(95, 95)); // from child2
+        assert(!doc->isPixelSelected(85, 85)); // between child1 and child2
+        std::cout << "[PASS] GroupLayer composite opaque pixels correctly selected!" << std::endl;
+        doc->clearSelection();
+    }
+
     // 8. レイヤーをラスタライズ
     std::cout << "[TEST] Testing Rasterize Layer..." << std::endl;
     auto vecLayer = doc->addVectorLayer("ベクター線テスト");
