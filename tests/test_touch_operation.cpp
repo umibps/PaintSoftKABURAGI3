@@ -79,10 +79,13 @@ int main(int argc, char* argv[]) {
         // キャンバスの特定ピクセルに赤色を塗る
         layer->tileManager().setPixel(50, 50, 0xFFFF0000);
         layer->tileManager().setPixel(51, 50, 0xFFFF0000);
+        layer->tileManager().setPixel(80, 80, 0xFF00FF00); // 別の色
         doc->composite();
 
         // 1回目のタップ (Press)
-        canvas.executeColorSelection(QPointF(50, 50));
+        QMouseEvent pressEv(QEvent::MouseButtonPress, QPointF(50, 50), QPointF(50, 50), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        bool pRet = QApplication::sendEvent(&canvas, &pressEv);
+        assert(pRet == true);
         assert(doc->hasSelection());
 
         // ペンタブレットからの高頻度ドラッグ (1000回連続の MouseMove / Drag イベント)
@@ -93,6 +96,12 @@ int main(int argc, char* argv[]) {
             bool ret = QApplication::sendEvent(&canvas, &moveEv);
             assert(ret == true);
         }
+
+        // ドラッグ終了 (Release)
+        QMouseEvent releaseEv(QEvent::MouseButtonRelease, QPointF(50, 50), QPointF(50, 50), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        bool rRet = QApplication::sendEvent(&canvas, &releaseEv);
+        assert(rRet == true);
+        assert(doc->hasSelection());
         std::cout << "[PASS] ColorSelect high-frequency drag events handled smoothly without overload" << std::endl;
     }
 

@@ -16,6 +16,7 @@
 #include <QPointingDevice>
 #include <QInputDevice>
 #include <QGuiApplication>
+#include <QDateTime>
 #include <QRandomGenerator>
 #include <cmath>
 #include <algorithm>
@@ -3658,7 +3659,7 @@ void CanvasWidget::selectLayerAtPixel(const QPointF& docPt) {
     }
 }
 
-void CanvasWidget::executeColorSelection(const QPointF& docPos) {
+void CanvasWidget::executeColorSelection(const QPointF& docPos, bool pushUndo) {
     if (!m_document) return;
 
     SelectionMode effectiveMode = m_colorSelectMode;
@@ -3792,14 +3793,99 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
         }
     }
 
-    if (m_document->undoStack()) {
-        m_document->undoStack()->push(new SelectCommand(m_document, oldSelection, newSelection));
+    if (pushUndo) {
+        if (m_document->undoStack()) {
+            m_document->undoStack()->push(new SelectCommand(m_document, oldSelection, newSelection));
+        } else {
+            m_document->setSelection(newSelection);
+        }
     } else {
         m_document->setSelection(newSelection);
     }
 
     updateAntsTimer();
     update();
+}
+
+void CanvasWidget::handleColorSelectDrag(const QPointF& docPt, bool isPress) {
+    if (!m_document) return;
+
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    if (isPress) {
+        m_isColorSelectDragging = true;
+        m_colorSelectInitialSelection = m_document->selection();
+        m_lastColorSelectDocPos = docPt;
+        m_lastColorSelectTimeMs = now;
+        executeColorSelection(docPt, false);
+        return;
+    }
+
+    if (!m_isColorSelectDragging) return;
+
+    // 1. 移動距離チェック: 前回の操作位置から一定以下 (15px未満) の微小な移動は処理をスキップ！
+    qreal dist = std::hypot(docPt.x() - m_lastColorSelectDocPos.x(), docPt.y() - m_lastColorSelectDocPos.y());
+    if (dist < 15.0) {
+        return;
+    }
+
+    // 2. 時間スロットリング: 最小実行間隔 (80ms) 未満の過剰なイベントはスキップ！
+    if (now - m_lastColorSelectTimeMs < 80) {
+        return;
+    }
+
+    // 3. ピクセル色チェック: 移動先の色が前回の色と同一（許容量内）なら重い全画面再走査をスキップ！
+    int x = static_cast<int>(std::floor(docPt.x()));
+    int y = static_cast<int>(std::floor(docPt.y()));
+    int lastX = static_cast<int>(std::floor(m_lastColorSelectDocPos.x()));
+    int lastY = static_cast<int>(std::floor(m_lastColorSelectDocPos.y()));
+
+    if (x >= 0 && x < m_document->width() && y >= 0 && y < m_document->height() &&
+        lastX >= 0 && lastX < m_document->width() && lastY >= 0 && lastY < m_document->height()) {
+        QColor curCol = m_document->samplePixel(x, y);
+        QColor lastCol = m_document->samplePixel(lastX, lastY);
+        bool curTrans = (curCol.alpha() < 10);
+        bool lastTrans = (lastCol.alpha() < 10);
+        if (curTrans && lastTrans) {
+            m_lastColorSelectDocPos = docPt;
+            return;
+        }
+        if (!curTrans && !lastTrans) {
+            int diff = std::max({std::abs(curCol.red() - lastCol.red()),
+                                 std::abs(curCol.green() - lastCol.green()),
+                                 std::abs(curCol.blue() - lastCol.blue())});
+            if (diff <= m_colorSelectTolerance) {
+                // 同系色領域内をなぞっているだけなので重い再選択処理をスキップ
+                m_lastColorSelectDocPos = docPt;
+                return;
+            }
+        }
+    }
+
+    m_lastColorSelectDocPos = docPt;
+    m_lastColorSelectTimeMs = now;
+
+    // ドラッグ中は、指定モードが Subtract でなければ追加選択 (Add) としてシームレスに結合
+    SelectionMode origMode = m_colorSelectMode;
+    if (origMode != SelectionMode::Subtract) {
+        m_colorSelectMode = SelectionMode::Add;
+    }
+    executeColorSelection(docPt, false);
+    m_colorSelectMode = origMode;
+}
+
+void CanvasWidget::finishColorSelectDrag() {
+    if (!m_isColorSelectDragging) return;
+    m_isColorSelectDragging = false;
+    m_lastColorSelectDocPos = QPointF(-9999.0, -9999.0);
+    if (m_document) {
+        QPainterPath finalSelection = m_document->selection();
+        if (finalSelection != m_colorSelectInitialSelection) {
+            if (m_document->undoStack()) {
+                m_document->undoStack()->push(new SelectCommand(m_document, m_colorSelectInitialSelection, finalSelection));
+            }
+        }
+    }
 }
 
 void CanvasWidget::tabletEvent(QTabletEvent* event) {
@@ -3869,9 +3955,17 @@ void CanvasWidget::tabletEvent(QTabletEvent* event) {
             QPointF docPt = viewToDoc(event->position());
             QColor sampled = m_document->samplePixel(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()));
             emit colorPicked(sampled);
-        } else if (m_currentTool == ToolType::ColorSelect && event->type() == QEvent::TabletPress) {
+        } else if (m_currentTool == ToolType::ColorSelect) {
             QPointF docPt = viewToDoc(event->position());
-            executeColorSelection(docPt);
+            if (event->type() == QEvent::TabletPress) {
+                handleColorSelectDrag(docPt, true);
+            } else if (event->type() == QEvent::TabletMove) {
+                handleColorSelectDrag(docPt, false);
+            } else if (event->type() == QEvent::TabletRelease) {
+                finishColorSelectDrag();
+            }
+            event->accept();
+            return;
         } else if (m_currentTool == ToolType::Bucket && event->type() == QEvent::TabletPress) {
             QPointF docPt = viewToDoc(event->position());
             if (m_document && m_document->hasSelection()) {
@@ -4323,7 +4417,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
         }
 
         if (m_currentTool == ToolType::ColorSelect) {
-            executeColorSelection(docPt);
+            handleColorSelectDrag(docPt, true);
             event->accept();
             return;
         }
@@ -4843,9 +4937,17 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
-    if (m_currentTool == ToolType::ColorSelect || m_currentTool == ToolType::MagicWand) {
+    if (m_currentTool == ToolType::ColorSelect) {
         if (event->buttons() & Qt::LeftButton) {
-            // 色選択・自動選択ツールでペン先やマウスを押したままドラッグしている最中は、
+            handleColorSelectDrag(m_cursorDocPos, false);
+        }
+        event->accept();
+        return;
+    }
+
+    if (m_currentTool == ToolType::MagicWand) {
+        if (event->buttons() & Qt::LeftButton) {
+            // 自動選択ツールでペン先やマウスを押したままドラッグしている最中は、
             // 高頻度イベントによる無駄な全画面再描画・処理を完全に防ぐ
             event->accept();
             return;
@@ -5700,6 +5802,12 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
     }
 
     if (event->button() == Qt::LeftButton && m_currentTool == ToolType::LayerSelect) {
+        event->accept();
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton && m_currentTool == ToolType::ColorSelect) {
+        finishColorSelectDrag();
         event->accept();
         return;
     }

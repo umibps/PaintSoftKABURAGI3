@@ -65,6 +65,9 @@ public:
             if (m_airbrushTimer && m_airbrushTimer->isActive()) {
                 m_airbrushTimer->stop();
             }
+            if (m_isColorSelectDragging) {
+                finishColorSelectDrag();
+            }
             if (m_currentTool == ToolType::Transform && m_isTransforming) {
                 applyTransform();
             }
@@ -153,7 +156,7 @@ public:
     int colorSelectTolerance() const { return m_colorSelectTolerance; }
     void setColorSelectTransparent(bool enable) { m_colorSelectTransparent = enable; }
     bool isColorSelectTransparent() const { return m_colorSelectTransparent; }
-    void executeColorSelection(const QPointF& docPos);
+    void executeColorSelection(const QPointF& docPos, bool pushUndo = true);
 
     // バケツツール設定
     void setBucketBlendMode(BlendMode mode) { m_bucketBlendMode = mode; }
@@ -797,6 +800,12 @@ private:
     ColorSelectReference m_colorSelectReference = ColorSelectReference::ActiveLayer;
     int m_colorSelectTolerance = 20;
     bool m_colorSelectTransparent = true;
+    bool m_isColorSelectDragging = false;
+    QPainterPath m_colorSelectInitialSelection;
+    QPointF m_lastColorSelectDocPos{-9999.0, -9999.0};
+    qint64 m_lastColorSelectTimeMs = 0;
+    void handleColorSelectDrag(const QPointF& docPt, bool isPress);
+    void finishColorSelectDrag();
 
     // バケツツール状態
     BlendMode m_bucketBlendMode = BlendMode::Normal;
