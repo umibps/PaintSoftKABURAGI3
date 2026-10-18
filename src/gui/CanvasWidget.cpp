@@ -189,6 +189,7 @@ void CanvasWidget::setShowSelection(bool show) {
 }
 
 void CanvasWidget::updateAntsTimer() {
+    m_selectionPathDirty = true;
     bool needTimer = m_showSelection && m_document && (m_document->hasSelection() || m_isSelecting);
     if (needTimer) {
         if (!m_antsTimer->isActive()) {
@@ -378,6 +379,7 @@ QPointF CanvasWidget::docToView(const QPointF& docPos) const {
 }
 
 void CanvasWidget::notifyTransformChanged() {
+    m_selectionPathDirty = true;
     QPointF docCenterVisible = viewToDoc(QPointF(width() * 0.5, height() * 0.5));
     emit transformChanged(m_zoom, m_rotationAngle, m_flippedHorizontally, docCenterVisible, size());
 }
@@ -3699,11 +3701,18 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
             return;
         }
 
-        QRgb targetRgb = srcImg.pixel(sx, sy);
-        int tr = qRed(targetRgb);
-        int tg = qGreen(targetRgb);
-        int tb = qBlue(targetRgb);
-        int ta = qAlpha(targetRgb);
+        if (srcImg.format() != QImage::Format_ARGB32 && srcImg.format() != QImage::Format_RGB32) {
+            srcImg = srcImg.convertToFormat(QImage::Format_ARGB32);
+        }
+
+        const uint32_t* bits = reinterpret_cast<const uint32_t*>(srcImg.constBits());
+        const qsizetype bpl = srcImg.bytesPerLine() / sizeof(uint32_t);
+
+        uint32_t targetVal = bits[sy * bpl + sx];
+        int tr = (targetVal >> 16) & 0xFF;
+        int tg = (targetVal >> 8) & 0xFF;
+        int tb = targetVal & 0xFF;
+        int ta = (targetVal >> 24) & 0xFF;
 
         FloodFillResult res;
         res.docW = docW;
@@ -3718,10 +3727,11 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
         bool isTargetTransparent = (ta < 10);
 
         for (int y = 0; y < docH; ++y) {
+            const uint32_t* line = bits + (y * bpl);
             size_t rowOffset = static_cast<size_t>(y) * docW;
             for (int x = 0; x < docW; ++x) {
-                QRgb p = srcImg.pixel(x, y);
-                int pa = qAlpha(p);
+                uint32_t p = line[x];
+                int pa = (p >> 24) & 0xFF;
 
                 bool matched = false;
                 if (isTargetTransparent) {
@@ -3730,9 +3740,9 @@ void CanvasWidget::executeColorSelection(const QPointF& docPos) {
                     }
                 } else {
                     if (pa >= 10) {
-                        int pr = qRed(p);
-                        int pg = qGreen(p);
-                        int pb = qBlue(p);
+                        int pr = (p >> 16) & 0xFF;
+                        int pg = (p >> 8) & 0xFF;
+                        int pb = p & 0xFF;
                         int diff = std::max({std::abs(pr - tr), std::abs(pg - tg), std::abs(pb - tb)});
                         if (diff <= tol) {
                             matched = true;
@@ -3859,6 +3869,9 @@ void CanvasWidget::tabletEvent(QTabletEvent* event) {
             QPointF docPt = viewToDoc(event->position());
             QColor sampled = m_document->samplePixel(static_cast<int>(docPt.x()), static_cast<int>(docPt.y()));
             emit colorPicked(sampled);
+        } else if (m_currentTool == ToolType::ColorSelect && event->type() == QEvent::TabletPress) {
+            QPointF docPt = viewToDoc(event->position());
+            executeColorSelection(docPt);
         } else if (m_currentTool == ToolType::Bucket && event->type() == QEvent::TabletPress) {
             QPointF docPt = viewToDoc(event->position());
             if (m_document && m_document->hasSelection()) {
@@ -4830,6 +4843,15 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
+    if (m_currentTool == ToolType::ColorSelect || m_currentTool == ToolType::MagicWand) {
+        if (event->buttons() & Qt::LeftButton) {
+            // 色選択・自動選択ツールでペン先やマウスを押したままドラッグしている最中は、
+            // 高頻度イベントによる無駄な全画面再描画・処理を完全に防ぐ
+            event->accept();
+            return;
+        }
+    }
+
     if (m_isOrbiting3D || m_isPanning3D || m_isZooming3D) {
         auto threeD = currentThreeDLayer();
         if (threeD) {
@@ -5606,12 +5628,19 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
 
-    m_showBrushOutline = true;
+    bool needsBrushOutline = isRasterDrawingTool(m_currentTool) || 
+                             m_currentTool == ToolType::Blur || 
+                             m_currentTool == ToolType::Blend || 
+                             m_currentTool == ToolType::Watercolor || 
+                             m_currentTool == ToolType::CompositeBrush || 
+                             m_currentTool == ToolType::Marker;
+
+    m_showBrushOutline = needsBrushOutline;
     if (m_isDrawing) {
         QPointF docPt = m_cursorDocPos;
         strokeMove(docPt, 1.0f);
         event->accept();
-    } else {
+    } else if (needsBrushOutline) {
         if (m_currentTool == ToolType::Marker && m_imageBrushFollowCursor) {
             float dx = static_cast<float>(m_cursorDocPos.x() - m_lastHoverDocPos.x());
             float dy = static_cast<float>(m_cursorDocPos.y() - m_lastHoverDocPos.y());
@@ -5621,6 +5650,9 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         }
         m_lastHoverDocPos = m_cursorDocPos;
         update(); // 輪郭カーソルの追従再描画
+    } else {
+        m_lastHoverDocPos = m_cursorDocPos;
+        event->accept();
     }
 }
 
@@ -7243,17 +7275,27 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing, true);
 
-        // ドキュメント境界（キャンバス領域内）にクリップしたパスをビュー座標系にマッピング
-        QPainterPath docRectPath;
-        docRectPath.addRect(0, 0, m_document->width(), m_document->height());
-        QPainterPath boundedDocSel = m_document->selection().intersected(docRectPath);
-        QPainterPath viewSelPath = viewTransform().map(boundedDocSel);
+        // ドキュメント境界外を描画しないよう、ビュー上のドキュメント領域でハードウェアクリップ
+        QRectF docRect(0, 0, m_document->width(), m_document->height());
+        QPolygonF viewDocPoly = viewTransform().map(QPolygonF(docRect));
+        QPainterPath clipPath;
+        clipPath.addPolygon(viewDocPoly);
+        painter.setClipPath(clipPath);
+
+        // ビュー座標系マッピングのキャッシュ利用（交差判定 intersected の重い計算を全廃）
+        QTransform curT = viewTransform();
+        if (m_selectionPathDirty || m_cachedSelTransform != curT || m_cachedDocSelectionElementCount != m_document->selection().elementCount()) {
+            m_cachedViewSelPath = curT.map(m_document->selection());
+            m_cachedSelTransform = curT;
+            m_cachedDocSelectionElementCount = m_document->selection().elementCount();
+            m_selectionPathDirty = false;
+        }
 
         // 6-1. 選択範囲内部の微細ハイライト（選択ツール選択中のみ水色ハイライトを表示）
         if (m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::EllipseSelect ||
             m_currentTool == ToolType::LassoSelect || m_currentTool == ToolType::ColorSelect ||
             m_currentTool == ToolType::MagicWand) {
-            painter.fillPath(viewSelPath, QColor(0, 120, 255, 25));
+            painter.fillPath(m_cachedViewSelPath, QColor(0, 120, 255, 25));
         }
 
         // 6-2. GIMP特有の白黒交互マーチングアンツ（アリの行進）
@@ -7261,13 +7303,13 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
         QPen blackPen(Qt::black, 1.0, Qt::CustomDashLine);
         blackPen.setDashPattern({4, 4});
         blackPen.setDashOffset(m_antsOffset);
-        painter.strokePath(viewSelPath, blackPen);
+        painter.strokePath(m_cachedViewSelPath, blackPen);
 
         // 表層: 白破線 (4px空白部分を埋める位相差+4の白破線)
         QPen whitePen(Qt::white, 1.0, Qt::CustomDashLine);
         whitePen.setDashPattern({4, 4});
         whitePen.setDashOffset(m_antsOffset + 4);
-        painter.strokePath(viewSelPath, whitePen);
+        painter.strokePath(m_cachedViewSelPath, whitePen);
 
         // 6-3. GIMPスタイル: 矩形・楕円選択ツール選択時のみ、4隅のハンドル枠を描画
         // 他のツールが選択されている場合は描画されず、点線のみになる

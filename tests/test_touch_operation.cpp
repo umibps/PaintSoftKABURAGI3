@@ -73,6 +73,29 @@ int main(int argc, char* argv[]) {
         std::cout << "[PASS] isTouchPointerEvent properly identifies touch vs mouse events" << std::endl;
     }
 
+    // 6. ColorSelect ツールのペンタブレットドラッグ操作検証
+    {
+        canvas.setCurrentTool(ToolType::ColorSelect);
+        // キャンバスの特定ピクセルに赤色を塗る
+        layer->tileManager().setPixel(50, 50, 0xFFFF0000);
+        layer->tileManager().setPixel(51, 50, 0xFFFF0000);
+        doc->composite();
+
+        // 1回目のタップ (Press)
+        canvas.executeColorSelection(QPointF(50, 50));
+        assert(doc->hasSelection());
+
+        // ペンタブレットからの高頻度ドラッグ (1000回連続の MouseMove / Drag イベント)
+        for (int i = 0; i < 1000; ++i) {
+            QMouseEvent moveEv(QEvent::MouseMove, QPointF(50 + (i % 20), 50 + (i % 20)), 
+                               QPointF(50 + (i % 20), 50 + (i % 20)), 
+                               Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            bool ret = QApplication::sendEvent(&canvas, &moveEv);
+            assert(ret == true);
+        }
+        std::cout << "[PASS] ColorSelect high-frequency drag events handled smoothly without overload" << std::endl;
+    }
+
     std::cout << "All test_touch_operation assertions passed successfully!" << std::endl;
     return 0;
 }

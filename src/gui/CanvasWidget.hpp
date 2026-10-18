@@ -990,6 +990,13 @@ private:
     int m_antsOffset = 0;
     void updateAntsTimer();
 
+    // 選択範囲パスの描画最適化キャッシュ
+    mutable bool m_selectionPathDirty = true;
+    mutable QPainterPath m_cachedViewSelPath;
+    mutable QTransform m_cachedSelTransform;
+    mutable int m_cachedDocSelectionElementCount = -1;
+    void invalidateSelectionPathCache() { m_selectionPathDirty = true; }
+
     // GIMPスタイル 矩形選択インタラクティブ変形（端のドラッグで選択範囲変更）
     enum class RectHandle {
         None,
