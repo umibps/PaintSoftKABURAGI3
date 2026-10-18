@@ -86,7 +86,7 @@ void Document::setBackgroundColorActive(bool secondary) {
 
 Document* Document::fromQImage(const QImage& img, double dpi, QObject* parent) {
     if (img.isNull()) return nullptr;
-    QImage converted = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QImage converted = img.convertToFormat(QImage::Format_ARGB32);
     auto doc = new Document(converted.width(), converted.height(), dpi, false, Qt::white, parent);
 
     auto layer = std::make_shared<Layer>("レイヤー 1", converted.width(), converted.height(), LayerType::Raster);
@@ -1940,7 +1940,7 @@ void Document::changeCanvasSize(int newWidth, int newHeight, int offsetX, int of
             TileManager newTm(newWidth, newHeight);
             if (l == bg) {
                 QImage oldImg = l->tileManager().toQImage();
-                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32_Premultiplied);
+                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32);
                 newImg.fill(bgColor);
                 QPainter p(&newImg);
                 p.drawImage(offsetX, offsetY, oldImg);
@@ -1948,7 +1948,7 @@ void Document::changeCanvasSize(int newWidth, int newHeight, int offsetX, int of
                 newTm.fromQImage(newImg);
             } else {
                 QImage oldImg = l->tileManager().toQImage();
-                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32_Premultiplied);
+                QImage newImg(newWidth, newHeight, QImage::Format_ARGB32);
                 newImg.fill(0);
                 QPainter p(&newImg);
                 p.drawImage(offsetX, offsetY, oldImg);
@@ -2145,7 +2145,7 @@ void Document::transformCanvas(CanvasTransformType type) {
             case CanvasTransformType::Rotate90CW: {
                 int w = src.width();
                 int h = src.height();
-                QImage dst(h, w, QImage::Format_ARGB32_Premultiplied);
+                QImage dst(h, w, QImage::Format_ARGB32);
                 for (int y = 0; y < h; ++y) {
                     const uint32_t* srcLine = reinterpret_cast<const uint32_t*>(src.constScanLine(y));
                     for (int x = 0; x < w; ++x) {
@@ -2159,7 +2159,7 @@ void Document::transformCanvas(CanvasTransformType type) {
             case CanvasTransformType::Rotate90CCW: {
                 int w = src.width();
                 int h = src.height();
-                QImage dst(h, w, QImage::Format_ARGB32_Premultiplied);
+                QImage dst(h, w, QImage::Format_ARGB32);
                 for (int y = 0; y < h; ++y) {
                     const uint32_t* srcLine = reinterpret_cast<const uint32_t*>(src.constScanLine(y));
                     for (int x = 0; x < w; ++x) {

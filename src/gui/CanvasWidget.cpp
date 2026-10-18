@@ -6511,7 +6511,7 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
 
             if (isCmykProof) {
                 // CMYKプルーフ（ソフトプルーフィング）: 元のRGBレイヤーデータは保持し、表示時のみCMYK色域へシミュレーションマッピング
-                QImage proofImg(TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT, QImage::Format_ARGB32_Premultiplied);
+                QImage proofImg(TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT, QImage::Format_ARGB32);
                 const uint32_t* src = reinterpret_cast<const uint32_t*>(tile->readBuffer());
                 uint32_t* dst = reinterpret_cast<uint32_t*>(proofImg.bits());
                 int count = TileMemoryPool::TILE_WIDTH * TileMemoryPool::TILE_HEIGHT;
@@ -6532,7 +6532,7 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
                 }
             } else {
                 QImage tileImg(tile->readBuffer(), TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT,
-                               TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32_Premultiplied);
+                               TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32);
                 if (hasDisplayFilter) {
                     painter.drawImage(x, y, filterMgr.applyFilter(tileImg));
                 } else {

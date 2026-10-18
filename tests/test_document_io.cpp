@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QTemporaryFile>
+#include <QPainter>
 #include <cassert>
 #include <iostream>
 #include "Document.hpp"
@@ -190,6 +191,86 @@ int main(int argc, char* argv[]) {
     delete doc;
     delete loadedDoc;
     QFile::remove(tempPath);
+
+    // 8. レイヤー不透明度変更時のレンダリング検証 (白背景上でのオーバーフロー・色化け防止)
+    {
+        auto testDoc = new Document(100, 100, 300.0, false);
+        auto redLayer = testDoc->addRasterLayer("赤レイヤー");
+        // 赤色 (255, 0, 0) で塗りつぶし
+        for (int y = 0; y < 100; ++y) {
+            for (int x = 0; x < 100; ++x) {
+                redLayer->tileManager().setPixel(x, y, 0xFFFF0000);
+            }
+        }
+        // 不透明度 50%
+        redLayer->setOpacity(0.5);
+        testDoc->composite();
+
+        // CanvasWidget::paintEvent と同じく Format_ARGB32 で白背景に描画
+        QImage canvas(100, 100, QImage::Format_ARGB32);
+        canvas.fill(Qt::white);
+        {
+            QPainter p(&canvas);
+            const auto& comp = testDoc->compositeBuffer();
+            for (int ty = 0; ty < comp.tilesY(); ++ty) {
+                for (int tx = 0; tx < comp.tilesX(); ++tx) {
+                    const Tile* tile = comp.getTile(tx, ty);
+                    if (!tile || !tile->readBuffer()) continue;
+                    int x = tx * TileMemoryPool::TILE_WIDTH;
+                    int y = ty * TileMemoryPool::TILE_HEIGHT;
+                    QImage tileImg(tile->readBuffer(), TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT,
+                                   TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32);
+                    p.drawImage(x, y, tileImg);
+                }
+            }
+        }
+
+        // 赤 (255, 0, 0) が 50% で白 (255, 255, 255) とブレンドされると:
+        // R: 255, G: 128, B: 128 (ピンク色)
+        // もし Premultiplied 誤認識バグがあると G/B がオーバーフローして 0 や反転値になる
+        QColor rendered = canvas.pixelColor(50, 50);
+        assert(rendered.red() == 255);
+        assert(std::abs(rendered.green() - 128) <= 2);
+        assert(std::abs(rendered.blue() - 128) <= 2);
+
+        delete testDoc;
+    }
+
+    if (QFile::exists("test_canvas7.kab")) {
+        QString err;
+        Document* doc7 = DocumentSerializer::loadFromFile("test_canvas7.kab", nullptr, &err);
+        if (doc7) {
+            auto targetLayer = doc7->getLayer(2);
+            if (targetLayer) {
+                targetLayer->setOpacity(0.49);
+                doc7->composite();
+
+                QImage canvas(doc7->width(), doc7->height(), QImage::Format_ARGB32);
+                canvas.fill(Qt::white);
+                {
+                    QPainter p(&canvas);
+                    const auto& comp = doc7->compositeBuffer();
+                    for (int ty = 0; ty < comp.tilesY(); ++ty) {
+                        for (int tx = 0; tx < comp.tilesX(); ++tx) {
+                            const Tile* tile = comp.getTile(tx, ty);
+                            if (!tile || !tile->readBuffer()) continue;
+                            int x = tx * TileMemoryPool::TILE_WIDTH;
+                            int y = ty * TileMemoryPool::TILE_HEIGHT;
+                            QImage tileImg(tile->readBuffer(), TileMemoryPool::TILE_WIDTH, TileMemoryPool::TILE_HEIGHT,
+                                           TileMemoryPool::TILE_WIDTH * 4, QImage::Format_ARGB32);
+                            p.drawImage(x, y, tileImg);
+                        }
+                    }
+                }
+                // 顔の中心付近 (500, 500) は白背景の上で明るい肌色・透明ブレンドされていること
+                QColor centerCol = canvas.pixelColor(500, 500);
+                // 画像2枚目のサイケデリックバグでは、中心(顔)が真っ黒/暗色 (R,G,B < 60) に反転していた
+                // 正常時は肌色と白がブレンドされて高明度 (R > 200, G > 180, B > 180)
+                assert(centerCol.red() > 180 && centerCol.green() > 150 && centerCol.blue() > 150);
+            }
+            delete doc7;
+        }
+    }
 
     std::cout << "All test_document_io assertions passed successfully!" << std::endl;
     return 0;

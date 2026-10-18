@@ -200,7 +200,7 @@ QImage TileManager::toQImage() const {
     if (m_width <= 0 || m_height <= 0) {
         return QImage();
     }
-    QImage img(m_width, m_height, QImage::Format_ARGB32_Premultiplied);
+    QImage img(m_width, m_height, QImage::Format_ARGB32);
     img.fill(0);
 
     for (int ty = 0; ty < m_tilesY; ++ty) {
@@ -226,8 +226,8 @@ QImage TileManager::toQImage() const {
 void TileManager::fromQImage(const QImage& img) {
     if (img.isNull() || m_width <= 0 || m_height <= 0) return;
     QImage srcImg = img;
-    if (srcImg.format() != QImage::Format_ARGB32_Premultiplied) {
-        srcImg = srcImg.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    if (srcImg.format() != QImage::Format_ARGB32) {
+        srcImg = srcImg.convertToFormat(QImage::Format_ARGB32);
     }
     int copyW = std::min(m_width, srcImg.width());
     int copyH = std::min(m_height, srcImg.height());
@@ -266,7 +266,7 @@ QImage TileManager::createThumbnail(int maxW, int maxH) const {
 
     int tw = std::max(1, static_cast<int>(m_width * scale));
     int th = std::max(1, static_cast<int>(m_height * scale));
-    QImage thumb(tw, th, QImage::Format_ARGB32_Premultiplied);
+    QImage thumb(tw, th, QImage::Format_ARGB32);
     thumb.fill(0);
 
     int lastTx = -1, lastTy = -1;

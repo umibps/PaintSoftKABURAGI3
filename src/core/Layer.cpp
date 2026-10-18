@@ -104,7 +104,7 @@ QImage Layer::createThumbnail(int thumbW, int thumbH) const {
         return QImage();
     }
 
-    QImage thumb(thumbW, thumbH, QImage::Format_ARGB32_Premultiplied);
+    QImage thumb(thumbW, thumbH, QImage::Format_ARGB32);
     thumb.fill(QColor(230, 230, 230)); // 外側の余白は薄いグレー
 
     int docW = m_tileManager.width();

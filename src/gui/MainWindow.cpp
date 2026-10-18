@@ -4313,8 +4313,8 @@ void MainWindow::onAiApplyAsNewLayer(const QImage& image, const QJsonObject& aiP
         if (m_document->hasSelection()) {
             // 選択範囲がある場合、選択範囲外のピクセルを透明化して
             // 修正部分（目など）だけが単独で乗った透明レイヤーとして追加する
-            if (layerImg.format() != QImage::Format_ARGB32_Premultiplied) {
-                layerImg = layerImg.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            if (layerImg.format() != QImage::Format_ARGB32) {
+                layerImg = layerImg.convertToFormat(QImage::Format_ARGB32);
             }
             for (int y = 0; y < layerImg.height(); ++y) {
                 QRgb* scanLine = reinterpret_cast<QRgb*>(layerImg.scanLine(y));
