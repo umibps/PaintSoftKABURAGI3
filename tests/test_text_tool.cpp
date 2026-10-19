@@ -3,6 +3,7 @@
 #include <iostream>
 #include <QTemporaryFile>
 #include <QDir>
+#include <QPainter>
 #include "core/Document.hpp"
 #include "core/TextLayer.hpp"
 #include "core/DocumentSerializer.hpp"
@@ -145,6 +146,69 @@ int main(int argc, char* argv[]) {
     cloudItem.rect = QRectF(50, 200, 200, 100);
     textLayer->addItem(cloudItem);
     textLayer->rasterizeAll();
+    // カタカナ縦書きの描画確認（「テスト」の縦一列揃い）
+    TextBalloonItem testKatakanaItem;
+    testKatakanaItem.shape = BalloonShape::Spike;
+    testKatakanaItem.direction = WritingDirection::Vertical;
+    testKatakanaItem.text = "テスト";
+    testKatakanaItem.horizontalAlign = Qt::AlignHCenter;
+    testKatakanaItem.verticalAlign = Qt::AlignVCenter;
+    testKatakanaItem.rect = QRectF(20, 20, 260, 260);
+    testKatakanaItem.frameColor = Qt::black;
+    testKatakanaItem.fillColor = QColor(240, 240, 240);
+    testKatakanaItem.textColor = Qt::blue;
+    testKatakanaItem.font = QFont("Yu Gothic", 24);
+    
+    // TextLayer 経由で画像化
+    auto katakanaLayer = std::make_shared<TextLayer>("katakana", 300, 300);
+    katakanaLayer->addItem(testKatakanaItem);
+    katakanaLayer->rasterizeAll();
+    QImage renderedKatakana(300, 300, QImage::Format_ARGB32_Premultiplied);
+    renderedKatakana.fill(Qt::transparent);
+    for (int ty = 0; ty < katakanaLayer->tileManager().tilesY(); ++ty) {
+        for (int tx = 0; tx < katakanaLayer->tileManager().tilesX(); ++tx) {
+            const Tile* tile = katakanaLayer->tileManager().getTile(tx, ty);
+            if (!tile) continue;
+            const uint32_t* tileBuf = reinterpret_cast<const uint32_t*>(tile->readBuffer());
+            for (int ly = 0; ly < 128; ++ly) {
+                int gy = ty * 128 + ly;
+                if (gy >= 300) break;
+                uint32_t* line = reinterpret_cast<uint32_t*>(renderedKatakana.scanLine(gy));
+                for (int lx = 0; lx < 128; ++lx) {
+                    int gx = tx * 128 + lx;
+                    if (gx >= 300) break;
+                    line[gx] = tileBuf[ly * 128 + lx];
+                }
+            }
+        }
+    }
+    // 各文字の中心Xが揃っていることを検証（テ・ス・トのX中心のズレが極小であること）
+    auto getCharCenterX = [&](int minY, int maxY) -> double {
+        int minX = 9999, maxX = -1;
+        for (int y = minY; y <= maxY; ++y) {
+            const uint32_t* line = reinterpret_cast<const uint32_t*>(renderedKatakana.constScanLine(y));
+            for (int x = 0; x < 300; ++x) {
+                // 青色文字ピクセル (alpha > 100, blue > 150)
+                QColor c = QColor::fromRgba(line[x]);
+                if (c.alpha() > 100 && c.blue() > 150 && c.red() < 100) {
+                    minX = std::min(minX, x);
+                    maxX = std::max(maxX, x);
+                }
+            }
+        }
+        return (minX <= maxX) ? (minX + maxX) * 0.5 : -1.0;
+    };
+
+    double centerX1 = getCharCenterX(70, 115);  // 「テ」
+    double centerX2 = getCharCenterX(120, 165); // 「ス」
+    double centerX3 = getCharCenterX(170, 215); // 「ト」
+    assert(centerX1 > 0 && centerX2 > 0 && centerX3 > 0);
+    // 3文字のX中心が2px以内の精度で一直線に揃っていることを確認
+    assert(std::abs(centerX1 - centerX2) <= 2.5);
+    assert(std::abs(centerX2 - centerX3) <= 2.5);
+    std::cout << "[PASS] Vertical katakana characters aligned straight: X centers = "
+              << centerX1 << ", " << centerX2 << ", " << centerX3 << std::endl;
+
     assert(textLayer->items().size() == 2);
     std::cout << "[PASS] TextLayer item hit-test and rasterize succeed for Vertical and Horizontal Ruby!" << std::endl;
 

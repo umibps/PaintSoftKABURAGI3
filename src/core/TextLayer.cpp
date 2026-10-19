@@ -348,26 +348,27 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
             qreal y = currentY;
             for (int ci = 0; ci < tok.baseText.length(); ++ci) {
                 QChar ch = tok.baseText[ci];
-                QRectF charBBox = fm.boundingRect(ch);
-                qreal drawX = baseCenterX - (charBBox.width() * 0.5);
+                qreal adv = fm.horizontalAdvance(ch);
+                qreal drawX = baseCenterX - (adv * 0.5);
                 qreal drawY = y + fm.ascent();
 
                 if (isPunctuationTopRight(ch)) {
                     // 句読点は右上に寄せる
-                    drawX += colBaseWidth * 0.25;
-                    drawY -= charSpacing * 0.35;
+                    drawX += colBaseWidth * 0.28;
+                    drawY -= charSpacing * 0.25;
                     painter.drawText(QPointF(drawX, drawY), QString(ch));
                 } else if (isSmallKana(ch)) {
                     // 促音・拗音は右上に寄せる
                     drawX += colBaseWidth * 0.12;
-                    drawY -= charSpacing * 0.1;
+                    drawY -= charSpacing * 0.08;
                     painter.drawText(QPointF(drawX, drawY), QString(ch));
                 } else if (shouldRotateVertical(ch)) {
                     // 長音・括弧・ダッシュ等は90度回転
                     painter.save();
                     painter.translate(baseCenterX, y + charSpacing * 0.5);
                     painter.rotate(90.0);
-                    painter.drawText(QPointF(-charBBox.width() * 0.5, charBBox.height() * 0.35), QString(ch));
+                    QRectF rotRect(-colBaseWidth * 0.5, -charSpacing * 0.5, colBaseWidth, charSpacing);
+                    painter.drawText(rotRect, Qt::AlignCenter, QString(ch));
                     painter.restore();
                 } else {
                     painter.drawText(QPointF(drawX, drawY), QString(ch));
@@ -385,15 +386,16 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
                 }
                 for (int ri = 0; ri < tok.rubyText.length(); ++ri) {
                     QChar rch = tok.rubyText[ri];
-                    QRectF rBBox = rfm.boundingRect(rch);
-                    qreal rdrawX = rubyCenterX - (rBBox.width() * 0.5);
+                    qreal radv = rfm.horizontalAdvance(rch);
+                    qreal rdrawX = rubyCenterX - (radv * 0.5);
                     qreal rdrawY = ry + rfm.ascent();
 
                     if (shouldRotateVertical(rch)) {
                         painter.save();
                         painter.translate(rubyCenterX, ry + rubyCharSpacing * 0.5);
                         painter.rotate(90.0);
-                        painter.drawText(QPointF(-rBBox.width() * 0.5, rBBox.height() * 0.35), QString(rch));
+                        QRectF rotRect(-rubyColWidth * 0.5, -rubyCharSpacing * 0.5, rubyColWidth, rubyCharSpacing);
+                        painter.drawText(rotRect, Qt::AlignCenter, QString(rch));
                         painter.restore();
                     } else {
                         painter.drawText(QPointF(rdrawX, rdrawY), QString(rch));
