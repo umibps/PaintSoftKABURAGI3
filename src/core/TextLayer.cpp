@@ -38,15 +38,30 @@ int TextLayer::findItemAt(const QPointF& docPos) const {
     // 上に描画されたアイテム（リストの後方）を優先してヒットテスト
     for (int i = static_cast<int>(m_items.size()) - 1; i >= 0; --i) {
         const auto& item = m_items[i];
-        if (item.rect.contains(docPos)) {
+        if (item.rect.adjusted(-6, -6, 6, 6).contains(docPos)) {
             return i;
         }
         if (item.hasTail) {
-            // しっぽの先端付近（半径15px以内）もヒットとみなす
             float dx = item.tailTip.x() - docPos.x();
             float dy = item.tailTip.y() - docPos.y();
-            if (dx * dx + dy * dy <= 15.0f * 15.0f) {
+            if (dx * dx + dy * dy <= 20.0f * 20.0f) {
                 return i;
+            }
+            // カーブハンドルと根元太さハンドルもヒット対象に
+            QPointF center = item.rect.center();
+            QPointF tip = item.tailTip;
+            QPointF dir = tip - center;
+            float len = std::hypot(dir.x(), dir.y());
+            if (len > 1.0f) {
+                QPointF norm(-dir.y() / len, dir.x() / len);
+                float baseW = std::clamp(item.tailBaseWidth, 4.0f, static_cast<float>(std::min(item.rect.width(), item.rect.height())));
+                QPointF p1 = center + norm * (baseW * 0.5f);
+                float curveFactor = item.tailCurvature * 0.005f * len;
+                QPointF ctrl = (center + tip) * 0.5f + norm * curveFactor;
+                if (std::hypot(ctrl.x() - docPos.x(), ctrl.y() - docPos.y()) <= 20.0f ||
+                    std::hypot(p1.x() - docPos.x(), p1.y() - docPos.y()) <= 20.0f) {
+                    return i;
+                }
             }
         }
     }

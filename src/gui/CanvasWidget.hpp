@@ -712,6 +712,14 @@ private:
     enum class BalloonHandle {
         None,
         Body,
+        TopLeft,
+        TopRight,
+        BottomLeft,
+        BottomRight,
+        Top,
+        Bottom,
+        Left,
+        Right,
         TailTip,
         TailCurve,
         TailBaseWidth
@@ -719,13 +727,17 @@ private:
     bool m_isCreatingBalloon = false;
     bool m_isMovingBalloon = false;
     bool m_isMovingTail = false;
+    bool m_isResizingBalloon = false;
     BalloonHandle m_balloonDragHandle = BalloonHandle::None;
     QPointF m_balloonStartPos;
     QPointF m_balloonCurrentPos;
     int m_selectedBalloonIndex = -1;
     QPointF m_balloonMoveOffset;
     QPointF m_balloonPressPos;
+    QRectF m_balloonOrigRect;
     TextBalloonItem m_balloonPreEditItem;
+
+    BalloonHandle hitTestBalloonHandles(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const;
 
     std::shared_ptr<TextLayer> ensureTextLayer();
     TextSettingsWidget* m_textSettings = nullptr;

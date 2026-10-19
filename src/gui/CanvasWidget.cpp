@@ -334,6 +334,79 @@ void CanvasWidget::updateSelectionCursor(RectHandle handle) {
     }
 }
 
+CanvasWidget::BalloonHandle CanvasWidget::hitTestBalloonHandles(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const {
+    qreal r = 9.0 / zoom;
+    qreal edgeMargin = 7.0 / zoom;
+    const QRectF& rect = item.rect;
+
+    // 1. しっぽハンドル (TailTip, TailCurve, TailBaseWidth)
+    if (item.hasTail) {
+        QPointF center = rect.center();
+        QPointF tip = item.tailTip;
+        QPointF dir = tip - center;
+        float len = std::hypot(dir.x(), dir.y());
+        if (len > 1.0f) {
+            QPointF norm(-dir.y() / len, dir.x() / len);
+            float baseW = std::clamp(item.tailBaseWidth, 4.0f, static_cast<float>(std::min(rect.width(), rect.height())));
+            QPointF p1 = center + norm * (baseW * 0.5f);
+            float curveFactor = item.tailCurvature * 0.005f * len;
+            QPointF ctrl = (center + tip) * 0.5f + norm * curveFactor;
+
+            if (std::hypot(tip.x() - docPt.x(), tip.y() - docPt.y()) <= r * 1.5) {
+                return BalloonHandle::TailTip;
+            }
+            if (std::hypot(ctrl.x() - docPt.x(), ctrl.y() - docPt.y()) <= r * 1.5) {
+                return BalloonHandle::TailCurve;
+            }
+            if (std::hypot(p1.x() - docPt.x(), p1.y() - docPt.y()) <= r * 1.5) {
+                return BalloonHandle::TailBaseWidth;
+            }
+        }
+    }
+
+    // 2. 頂点（4角）
+    if (std::hypot(rect.topLeft().x() - docPt.x(), rect.topLeft().y() - docPt.y()) <= r) {
+        return BalloonHandle::TopLeft;
+    }
+    if (std::hypot(rect.topRight().x() - docPt.x(), rect.topRight().y() - docPt.y()) <= r) {
+        return BalloonHandle::TopRight;
+    }
+    if (std::hypot(rect.bottomLeft().x() - docPt.x(), rect.bottomLeft().y() - docPt.y()) <= r) {
+        return BalloonHandle::BottomLeft;
+    }
+    if (std::hypot(rect.bottomRight().x() - docPt.x(), rect.bottomRight().y() - docPt.y()) <= r) {
+        return BalloonHandle::BottomRight;
+    }
+
+    // 3. 辺の中央ハンドル
+    QPointF topMid(rect.center().x(), rect.top());
+    QPointF botMid(rect.center().x(), rect.bottom());
+    QPointF leftMid(rect.left(), rect.center().y());
+    QPointF rightMid(rect.right(), rect.center().y());
+
+    if (std::hypot(topMid.x() - docPt.x(), topMid.y() - docPt.y()) <= r) return BalloonHandle::Top;
+    if (std::hypot(botMid.x() - docPt.x(), botMid.y() - docPt.y()) <= r) return BalloonHandle::Bottom;
+    if (std::hypot(leftMid.x() - docPt.x(), leftMid.y() - docPt.y()) <= r) return BalloonHandle::Left;
+    if (std::hypot(rightMid.x() - docPt.x(), rightMid.y() - docPt.y()) <= r) return BalloonHandle::Right;
+
+    // 辺のライン上判定（辺の中央以外でも、枠線上ならリサイズ可能）
+    if (docPt.x() >= rect.left() - edgeMargin && docPt.x() <= rect.right() + edgeMargin) {
+        if (std::abs(docPt.y() - rect.top()) <= edgeMargin) return BalloonHandle::Top;
+        if (std::abs(docPt.y() - rect.bottom()) <= edgeMargin) return BalloonHandle::Bottom;
+    }
+    if (docPt.y() >= rect.top() - edgeMargin && docPt.y() <= rect.bottom() + edgeMargin) {
+        if (std::abs(docPt.x() - rect.left()) <= edgeMargin) return BalloonHandle::Left;
+        if (std::abs(docPt.x() - rect.right()) <= edgeMargin) return BalloonHandle::Right;
+    }
+
+    // 4. ボディ（内部）
+    if (rect.contains(docPt)) {
+        return BalloonHandle::Body;
+    }
+
+    return BalloonHandle::None;
+}
+
 std::shared_ptr<TextLayer> CanvasWidget::ensureTextLayer() {
     if (!m_document) return nullptr;
     auto activeL = m_document->activeLayer();
@@ -4454,9 +4527,38 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
 
         if (m_currentTool == ToolType::TextBalloon || m_currentTool == ToolType::Text) {
             std::shared_ptr<TextLayer> textLayer = nullptr;
-            int hitIdx = -1;
             auto activeL = m_document ? m_document->activeLayer() : nullptr;
             textLayer = std::dynamic_pointer_cast<TextLayer>(activeL);
+            if (!textLayer) {
+                textLayer = ensureTextLayer();
+            }
+
+            // 1. 既に選択中のアイテムがある場合、そのハンドル（頂点・辺・しっぽ・ボディ）を最優先判定
+            if (textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
+                auto& selItem = textLayer->items()[m_selectedBalloonIndex];
+                BalloonHandle handle = hitTestBalloonHandles(selItem, docPt, m_zoom);
+                if (handle != BalloonHandle::None) {
+                    m_balloonDragHandle = handle;
+                    m_balloonPressPos = docPt;
+                    m_balloonPreEditItem = selItem;
+                    m_balloonOrigRect = selItem.rect;
+                    if (handle == BalloonHandle::Body) {
+                        m_isMovingBalloon = true;
+                        m_balloonMoveOffset = docPt - selItem.rect.topLeft();
+                    } else if (handle == BalloonHandle::TailTip || handle == BalloonHandle::TailCurve || handle == BalloonHandle::TailBaseWidth) {
+                        m_isMovingTail = true;
+                    } else {
+                        m_isResizingBalloon = true;
+                    }
+                    emit textItemSelected(selItem);
+                    update();
+                    event->accept();
+                    return;
+                }
+            }
+
+            // 2. 他のアイテムのヒットテスト
+            int hitIdx = -1;
             if (textLayer) {
                 hitIdx = textLayer->findItemAt(docPt);
             }
@@ -4479,37 +4581,18 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                 m_selectedBalloonIndex = hitIdx;
                 auto& item = textLayer->items()[hitIdx];
                 m_balloonPreEditItem = item;
-
-                m_balloonDragHandle = BalloonHandle::Body;
-                if (item.hasTail) {
-                    qreal handleRad = 15.0 / m_zoom;
-                    QPointF center = item.rect.center();
-                    QPointF tip = item.tailTip;
-                    QPointF dir = tip - center;
-                    float len = std::hypot(dir.x(), dir.y());
-                    if (len > 1.0f) {
-                        QPointF norm(-dir.y() / len, dir.x() / len);
-                        float baseW = std::clamp(item.tailBaseWidth, 4.0f, static_cast<float>(std::min(item.rect.width(), item.rect.height())));
-                        QPointF p1 = center + norm * (baseW * 0.5f);
-                        float curveFactor = item.tailCurvature * 0.005f * len;
-                        QPointF ctrl = (center + tip) * 0.5f + norm * curveFactor;
-
-                        if (std::hypot(tip.x() - docPt.x(), tip.y() - docPt.y()) <= handleRad) {
-                            m_balloonDragHandle = BalloonHandle::TailTip;
-                        } else if (std::hypot(ctrl.x() - docPt.x(), ctrl.y() - docPt.y()) <= handleRad) {
-                            m_balloonDragHandle = BalloonHandle::TailCurve;
-                        } else if (std::hypot(p1.x() - docPt.x(), p1.y() - docPt.y()) <= handleRad) {
-                            m_balloonDragHandle = BalloonHandle::TailBaseWidth;
-                        }
-                    }
-                }
-
+                m_balloonOrigRect = item.rect;
                 m_balloonPressPos = docPt;
+
+                BalloonHandle handle = hitTestBalloonHandles(item, docPt, m_zoom);
+                m_balloonDragHandle = (handle != BalloonHandle::None) ? handle : BalloonHandle::Body;
                 if (m_balloonDragHandle == BalloonHandle::Body) {
                     m_isMovingBalloon = true;
                     m_balloonMoveOffset = docPt - item.rect.topLeft();
-                } else {
+                } else if (m_balloonDragHandle == BalloonHandle::TailTip || m_balloonDragHandle == BalloonHandle::TailCurve || m_balloonDragHandle == BalloonHandle::TailBaseWidth) {
                     m_isMovingTail = true;
+                } else {
+                    m_isResizingBalloon = true;
                 }
                 emit textItemSelected(item);
             } else {
@@ -5377,6 +5460,73 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
+        if (m_isResizingBalloon && m_selectedBalloonIndex >= 0) {
+            auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
+            if (textLayer && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
+                auto& item = textLayer->items()[m_selectedBalloonIndex];
+                QRectF orig = m_balloonOrigRect;
+                QPointF delta = m_cursorDocPos - m_balloonPressPos;
+                qreal minW = 20.0;
+                qreal minH = 20.0;
+                QRectF newRect = orig;
+
+                switch (m_balloonDragHandle) {
+                case BalloonHandle::TopLeft: {
+                    qreal newL = std::min(orig.left() + delta.x(), orig.right() - minW);
+                    qreal newT = std::min(orig.top() + delta.y(), orig.bottom() - minH);
+                    newRect = QRectF(QPointF(newL, newT), orig.bottomRight());
+                    break;
+                }
+                case BalloonHandle::TopRight: {
+                    qreal newR = std::max(orig.right() + delta.x(), orig.left() + minW);
+                    qreal newT = std::min(orig.top() + delta.y(), orig.bottom() - minH);
+                    newRect = QRectF(QPointF(orig.left(), newT), QPointF(newR, orig.bottom()));
+                    break;
+                }
+                case BalloonHandle::BottomLeft: {
+                    qreal newL = std::min(orig.left() + delta.x(), orig.right() - minW);
+                    qreal newB = std::max(orig.bottom() + delta.y(), orig.top() + minH);
+                    newRect = QRectF(QPointF(newL, orig.top()), QPointF(orig.right(), newB));
+                    break;
+                }
+                case BalloonHandle::BottomRight: {
+                    qreal newR = std::max(orig.right() + delta.x(), orig.left() + minW);
+                    qreal newB = std::max(orig.bottom() + delta.y(), orig.top() + minH);
+                    newRect = QRectF(orig.topLeft(), QPointF(newR, newB));
+                    break;
+                }
+                case BalloonHandle::Top: {
+                    qreal newT = std::min(orig.top() + delta.y(), orig.bottom() - minH);
+                    newRect = QRectF(QPointF(orig.left(), newT), orig.bottomRight());
+                    break;
+                }
+                case BalloonHandle::Bottom: {
+                    qreal newB = std::max(orig.bottom() + delta.y(), orig.top() + minH);
+                    newRect = QRectF(orig.topLeft(), QPointF(orig.right(), newB));
+                    break;
+                }
+                case BalloonHandle::Left: {
+                    qreal newL = std::min(orig.left() + delta.x(), orig.right() - minW);
+                    newRect = QRectF(QPointF(newL, orig.top()), orig.bottomRight());
+                    break;
+                }
+                case BalloonHandle::Right: {
+                    qreal newR = std::max(orig.right() + delta.x(), orig.left() + minW);
+                    newRect = QRectF(orig.topLeft(), QPointF(newR, orig.bottom()));
+                    break;
+                }
+                default:
+                    break;
+                }
+
+                item.rect = newRect;
+                textLayer->rasterizeAll();
+                m_document->composite();
+                update();
+            }
+            event->accept();
+            return;
+        }
         if (m_isMovingBalloon && m_selectedBalloonIndex >= 0) {
             auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
             if (textLayer && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
@@ -5435,6 +5585,52 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
             }
             event->accept();
             return;
+        }
+
+        // ホバー時のカーソル形状の更新
+        auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
+        if (textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
+            const auto& item = textLayer->items()[m_selectedBalloonIndex];
+            BalloonHandle hoverHandle = hitTestBalloonHandles(item, m_cursorDocPos, m_zoom);
+            switch (hoverHandle) {
+            case BalloonHandle::TopLeft:
+            case BalloonHandle::BottomRight:
+                setCursor(Qt::SizeFDiagCursor);
+                break;
+            case BalloonHandle::TopRight:
+            case BalloonHandle::BottomLeft:
+                setCursor(Qt::SizeBDiagCursor);
+                break;
+            case BalloonHandle::Top:
+            case BalloonHandle::Bottom:
+                setCursor(Qt::SizeVerCursor);
+                break;
+            case BalloonHandle::Left:
+            case BalloonHandle::Right:
+                setCursor(Qt::SizeHorCursor);
+                break;
+            case BalloonHandle::TailTip:
+            case BalloonHandle::TailCurve:
+            case BalloonHandle::TailBaseWidth:
+                setCursor(Qt::CrossCursor);
+                break;
+            case BalloonHandle::Body:
+                setCursor(Qt::SizeAllCursor);
+                break;
+            default:
+                if (m_currentTool == ToolType::Text) {
+                    setCursor(Qt::IBeamCursor);
+                } else {
+                    setCursor(Qt::ArrowCursor);
+                }
+                break;
+            }
+        } else {
+            if (m_currentTool == ToolType::Text) {
+                setCursor(Qt::IBeamCursor);
+            } else {
+                setCursor(Qt::ArrowCursor);
+            }
         }
         update();
         return;
@@ -6112,13 +6308,14 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
-        if (m_isMovingBalloon || m_isMovingTail) {
+        if (m_isMovingBalloon || m_isMovingTail || m_isResizingBalloon) {
             QPointF docPt = viewToDoc(event->position());
             bool isBody = m_isMovingBalloon;
             float dist = std::hypot(docPt.x() - m_balloonPressPos.x(), docPt.y() - m_balloonPressPos.y());
             bool actuallyMoved = (dist > 3.0f);
             m_isMovingBalloon = false;
             m_isMovingTail = false;
+            m_isResizingBalloon = false;
             m_balloonDragHandle = BalloonHandle::None;
             auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
             if (actuallyMoved && textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
@@ -6457,10 +6654,8 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
                 m_selectedBalloonIndex = hitIdx;
                 auto& item = textLayer->items()[hitIdx];
                 emit textItemSelected(item);
-                if (m_currentTool == ToolType::Text) {
-                    if (m_textSettings) {
-                        m_textSettings->focusTextEdit();
-                    }
+                if (m_textSettings) {
+                    m_textSettings->focusTextEdit();
                 } else {
                     auto oldItem = item;
                     TextBalloonDialog dlg(oldItem, this);
@@ -6851,6 +7046,24 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
             painter.setPen(QPen(QColor(0, 120, 215), 1.5 * invZoom, Qt::DashLine));
             painter.setBrush(Qt::NoBrush);
             painter.drawRect(item.rect);
+
+            // 頂点ハンドル (4角) & 辺の中央ハンドル (4辺)
+            painter.setPen(QPen(QColor(0, 120, 215), 1.2 * invZoom));
+            painter.setBrush(Qt::white);
+            qreal cornerSz = 7.0 * invZoom;
+            qreal edgeSz = 6.0 * invZoom;
+
+            // 頂点 (4角)
+            painter.drawRect(QRectF(item.rect.left() - cornerSz * 0.5, item.rect.top() - cornerSz * 0.5, cornerSz, cornerSz));
+            painter.drawRect(QRectF(item.rect.right() - cornerSz * 0.5, item.rect.top() - cornerSz * 0.5, cornerSz, cornerSz));
+            painter.drawRect(QRectF(item.rect.left() - cornerSz * 0.5, item.rect.bottom() - cornerSz * 0.5, cornerSz, cornerSz));
+            painter.drawRect(QRectF(item.rect.right() - cornerSz * 0.5, item.rect.bottom() - cornerSz * 0.5, cornerSz, cornerSz));
+
+            // 辺の中央 (4辺)
+            painter.drawRect(QRectF(item.rect.center().x() - edgeSz * 0.5, item.rect.top() - edgeSz * 0.5, edgeSz, edgeSz));
+            painter.drawRect(QRectF(item.rect.center().x() - edgeSz * 0.5, item.rect.bottom() - edgeSz * 0.5, edgeSz, edgeSz));
+            painter.drawRect(QRectF(item.rect.left() - edgeSz * 0.5, item.rect.center().y() - edgeSz * 0.5, edgeSz, edgeSz));
+            painter.drawRect(QRectF(item.rect.right() - edgeSz * 0.5, item.rect.center().y() - edgeSz * 0.5, edgeSz, edgeSz));
 
             if (item.hasTail) {
                 QPointF center = item.rect.center();

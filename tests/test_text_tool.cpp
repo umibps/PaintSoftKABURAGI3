@@ -325,6 +325,36 @@ int main(int argc, char* argv[]) {
     assert(textLayer->items().size() == 2);
     std::cout << "[PASS] TextLayer item hit-test and rasterize succeed for Vertical and Horizontal Ruby!" << std::endl;
 
+    // 3-2. テキスト・吹き出しの頂点、辺、しっぽのハンドル判定テスト
+    std::cout << "[TEST] Testing balloon handles (vertices, edges, body, tail)..." << std::endl;
+    CanvasWidget canvas;
+    TextBalloonItem testHandleItem;
+    testHandleItem.rect = QRectF(100, 100, 200, 100);
+    testHandleItem.hasTail = true;
+    testHandleItem.tailTip = QPointF(50, 50);
+
+    // 4隅の頂点 (Vertices)
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(100, 100), 1.0) == CanvasWidget::BalloonHandle::TopLeft);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(300, 100), 1.0) == CanvasWidget::BalloonHandle::TopRight);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(100, 200), 1.0) == CanvasWidget::BalloonHandle::BottomLeft);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(300, 200), 1.0) == CanvasWidget::BalloonHandle::BottomRight);
+
+    // 4辺の中央 (Edges)
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(200, 100), 1.0) == CanvasWidget::BalloonHandle::Top);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(200, 200), 1.0) == CanvasWidget::BalloonHandle::Bottom);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(100, 150), 1.0) == CanvasWidget::BalloonHandle::Left);
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(300, 150), 1.0) == CanvasWidget::BalloonHandle::Right);
+
+    // しっぽ先端
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(50, 50), 1.0) == CanvasWidget::BalloonHandle::TailTip);
+
+    // 内部 (Body)
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(200, 150), 1.0) == CanvasWidget::BalloonHandle::Body);
+
+    // 範囲外 (None)
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(10, 10), 1.0) == CanvasWidget::BalloonHandle::None);
+    std::cout << "[PASS] Balloon handles (vertices, edges, body, tail) hit-testing succeed!" << std::endl;
+
     // 4. DocumentSerializer 保存 & 読込テスト（アライメント、特殊形状、カーブしっぽ、フチ取り）
     std::cout << "[TEST] Testing DocumentSerializer serialization..." << std::endl;
     QString tempPath = QDir::tempPath() + "/test_text_tool_file.kab";
