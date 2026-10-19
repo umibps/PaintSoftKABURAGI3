@@ -134,8 +134,8 @@ int main(int argc, char* argv[]) {
         if (btn->text() == "B" && btn->toolTip().contains("<b>")) btnInlineBold = btn;
         else if (btn->text() == "I" && btn->toolTip().contains("<i>")) btnInlineItalic = btn;
         else if (btn->text() == "サイズ") btnInlineSize = btn;
-        else if (btn->text() == "タグあり") btnShowTags = btn;
-        else if (btn->text() == "タグなし") btnHideTags = btn;
+        else if (btn->text() == "タグあり表示") btnShowTags = btn;
+        else if (btn->text() == "タグ無し表示") btnHideTags = btn;
     }
     assert(btnInlineBold != nullptr);
     assert(btnInlineItalic != nullptr);
@@ -166,6 +166,29 @@ int main(int argc, char* argv[]) {
     assert(textSettings.isHideTags() == false);
     assert(textEdit->isReadOnly() == false);
     assert(textEdit->toPlainText() == "<i>Hello</i> <b>World</b>");
+
+    // タグ無し表示モードでのインライン書式適用（モード遷移せず、選択されたテキストにタグが追加されること）
+    textSettings.setText("テストの文章です");
+    btnHideTags->click();
+    assert(textSettings.isHideTags() == true);
+    // "テスト" を選択 (0〜3文字目)
+    cur = textEdit->textCursor();
+    cur.setPosition(0);
+    cur.setPosition(3, QTextCursor::KeepAnchor);
+    textEdit->setTextCursor(cur);
+    // サイズボタンをクリック (24pt)
+    btnInlineSize->click();
+    // モードが遷移せずタグ無しのままであること！
+    assert(textSettings.isHideTags() == true);
+    // 裏の生テキストに正しくタグが追加されていること！
+    assert(textSettings.text() == "<size=24>テスト</size>の文章です");
+
+    // カタカナへのルビパースの検証
+    auto katakanaTokens = parseFormattedTokens("テスト《てすと》の文章です", 16.0);
+    assert(!katakanaTokens.empty());
+    assert(katakanaTokens[0].baseText == "テスト");
+    assert(katakanaTokens[0].hasRuby == true);
+    assert(katakanaTokens[0].rubyText == "てすと");
 
     std::cout << "[PASS] TextSettingsWidget inline formatting & tag view mode work!" << std::endl;
 

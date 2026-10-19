@@ -93,6 +93,20 @@ bool isKanji(QChar c) {
     return (u >= 0x4E00 && u <= 0x9FFF) || (u >= 0x3400 && u <= 0x4DBF);
 }
 
+bool isKatakana(QChar c) {
+    ushort u = c.unicode();
+    return (u >= 0x30A0 && u <= 0x30FF) || (u >= 0x31F0 && u <= 0x31FF) || (u >= 0xFF65 && u <= 0xFF9F);
+}
+
+bool isHiragana(QChar c) {
+    ushort u = c.unicode();
+    return (u >= 0x3040 && u <= 0x309F);
+}
+
+bool isAlphanumeric(QChar c) {
+    return c.isLetterOrNumber();
+}
+
 bool isPunctuationTopRight(QChar c) {
     ushort u = c.unicode();
     return (u == 0x3001 || u == 0x3002 || u == 0xFF0C || u == 0xFF0E || u == 0x002C || u == 0x002E);
@@ -113,7 +127,6 @@ bool shouldRotateVertical(QChar c) {
         ":;：；");
     return rotateChars.contains(c);
 }
-
 } // namespace
 
 std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal basePointSize) {
@@ -235,27 +248,35 @@ std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal base
             }
         }
 
-        // 5. 漢字《ルビ》 記法
+        // 5. 親文字《ルビ》 記法 (漢字、カタカナ、ひらがな、英数字に対応)
         if (line[i] == QChar(0x300A)) { // 《
             int rubyEnd = line.indexOf(QChar(0x300B), i + 1); // 》
             if (rubyEnd != -1 && !tokens.empty()) {
-                // 直前のトークンから末尾の漢字列を切り出す
+                // 直前のトークンから末尾の単語（漢字、カタカナ、ひらがな、英数字の連続）を切り出す
                 FormattedToken& prev = tokens.back();
                 if (!prev.hasRuby && !prev.baseText.isEmpty()) {
                     int k = prev.baseText.length() - 1;
-                    while (k >= 0 && isKanji(prev.baseText[k])) {
+                    QChar lastChar = prev.baseText[k];
+                    auto matchesType = [&](QChar ch) {
+                        if (isKanji(lastChar)) return isKanji(ch);
+                        if (isKatakana(lastChar)) return isKatakana(ch);
+                        if (isHiragana(lastChar)) return isHiragana(ch);
+                        if (isAlphanumeric(lastChar)) return isAlphanumeric(ch);
+                        return false;
+                    };
+                    while (k >= 0 && matchesType(prev.baseText[k])) {
                         --k;
                     }
-                    int kanjiStart = k + 1;
-                    if (kanjiStart < prev.baseText.length()) {
-                        QString kanji = prev.baseText.mid(kanjiStart);
-                        prev.baseText.truncate(kanjiStart);
+                    int parentStart = k + 1;
+                    if (parentStart < prev.baseText.length()) {
+                        QString parentWord = prev.baseText.mid(parentStart);
+                        prev.baseText.truncate(parentStart);
                         InlineStyle prevStyle = prev.style;
                         if (prev.baseText.isEmpty()) {
                             tokens.pop_back();
                         }
                         FormattedToken tok;
-                        tok.baseText = kanji;
+                        tok.baseText = parentWord;
                         tok.rubyText = line.mid(i + 1, rubyEnd - i - 1);
                         tok.hasRuby = true;
                         tok.style = prevStyle;

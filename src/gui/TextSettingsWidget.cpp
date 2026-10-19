@@ -68,8 +68,8 @@ void TextSettingsWidget::setupUi() {
     m_spinInlineSize->setValue(24);
     m_spinInlineSize->setSuffix(" pt");
     m_spinInlineSize->setToolTip("選択部分の文字サイズ");
-    m_spinInlineSize->setFixedWidth(78);
-    m_spinInlineSize->setMinimumWidth(75);
+    m_spinInlineSize->setFixedWidth(85);
+    m_spinInlineSize->setMinimumWidth(80);
 
     m_btnInlineSize = new QPushButton("サイズ", textGroup);
     m_btnInlineSize->setToolTip("選択部分に文字サイズを適用する (<size=24>...</size>)");
@@ -85,28 +85,6 @@ void TextSettingsWidget::setupUi() {
     inlineToolbarLayout->addWidget(m_spinInlineSize);
     inlineToolbarLayout->addWidget(m_btnInlineSize);
     inlineToolbarLayout->addWidget(m_btnInlineRuby);
-    inlineToolbarLayout->addSpacing(4);
-
-    // タグあり / タグなし 表示切り替え
-    m_tagViewModeGroup = new QButtonGroup(textGroup);
-    m_btnShowTags = new QPushButton("タグあり", textGroup);
-    m_btnShowTags->setCheckable(true);
-    m_btnShowTags->setChecked(true);
-    m_btnShowTags->setToolTip("タグ（<b>や<color>等）を表示して直接編集します");
-    m_btnShowTags->setFixedWidth(56);
-    m_btnShowTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
-
-    m_btnHideTags = new QPushButton("タグなし", textGroup);
-    m_btnHideTags->setCheckable(true);
-    m_btnHideTags->setToolTip("タグを非表示にし、装飾（太字・文字色・サイズ・ルビ）をプレビュー表示します");
-    m_btnHideTags->setFixedWidth(56);
-    m_btnHideTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
-
-    m_tagViewModeGroup->addButton(m_btnShowTags, 0);
-    m_tagViewModeGroup->addButton(m_btnHideTags, 1);
-
-    inlineToolbarLayout->addWidget(m_btnShowTags);
-    inlineToolbarLayout->addWidget(m_btnHideTags);
     inlineToolbarLayout->addStretch(1);
 
     textGroupLayout->addLayout(inlineToolbarLayout);
@@ -115,6 +93,35 @@ void TextSettingsWidget::setupUi() {
     m_textEdit->setPlaceholderText("テキストを入力...\n※ツールバーのボタンで太字・文字色・サイズ・ルビを挿入可能");
     m_textEdit->setMinimumHeight(60);
     textGroupLayout->addWidget(m_textEdit);
+
+    // 下部: タグあり / タグなし 表示切り替え
+    auto bottomViewModeLayout = new QHBoxLayout();
+    bottomViewModeLayout->setContentsMargins(0, 0, 0, 0);
+    bottomViewModeLayout->setSpacing(4);
+
+    m_tagViewModeGroup = new QButtonGroup(textGroup);
+    m_btnShowTags = new QPushButton("タグあり表示", textGroup);
+    m_btnShowTags->setCheckable(true);
+    m_btnShowTags->setChecked(true);
+    m_btnShowTags->setToolTip("タグ（<b>や<color>等）を表示して直接編集します");
+    m_btnShowTags->setFixedHeight(24);
+    m_btnShowTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+
+    m_btnHideTags = new QPushButton("タグ無し表示", textGroup);
+    m_btnHideTags->setCheckable(true);
+    m_btnHideTags->setToolTip("タグを非表示にし、装飾（太字・文字色・サイズ・ルビ）をプレビュー表示します");
+    m_btnHideTags->setFixedHeight(24);
+    m_btnHideTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+
+    m_tagViewModeGroup->addButton(m_btnShowTags, 0);
+    m_tagViewModeGroup->addButton(m_btnHideTags, 1);
+
+    bottomViewModeLayout->addWidget(new QLabel("表示モード:", textGroup));
+    bottomViewModeLayout->addWidget(m_btnShowTags);
+    bottomViewModeLayout->addWidget(m_btnHideTags);
+    bottomViewModeLayout->addStretch(1);
+
+    textGroupLayout->addLayout(bottomViewModeLayout);
     textTabLayout->addWidget(textGroup);
 
     // 2. フォント・サイズ・文字色設定
@@ -790,11 +797,64 @@ void TextSettingsWidget::updateTextDisplay() {
     if (m_hideTags) {
         m_textEdit->setHtml(convertTagsToHtml(m_rawText));
         m_textEdit->setReadOnly(true);
+        rebuildDisplayMapping();
     } else {
         m_textEdit->setPlainText(m_rawText);
         m_textEdit->setReadOnly(false);
     }
     m_updatingUi = false;
+}
+
+void TextSettingsWidget::rebuildDisplayMapping() {
+    m_displayToRawMap.clear();
+    int len = m_rawText.length();
+    int i = 0;
+    while (i < len) {
+        // 1. タグ <...> のスキップ
+        if (m_rawText[i] == QLatin1Char('<')) {
+            int closeTag = m_rawText.indexOf(QLatin1Char('>'), i + 1);
+            if (closeTag != -1) {
+                i = closeTag + 1;
+                continue;
+            }
+        }
+        // 2. Markdown ** のスキップ
+        if (i + 1 < len && m_rawText[i] == QLatin1Char('*') && m_rawText[i + 1] == QLatin1Char('*')) {
+            i += 2;
+            continue;
+        }
+        // 3. 青空文庫 | または ｜ のスキップ
+        if (m_rawText[i] == QLatin1Char('|') || m_rawText[i] == QChar(0xFF5C)) {
+            ++i;
+            continue;
+        }
+        // 4. ルビ 《...》 のスキップ
+        if (m_rawText[i] == QChar(0x300A)) {
+            int rubyEnd = m_rawText.indexOf(QChar(0x300B), i + 1);
+            if (rubyEnd != -1) {
+                i = rubyEnd + 1;
+                continue;
+            }
+        }
+        // 5. Markdown [親文字](ルビ) の [ と ](ルビ) のスキップ
+        if (m_rawText[i] == QLatin1Char('[')) {
+            ++i;
+            continue;
+        }
+        if (m_rawText[i] == QLatin1Char(']')) {
+            if (i + 1 < len && m_rawText[i + 1] == QLatin1Char('(')) {
+                int closeParen = m_rawText.indexOf(QLatin1Char(')'), i + 2);
+                if (closeParen != -1) {
+                    i = closeParen + 1;
+                    continue;
+                }
+            }
+        }
+
+        // 表示される本文文字（改行含む）
+        m_displayToRawMap.push_back(i);
+        ++i;
+    }
 }
 
 QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
@@ -835,20 +895,58 @@ QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
 
 void TextSettingsWidget::wrapSelectionWithTags(const QString& openTag, const QString& closeTag) {
     if (!m_textEdit) return;
-    if (m_hideTags) {
-        setHideTags(false);
-    }
-    QTextCursor cursor = m_textEdit->textCursor();
-    if (cursor.hasSelection()) {
-        QString selected = cursor.selectedText();
-        cursor.insertText(openTag + selected + closeTag);
+
+    if (!m_hideTags) {
+        // タグあり表示モード
+        QTextCursor cursor = m_textEdit->textCursor();
+        if (cursor.hasSelection()) {
+            QString selected = cursor.selectedText();
+            cursor.insertText(openTag + selected + closeTag);
+        } else {
+            int pos = cursor.position();
+            cursor.insertText(openTag + closeTag);
+            cursor.setPosition(pos + openTag.length());
+        }
+        m_textEdit->setTextCursor(cursor);
+        m_rawText = m_textEdit->toPlainText();
+        emit textChanged(m_rawText);
+        emit settingsChanged();
+        m_textEdit->setFocus();
     } else {
+        // タグ無し表示モード: モード遷移せず、生テキストの対応箇所にタグを挿入！
+        QTextCursor cursor = m_textEdit->textCursor();
+        if (cursor.hasSelection()) {
+            int selStart = cursor.selectionStart();
+            int selEnd = cursor.selectionEnd();
+            if (selStart >= 0 && selEnd <= static_cast<int>(m_displayToRawMap.size()) && selStart < selEnd) {
+                int rawStart = m_displayToRawMap[selStart];
+                int rawEnd = m_displayToRawMap[selEnd - 1] + 1;
+                QString target = m_rawText.mid(rawStart, rawEnd - rawStart);
+                m_rawText.replace(rawStart, rawEnd - rawStart, openTag + target + closeTag);
+
+                updateTextDisplay();
+                emit textChanged(m_rawText);
+                emit settingsChanged();
+
+                // 選択範囲を復元
+                QTextCursor newCursor = m_textEdit->textCursor();
+                newCursor.setPosition(selStart);
+                newCursor.setPosition(selEnd, QTextCursor::KeepAnchor);
+                m_textEdit->setTextCursor(newCursor);
+                m_textEdit->setFocus();
+                return;
+            }
+        }
+        // 選択がない場合
         int pos = cursor.position();
-        cursor.insertText(openTag + closeTag);
-        cursor.setPosition(pos + openTag.length());
+        int rawPos = (pos >= 0 && pos < static_cast<int>(m_displayToRawMap.size()))
+                     ? m_displayToRawMap[pos] : m_rawText.length();
+        m_rawText.insert(rawPos, openTag + closeTag);
+        updateTextDisplay();
+        emit textChanged(m_rawText);
+        emit settingsChanged();
+        m_textEdit->setFocus();
     }
-    m_textEdit->setTextCursor(cursor);
-    m_textEdit->setFocus();
 }
 
 void TextSettingsWidget::onInlineBoldClicked() {
@@ -873,21 +971,61 @@ void TextSettingsWidget::onInlineSizeClicked() {
 
 void TextSettingsWidget::onInlineRubyClicked() {
     if (!m_textEdit) return;
-    if (m_hideTags) {
-        setHideTags(false);
-    }
+
     QTextCursor cursor = m_textEdit->textCursor();
     QString selected = cursor.selectedText();
     bool ok = false;
     QString prompt = selected.isEmpty() ? "ルビ（ふりがな）を入力:" : QString("「%1」のルビ（ふりがな）を入力:").arg(selected);
     QString ruby = QInputDialog::getText(this, "ルビ設定", prompt, QLineEdit::Normal, "", &ok);
-    if (ok && !ruby.isEmpty()) {
+    if (!ok || ruby.isEmpty()) return;
+
+    if (!m_hideTags) {
+        // タグあり表示モード
         if (selected.isEmpty()) {
-            cursor.insertText(QString("親文字《%1》").arg(ruby));
+            cursor.insertText(QString("｜親文字《%1》").arg(ruby));
         } else {
-            cursor.insertText(QString("%1《%2》").arg(selected, ruby));
+            // 漢字以外でも確実に動作するよう、青空文庫標準の ｜ を親文字の前に付ける
+            cursor.insertText(QString("｜%1《%2》").arg(selected, ruby));
         }
         m_textEdit->setTextCursor(cursor);
+        m_rawText = m_textEdit->toPlainText();
+        emit textChanged(m_rawText);
+        emit settingsChanged();
+        m_textEdit->setFocus();
+    } else {
+        // タグ無し表示モード: モード遷移せず、生テキストにルビタグを反映
+        if (cursor.hasSelection()) {
+            int selStart = cursor.selectionStart();
+            int selEnd = cursor.selectionEnd();
+            if (selStart >= 0 && selEnd <= static_cast<int>(m_displayToRawMap.size()) && selStart < selEnd) {
+                int rawStart = m_displayToRawMap[selStart];
+                int rawEnd = m_displayToRawMap[selEnd - 1] + 1;
+                QString target = m_rawText.mid(rawStart, rawEnd - rawStart);
+                QString replacement = QString("｜%1《%2》").arg(target, ruby);
+                m_rawText.replace(rawStart, rawEnd - rawStart, replacement);
+
+                updateTextDisplay();
+                emit textChanged(m_rawText);
+                emit settingsChanged();
+
+                // 選択範囲を復元
+                QTextCursor newCursor = m_textEdit->textCursor();
+                newCursor.setPosition(selStart);
+                newCursor.setPosition(selEnd, QTextCursor::KeepAnchor);
+                m_textEdit->setTextCursor(newCursor);
+                m_textEdit->setFocus();
+                return;
+            }
+        }
+
+        // 選択がない場合
+        int pos = cursor.position();
+        int rawPos = (pos >= 0 && pos < static_cast<int>(m_displayToRawMap.size()))
+                     ? m_displayToRawMap[pos] : m_rawText.length();
+        m_rawText.insert(rawPos, QString("｜親文字《%1》").arg(ruby));
+        updateTextDisplay();
+        emit textChanged(m_rawText);
+        emit settingsChanged();
         m_textEdit->setFocus();
     }
 }

@@ -89,6 +89,7 @@ private:
     void onInlineRubyClicked();
     QString convertTagsToHtml(const QString& rawText) const;
     void updateTextDisplay();
+    void rebuildDisplayMapping();
 
     QTabWidget* m_tabWidget = nullptr;
 
@@ -105,6 +106,7 @@ private:
     QPushButton* m_btnHideTags = nullptr;
     bool m_hideTags = false;
     QString m_rawText;
+    std::vector<int> m_displayToRawMap;
 
     QTextEdit* m_textEdit = nullptr;
 
