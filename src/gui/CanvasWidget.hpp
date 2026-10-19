@@ -724,6 +724,7 @@ private:
     QPointF m_balloonCurrentPos;
     int m_selectedBalloonIndex = -1;
     QPointF m_balloonMoveOffset;
+    QPointF m_balloonPressPos;
     TextBalloonItem m_balloonPreEditItem;
 
     std::shared_ptr<TextLayer> ensureTextLayer();

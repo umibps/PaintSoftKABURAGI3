@@ -183,6 +183,39 @@ int main(int argc, char* argv[]) {
     // 裏の生テキストに正しくタグが追加されていること！
     assert(textSettings.text() == "<size=24>テスト</size>の文章です");
 
+    // 表示倍率（previewZoom）の検証
+    assert(textSettings.previewZoom() == 100);
+    textSettings.setPreviewZoom(50);
+    assert(textSettings.previewZoom() == 50);
+
+    // インラインサイズSpinBoxの最小幅検証 (pt見切れ防止)
+    auto spinBoxes = textSettings.findChildren<QSpinBox*>();
+    QSpinBox* inlineSizeSpin = nullptr;
+    for (auto sb : spinBoxes) {
+        if (sb->suffix() == " pt" && sb->maximum() == 300 && sb->parent() != nullptr) {
+            if (sb->toolTip().contains("選択部分")) {
+                inlineSizeSpin = sb;
+                break;
+            }
+        }
+    }
+    assert(inlineSizeSpin != nullptr);
+    assert(inlineSizeSpin->minimumWidth() >= 90);
+
+    // テキスト編集エリアでキー入力された際にタグあり表示へ自動遷移して編集可能になることの検証
+    assert(textSettings.isHideTags() == true);
+    QKeyEvent keyEv(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, "a");
+    QApplication::sendEvent(textEdit, &keyEv);
+    assert(textSettings.isHideTags() == false);
+    assert(textEdit->isReadOnly() == false);
+
+    // focusTextEditの検証
+    textSettings.setHideTags(true);
+    assert(textSettings.isHideTags() == true);
+    textSettings.focusTextEdit();
+    assert(textSettings.isHideTags() == false);
+    assert(textEdit->isReadOnly() == false);
+
     // カタカナへのルビパースの検証
     auto katakanaTokens = parseFormattedTokens("テスト《てすと》の文章です", 16.0);
     assert(!katakanaTokens.empty());

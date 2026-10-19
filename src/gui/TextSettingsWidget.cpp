@@ -6,6 +6,7 @@
 #include <QGroupBox>
 #include <QColorDialog>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <algorithm>
 
 namespace Kaburagi {
@@ -68,8 +69,7 @@ void TextSettingsWidget::setupUi() {
     m_spinInlineSize->setValue(24);
     m_spinInlineSize->setSuffix(" pt");
     m_spinInlineSize->setToolTip("選択部分の文字サイズ");
-    m_spinInlineSize->setFixedWidth(85);
-    m_spinInlineSize->setMinimumWidth(80);
+    m_spinInlineSize->setMinimumWidth(95);
 
     m_btnInlineSize = new QPushButton("サイズ", textGroup);
     m_btnInlineSize->setToolTip("選択部分に文字サイズを適用する (<size=24>...</size>)");
@@ -92,9 +92,10 @@ void TextSettingsWidget::setupUi() {
     m_textEdit = new QTextEdit(textGroup);
     m_textEdit->setPlaceholderText("テキストを入力...\n※ツールバーのボタンで太字・文字色・サイズ・ルビを挿入可能");
     m_textEdit->setMinimumHeight(60);
+    m_textEdit->installEventFilter(this);
     textGroupLayout->addWidget(m_textEdit);
 
-    // 下部: タグあり / タグなし 表示切り替え
+    // 下部: タグあり / タグなし 表示切り替え & 表示倍率
     auto bottomViewModeLayout = new QHBoxLayout();
     bottomViewModeLayout->setContentsMargins(0, 0, 0, 0);
     bottomViewModeLayout->setSpacing(4);
@@ -119,6 +120,21 @@ void TextSettingsWidget::setupUi() {
     bottomViewModeLayout->addWidget(new QLabel("表示モード:", textGroup));
     bottomViewModeLayout->addWidget(m_btnShowTags);
     bottomViewModeLayout->addWidget(m_btnHideTags);
+
+    bottomViewModeLayout->addSpacing(8);
+    m_zoomLabel = new QLabel("表示倍率:", textGroup);
+    m_previewZoomSpin = new QSpinBox(textGroup);
+    m_previewZoomSpin->setRange(20, 300);
+    m_previewZoomSpin->setSingleStep(10);
+    m_previewZoomSpin->setValue(100);
+    m_previewZoomSpin->setSuffix(" %");
+    m_previewZoomSpin->setFixedWidth(80);
+    m_previewZoomSpin->setToolTip("タグ無し表示時のフォント表示倍率（文字が大きすぎる場合に縮小できます）");
+    m_zoomLabel->setEnabled(false);
+    m_previewZoomSpin->setEnabled(false);
+
+    bottomViewModeLayout->addWidget(m_zoomLabel);
+    bottomViewModeLayout->addWidget(m_previewZoomSpin);
     bottomViewModeLayout->addStretch(1);
 
     textGroupLayout->addLayout(bottomViewModeLayout);
@@ -142,7 +158,7 @@ void TextSettingsWidget::setupUi() {
     m_fontSizeSpin->setRange(6, 300);
     m_fontSizeSpin->setValue(24);
     m_fontSizeSpin->setSuffix(" pt");
-    m_fontSizeSpin->setMinimumWidth(75);
+    m_fontSizeSpin->setMinimumWidth(85);
     sizeStyleLayout->addWidget(m_fontSizeSpin, 1);
 
     m_btnBold = new QPushButton("B", fontGroup);
@@ -435,6 +451,12 @@ void TextSettingsWidget::setupUi() {
         setHideTags(id == 1);
     });
 
+    connect(m_previewZoomSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int) {
+        if (m_hideTags) {
+            updateTextDisplay();
+        }
+    });
+
     connect(m_btnInlineBold, &QPushButton::clicked, this, &TextSettingsWidget::onInlineBoldClicked);
     connect(m_btnInlineItalic, &QPushButton::clicked, this, &TextSettingsWidget::onInlineItalicClicked);
     connect(m_btnInlineColor, &QPushButton::clicked, this, &TextSettingsWidget::onInlineColorClicked);
@@ -606,7 +628,21 @@ void TextSettingsWidget::setHideTags(bool hide) {
         m_btnHideTags->setChecked(hide);
         m_updatingUi = false;
     }
+    if (m_zoomLabel && m_previewZoomSpin) {
+        m_zoomLabel->setEnabled(hide);
+        m_previewZoomSpin->setEnabled(hide);
+    }
     updateTextDisplay();
+}
+
+int TextSettingsWidget::previewZoom() const {
+    return m_previewZoomSpin ? m_previewZoomSpin->value() : 100;
+}
+
+void TextSettingsWidget::setPreviewZoom(int zoom) {
+    if (m_previewZoomSpin) {
+        m_previewZoomSpin->setValue(zoom);
+    }
 }
 
 BalloonShape TextSettingsWidget::balloonShape() const {
@@ -696,7 +732,8 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
     m_updatingUi = true;
 
     // 1. テキスト & フォント & 文字色 & 書字方向
-    m_textEdit->setPlainText(item.text);
+    m_rawText = item.text;
+    updateTextDisplay();
     m_fontCombo->setCurrentFont(item.font);
     m_fontSizeSpin->setValue(item.font.pointSize() > 0 ? item.font.pointSize() : 16);
     m_btnBold->setChecked(item.font.bold());
@@ -792,6 +829,30 @@ void TextSettingsWidget::focusTextEdit() {
     m_textEdit->selectAll();
 }
 
+bool TextSettingsWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_textEdit && m_hideTags) {
+        if (event->type() == QEvent::KeyPress) {
+            auto* keyEvent = static_cast<QKeyEvent*>(event);
+            bool isModifierOnly = (keyEvent->key() >= Qt::Key_Shift && keyEvent->key() <= Qt::Key_Alt) ||
+                                  keyEvent->key() == Qt::Key_Control || keyEvent->key() == Qt::Key_Meta;
+            bool isCopy = (keyEvent->modifiers() & Qt::ControlModifier) && keyEvent->key() == Qt::Key_C;
+            bool isNav = keyEvent->key() == Qt::Key_Left || keyEvent->key() == Qt::Key_Right ||
+                         keyEvent->key() == Qt::Key_Up || keyEvent->key() == Qt::Key_Down;
+
+            if (!isModifierOnly && !isCopy && !isNav) {
+                // 文字入力やBackspace等の編集キーが押されたら、自動でタグあり表示に遷移して編集可能にする
+                setHideTags(false);
+                return false;
+            }
+        } else if (event->type() == QEvent::MouseButtonDblClick) {
+            // ダブルクリック時もタグあり表示に遷移して直接テキスト編集可能にする
+            setHideTags(false);
+            return false;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
 void TextSettingsWidget::updateTextDisplay() {
     m_updatingUi = true;
     if (m_hideTags) {
@@ -860,7 +921,8 @@ void TextSettingsWidget::rebuildDisplayMapping() {
 QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
     QStringList lines = rawText.split(QLatin1Char('\n'));
     QString html;
-    qreal basePt = fontSize();
+    qreal zoomFactor = (m_previewZoomSpin ? m_previewZoomSpin->value() : 100) / 100.0;
+    qreal basePt = fontSize() * zoomFactor;
 
     for (int l = 0; l < lines.size(); ++l) {
         if (l > 0) html += "<br>";
@@ -871,7 +933,9 @@ QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
                 spanStyle += QString("color:%1;").arg(tok.style.color->name(QColor::HexRgb));
             }
             if (tok.style.fontSize.has_value()) {
-                spanStyle += QString("font-size:%1pt;").arg(*tok.style.fontSize);
+                spanStyle += QString("font-size:%1pt;").arg((*tok.style.fontSize) * zoomFactor);
+            } else {
+                spanStyle += QString("font-size:%1pt;").arg(basePt);
             }
 
             QString content = tok.baseText.toHtmlEscaped();
@@ -884,7 +948,9 @@ QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
 
             if (tok.hasRuby && !tok.rubyText.isEmpty()) {
                 QString rubyEscaped = tok.rubyText.toHtmlEscaped();
-                content += QString("<span style=\"font-size:70%;vertical-align:super;color:#888888;\">(%1)</span>").arg(rubyEscaped);
+                content += QString("<span style=\"font-size:%1pt;vertical-align:super;color:#888888;\">(%2)</span>")
+                               .arg(basePt * 0.7, 0, 'f', 1)
+                               .arg(rubyEscaped);
             }
 
             html += content;

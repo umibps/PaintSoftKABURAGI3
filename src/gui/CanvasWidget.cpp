@@ -4504,6 +4504,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                     }
                 }
 
+                m_balloonPressPos = docPt;
                 if (m_balloonDragHandle == BalloonHandle::Body) {
                     m_isMovingBalloon = true;
                     m_balloonMoveOffset = docPt - item.rect.topLeft();
@@ -6112,15 +6113,25 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             return;
         }
         if (m_isMovingBalloon || m_isMovingTail) {
-            bool moved = m_isMovingBalloon || m_isMovingTail;
+            QPointF docPt = viewToDoc(event->position());
+            bool isBody = m_isMovingBalloon;
+            float dist = std::hypot(docPt.x() - m_balloonPressPos.x(), docPt.y() - m_balloonPressPos.y());
+            bool actuallyMoved = (dist > 3.0f);
             m_isMovingBalloon = false;
             m_isMovingTail = false;
             m_balloonDragHandle = BalloonHandle::None;
             auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
-            if (moved && textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
+            if (actuallyMoved && textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
                 const auto& curItem = textLayer->items()[m_selectedBalloonIndex];
                 if (m_document->undoStack()) {
                     m_document->undoStack()->push(new EditTextBalloonCommand(m_document, m_document->activeLayerIndex(), m_selectedBalloonIndex, m_balloonPreEditItem, curItem));
+                }
+            } else if (!actuallyMoved && isBody && m_selectedBalloonIndex >= 0) {
+                // アクティブなテキストエリアが左クリックされたらテキスト編集可能にする
+                if (m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon) {
+                    if (m_textSettings) {
+                        m_textSettings->focusTextEdit();
+                    }
                 }
             }
             update();

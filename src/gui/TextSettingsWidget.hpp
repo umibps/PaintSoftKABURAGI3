@@ -48,6 +48,10 @@ public:
     bool isHideTags() const { return m_hideTags; }
     void setHideTags(bool hide);
 
+    // プレビュー表示倍率 (%)
+    int previewZoom() const;
+    void setPreviewZoom(int zoom);
+
     // 吹き出し属性
     BalloonShape balloonShape() const;
     bool hasTail() const;
@@ -75,6 +79,9 @@ public:
 signals:
     void settingsChanged();
     void textChanged(const QString& text);
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void setupUi();
@@ -104,6 +111,8 @@ private:
     QButtonGroup* m_tagViewModeGroup = nullptr;
     QPushButton* m_btnShowTags = nullptr;
     QPushButton* m_btnHideTags = nullptr;
+    QLabel* m_zoomLabel = nullptr;
+    QSpinBox* m_previewZoomSpin = nullptr;
     bool m_hideTags = false;
     QString m_rawText;
     std::vector<int> m_displayToRawMap;
