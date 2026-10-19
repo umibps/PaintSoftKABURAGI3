@@ -332,6 +332,7 @@ bool DocumentSerializer::saveToFile(const Document* document, const QString& fil
                 for (const auto& pt : item.customVertices) {
                     stream << pt;
                 }
+                stream << static_cast<qint32>(item.overflowMode);
             }
             break;
         }
@@ -615,6 +616,13 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
                     item.spikeRandomness = 0;
                     item.randomSeed = 12345;
                     item.customVertices.clear();
+                }
+                if (version >= 9) {
+                    qint32 ovMode = 0;
+                    stream >> ovMode;
+                    item.overflowMode = static_cast<TextOverflowMode>(ovMode);
+                } else {
+                    item.overflowMode = TextOverflowMode::Overflow;
                 }
                 tLayer->addItem(item);
             }

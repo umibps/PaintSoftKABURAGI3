@@ -38,6 +38,9 @@ public:
     WritingDirection direction() const;
     void setDirection(WritingDirection dir);
 
+    TextOverflowMode overflowMode() const;
+    void setOverflowMode(TextOverflowMode mode);
+
     Qt::Alignment horizontalAlignment() const;
     Qt::Alignment verticalAlignment() const;
 
@@ -142,6 +145,8 @@ private:
     QPushButton* m_btnAlignTop = nullptr;
     QPushButton* m_btnAlignVCenter = nullptr;
     QPushButton* m_btnAlignBottom = nullptr;
+
+    QComboBox* m_overflowCombo = nullptr;
 
     // 4. 吹き出し形状
     QComboBox* m_shapeCombo = nullptr;

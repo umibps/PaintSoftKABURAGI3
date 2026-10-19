@@ -9950,7 +9950,8 @@ void CanvasWidget::applyTextSettingsToSelected() {
                     oldItem.fillColor != newItem.fillColor ||
                     oldItem.hasOutline != newItem.hasOutline ||
                     std::abs(oldItem.outlineWidth - newItem.outlineWidth) > 0.001f ||
-                    oldItem.outlineColor != newItem.outlineColor);
+                    oldItem.outlineColor != newItem.outlineColor ||
+                    oldItem.overflowMode != newItem.overflowMode);
     if (changed) {
         textLayer->updateItem(m_selectedBalloonIndex, newItem);
         if (m_document->undoStack()) {

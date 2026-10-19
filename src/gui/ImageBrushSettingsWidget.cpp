@@ -104,8 +104,28 @@ void ImageBrushSettingsWidget::setupUI() {
 
     mainLayout->addWidget(imgGroup);
 
+    // 2.5 サイズ倍率設定
+    auto multLayout = new QHBoxLayout();
+    auto multLabel = new QLabel("サイズ倍率:", this);
+    multLabel->setStyleSheet("font-size: 11px;");
+    m_sizeMultiplierCombo = new QComboBox(this);
+    m_sizeMultiplierCombo->setStyleSheet("QComboBox { font-size: 11px; }");
+    m_sizeMultiplierCombo->addItem("x 0.1", 0.1);
+    m_sizeMultiplierCombo->addItem("x 1.0", 1.0);
+    m_sizeMultiplierCombo->addItem("x 5.0", 5.0);
+    m_sizeMultiplierCombo->addItem("x 10.0", 10.0);
+    m_sizeMultiplierCombo->setCurrentIndex(1); // default x 1.0
+    multLayout->addWidget(multLabel);
+    multLayout->addWidget(m_sizeMultiplierCombo, 1);
+    mainLayout->addLayout(multLayout);
+
+    connect(m_sizeMultiplierCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        applySizeMultiplier(idx);
+        emit sizeMultiplierChanged(sizeMultiplier());
+    });
+
     // 3. 基本パラメータ (サイズ, 最小サイズ, 間隔, 濃度, 最低筆圧)
-    m_sizeScale = new SpinScale("サイズ", 0.1, 500.0, 1.0, 1, " px", this);
+    m_sizeScale = new SpinScale("サイズ", 1.0, 100.0, 0.5, 1, " px", this);
     mainLayout->addWidget(m_sizeScale);
     connect(m_sizeScale, &SpinScale::valueChanged, this, [this](double val) {
         emit brushSizeChanged(static_cast<float>(val));
@@ -384,12 +404,80 @@ void ImageBrushSettingsWidget::setBlendMode(BlendMode mode) {
     }
 }
 
+void ImageBrushSettingsWidget::applySizeMultiplier(int index) {
+    if (!m_sizeScale) return;
+    switch (index) {
+    case 0: // x 0.1: 0.1～10
+        m_sizeScale->setDecimals(2);
+        m_sizeScale->setStep(0.1);
+        m_sizeScale->setRange(0.1, 10.0);
+        break;
+    case 1: // x 1.0: 1～100
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(0.5);
+        m_sizeScale->setRange(1.0, 100.0);
+        break;
+    case 2: // x 5.0: 5～500
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(1.0);
+        m_sizeScale->setRange(5.0, 500.0);
+        break;
+    case 3: // x 10.0: 10～1000
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(1.0);
+        m_sizeScale->setRange(10.0, 1000.0);
+        break;
+    default:
+        break;
+    }
+}
+
+float ImageBrushSettingsWidget::sizeMultiplier() const {
+    if (m_sizeMultiplierCombo) {
+        return static_cast<float>(m_sizeMultiplierCombo->currentData().toDouble());
+    }
+    return 1.0f;
+}
+
+void ImageBrushSettingsWidget::setSizeMultiplier(float multiplier) {
+    if (!m_sizeMultiplierCombo) return;
+    int idx = 1;
+    if (std::abs(multiplier - 0.1f) < 0.05f) idx = 0;
+    else if (std::abs(multiplier - 1.0f) < 0.05f) idx = 1;
+    else if (std::abs(multiplier - 5.0f) < 0.05f) idx = 2;
+    else if (std::abs(multiplier - 10.0f) < 0.05f) idx = 3;
+    if (m_sizeMultiplierCombo->currentIndex() != idx) {
+        m_sizeMultiplierCombo->setCurrentIndex(idx);
+    } else {
+        applySizeMultiplier(idx);
+    }
+}
+
 float ImageBrushSettingsWidget::brushSize() const {
     return m_sizeScale ? static_cast<float>(m_sizeScale->value()) : 40.0f;
 }
 
 void ImageBrushSettingsWidget::setBrushSize(float sz) {
-    if (m_sizeScale) m_sizeScale->setValue(sz);
+    if (!m_sizeScale) return;
+    if (m_sizeMultiplierCombo) {
+        int curIdx = m_sizeMultiplierCombo->currentIndex();
+        bool needChange = false;
+        if (curIdx == 0 && (sz < 0.1f || sz > 10.0f)) needChange = true;
+        else if (curIdx == 1 && (sz < 1.0f || sz > 100.0f)) needChange = true;
+        else if (curIdx == 2 && (sz < 5.0f || sz > 500.0f)) needChange = true;
+        else if (curIdx == 3 && (sz < 10.0f || sz > 1000.0f)) needChange = true;
+
+        if (needChange) {
+            int newIdx = 1;
+            if (sz <= 10.0f && sz < 1.0f) newIdx = 0;
+            else if (sz <= 100.0f) newIdx = 1;
+            else if (sz <= 500.0f) newIdx = 2;
+            else newIdx = 3;
+            m_sizeMultiplierCombo->setCurrentIndex(newIdx);
+            applySizeMultiplier(newIdx);
+        }
+    }
+    m_sizeScale->setValue(sz);
 }
 
 float ImageBrushSettingsWidget::minSizeRatio() const {

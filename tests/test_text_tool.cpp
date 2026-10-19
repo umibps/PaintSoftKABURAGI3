@@ -13,6 +13,10 @@
 #include "gui/TextSettingsWidget.hpp"
 #include "gui/ToolBoxWidget.hpp"
 #include "gui/LayerPanelWidget.hpp"
+#include "gui/BrushSettingsWidget.hpp"
+#include "gui/WatercolorSettingsWidget.hpp"
+#include "gui/CompositeBrushSettingsWidget.hpp"
+#include "gui/ImageBrushSettingsWidget.hpp"
 
 using namespace Kaburagi;
 
@@ -71,8 +75,10 @@ int main(int argc, char* argv[]) {
     srcItem.spikeRandomness = 45;
     srcItem.randomSeed = 88888;
     srcItem.customVertices = { QPointF(1, 2), QPointF(3, 4) };
+    srcItem.overflowMode = TextOverflowMode::Wrap;
 
     textSettings.setFromItem(srcItem);
+    assert(textSettings.overflowMode() == TextOverflowMode::Wrap);
     assert(textSettings.currentFont().family() == "Arial");
     assert(textSettings.fontSize() == 24);
     assert(textSettings.isBold() == true);
@@ -470,13 +476,77 @@ int main(int argc, char* argv[]) {
     assert(loadedSpike.outlineWidth == 5.0f);
     assert(loadedSpike.outlineColor == QColor(0, 0, 255));
     assert(loadedSpike.direction == WritingDirection::Vertical);
+    assert(loadedSpike.overflowMode == TextOverflowMode::Wrap);
 
     const auto& loadedCloud = loadedTextLayer->items()[1];
     assert(loadedCloud.shape == BalloonShape::Cloud);
     assert(loadedCloud.direction == WritingDirection::Horizontal);
+    assert(loadedCloud.overflowMode == TextOverflowMode::Overflow);
 
     delete loadedDoc;
     std::cout << "[PASS] DocumentSerializer correctly loaded speech balloon properties!" << std::endl;
+
+    // 5. サイズ倍率設定テスト (BrushSettingsWidget, WatercolorSettingsWidget, CompositeBrushSettingsWidget, ImageBrushSettingsWidget)
+    std::cout << "[TEST] Testing Size Multiplier on tool widgets..." << std::endl;
+    {
+        BrushSettingsWidget bsw;
+        assert(std::abs(bsw.sizeMultiplier() - 1.0f) < 0.01f);
+        assert(bsw.brushSize() == 10.0f);
+
+        // x 0.1 に変更
+        bsw.setSizeMultiplier(0.1f);
+        assert(std::abs(bsw.sizeMultiplier() - 0.1f) < 0.01f);
+        assert(bsw.brushSize() == 10.0f); // 10.0 is upper limit of 0.1～10.0
+
+        bsw.setBrushSize(0.5f);
+        assert(std::abs(bsw.brushSize() - 0.5f) < 0.01f);
+
+        // x 5.0 に変更
+        bsw.setSizeMultiplier(5.0f);
+        assert(std::abs(bsw.sizeMultiplier() - 5.0f) < 0.01f);
+        // 0.5 was clamped to 5.0 min
+        assert(std::abs(bsw.brushSize() - 5.0f) < 0.01f);
+
+        // x 10.0 に変更
+        bsw.setSizeMultiplier(10.0f);
+        assert(std::abs(bsw.sizeMultiplier() - 10.0f) < 0.01f);
+        assert(std::abs(bsw.brushSize() - 10.0f) < 0.01f);
+
+        // 大きなサイズを設定した場合に自動で倍率が追従するかテスト
+        bsw.setSizeMultiplier(1.0f);
+        bsw.setBrushSize(800.0f);
+        assert(std::abs(bsw.sizeMultiplier() - 10.0f) < 0.01f);
+        assert(std::abs(bsw.brushSize() - 800.0f) < 0.01f);
+
+        // 小さなサイズを設定した場合に自動で倍率が追従するかテスト
+        bsw.setBrushSize(0.2f);
+        assert(std::abs(bsw.sizeMultiplier() - 0.1f) < 0.01f);
+        assert(std::abs(bsw.brushSize() - 0.2f) < 0.01f);
+    }
+
+    {
+        WatercolorSettingsWidget wsw;
+        assert(std::abs(wsw.sizeMultiplier() - 1.0f) < 0.01f);
+        wsw.setSizeMultiplier(5.0f);
+        assert(std::abs(wsw.sizeMultiplier() - 5.0f) < 0.01f);
+        wsw.setWatercolorSize(400.0f);
+        assert(std::abs(wsw.watercolorSize() - 400.0f) < 0.01f);
+    }
+
+    {
+        CompositeBrushSettingsWidget cbw;
+        assert(std::abs(cbw.sizeMultiplier() - 1.0f) < 0.01f);
+        cbw.setSizeMultiplier(10.0f);
+        assert(std::abs(cbw.sizeMultiplier() - 10.0f) < 0.01f);
+    }
+
+    {
+        ImageBrushSettingsWidget ibw;
+        assert(std::abs(ibw.sizeMultiplier() - 1.0f) < 0.01f);
+        ibw.setSizeMultiplier(0.1f);
+        assert(std::abs(ibw.sizeMultiplier() - 0.1f) < 0.01f);
+    }
+    std::cout << "[PASS] Size Multipliers work correctly on all brush widgets!" << std::endl;
 
     std::cout << "[ALL TEXT & BALLOON TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;

@@ -273,6 +273,15 @@ void TextSettingsWidget::setupUi() {
     vAlignRow->addWidget(m_btnAlignBottom);
     alignGroupLayout->addLayout(vAlignRow);
 
+    // 枠内表示・折り返し
+    alignGroupLayout->addSpacing(4);
+    alignGroupLayout->addWidget(new QLabel("枠内表示 / 折り返し:", alignGroup));
+    m_overflowCombo = new QComboBox(alignGroup);
+    m_overflowCombo->addItem("テキストを吹き出し/枠からはみ出して表示する", static_cast<int>(TextOverflowMode::Overflow));
+    m_overflowCombo->addItem("テキストが吹き出し/枠からはみ出る部分は表示しない", static_cast<int>(TextOverflowMode::Clip));
+    m_overflowCombo->addItem("テキストが吹き出し/枠からはみ出る場合は折り返す", static_cast<int>(TextOverflowMode::Wrap));
+    alignGroupLayout->addWidget(m_overflowCombo);
+
     textTabLayout->addWidget(alignGroup);
     textTabLayout->addStretch();
 
@@ -490,6 +499,7 @@ void TextSettingsWidget::setupUi() {
     connect(m_hAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
     connect(m_vAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
     connect(m_dirGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
+    connect(m_overflowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, onSettingsChanged);
 
     connect(m_shapeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, onSettingsChanged]() {
         updateSpecialShapeVisibility();
@@ -727,6 +737,22 @@ void TextSettingsWidget::setDirection(WritingDirection dir) {
     }
 }
 
+TextOverflowMode TextSettingsWidget::overflowMode() const {
+    if (m_overflowCombo) {
+        return static_cast<TextOverflowMode>(m_overflowCombo->currentData().toInt());
+    }
+    return TextOverflowMode::Overflow;
+}
+
+void TextSettingsWidget::setOverflowMode(TextOverflowMode mode) {
+    if (m_overflowCombo) {
+        int idx = m_overflowCombo->findData(static_cast<int>(mode));
+        if (idx >= 0) {
+            m_overflowCombo->setCurrentIndex(idx);
+        }
+    }
+}
+
 QColor TextSettingsWidget::textColor() const {
     return m_textColor;
 }
@@ -775,6 +801,7 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
     m_btnItalic->setChecked(item.font.italic());
     m_textColor = item.textColor;
     setDirection(item.direction);
+    setOverflowMode(item.overflowMode);
 
     // 2. 配置
     if (item.horizontalAlign == Qt::AlignHCenter) {
@@ -830,10 +857,11 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
 }
 
 void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
-    item.text = m_textEdit->toPlainText();
+    item.text = text();
     item.font = currentFont();
     item.textColor = textColor();
     item.direction = direction();
+    item.overflowMode = overflowMode();
     item.horizontalAlign = horizontalAlignment();
     item.verticalAlign = verticalAlignment();
 

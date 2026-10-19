@@ -84,6 +84,8 @@ public:
     void setConfig(const BrushConfig& cfg);
     void setBlendMode(BlendMode mode);
     void setBrushSize(float size);
+    float sizeMultiplier() const;
+    void setSizeMultiplier(float multiplier);
     void setMinSizeRatio(float ratio);
     void setBrushDensity(float density);
     void setAntialias(bool enabled);
@@ -105,6 +107,7 @@ public:
 signals:
     void blendModeChanged(BlendMode mode);
     void brushSizeChanged(float size);
+    void sizeMultiplierChanged(float multiplier);
     void minSizeChanged(float ratio);
     void densityChanged(float density);
     void antialiasChanged(bool enabled);
@@ -123,8 +126,10 @@ signals:
 
 private:
     void createSizePresetButton(float size, int row, int col, QGridLayout* grid);
+    void applySizeMultiplier(int index);
 
     QComboBox* m_blendCombo = nullptr;
+    QComboBox* m_sizeMultiplierCombo = nullptr;
     SpinScale* m_sizeScale = nullptr;
     SpinScale* m_minSizeScale = nullptr;
     SpinScale* m_densityScale = nullptr;

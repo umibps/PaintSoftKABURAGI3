@@ -38,8 +38,28 @@ BrushSettingsWidget::BrushSettingsWidget(QWidget* parent)
         }
     });
 
+    // 0.5 サイズ倍率設定
+    auto multLayout = new QHBoxLayout();
+    auto multLabel = new QLabel("サイズ倍率:", this);
+    multLabel->setStyleSheet("font-size: 11px;");
+    m_sizeMultiplierCombo = new QComboBox(this);
+    m_sizeMultiplierCombo->setStyleSheet("QComboBox { font-size: 11px; }");
+    m_sizeMultiplierCombo->addItem("x 0.1", 0.1);
+    m_sizeMultiplierCombo->addItem("x 1.0", 1.0);
+    m_sizeMultiplierCombo->addItem("x 5.0", 5.0);
+    m_sizeMultiplierCombo->addItem("x 10.0", 10.0);
+    m_sizeMultiplierCombo->setCurrentIndex(1); // default x 1.0
+    multLayout->addWidget(multLabel);
+    multLayout->addWidget(m_sizeMultiplierCombo, 1);
+    mainLayout->addLayout(multLayout);
+
+    connect(m_sizeMultiplierCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
+        applySizeMultiplier(idx);
+        emit sizeMultiplierChanged(sizeMultiplier());
+    });
+
     // 1. サイズ (GIMP風 SpinScale: ドラッグ、キー入力、上下ボタン、インラインラベル)
-    m_sizeScale = new SpinScale("サイズ", 0.5, 500.0, 0.5, 2, "", this);
+    m_sizeScale = new SpinScale("サイズ", 1.0, 100.0, 0.5, 1, "", this);
     m_sizeScale->setValue(10.0);
     mainLayout->addWidget(m_sizeScale);
 
@@ -175,13 +195,13 @@ void BrushSettingsWidget::createSizePresetButton(float size, int row, int col, Q
     grid->addWidget(btn, row, col);
 
     connect(btn, &QPushButton::clicked, this, [this, size]() {
-        m_sizeScale->setValue(size);
+        setBrushSize(size);
     });
 }
 
 void BrushSettingsWidget::setConfig(const BrushConfig& cfg) {
     setBlendMode(cfg.blendMode);
-    if (m_sizeScale) m_sizeScale->setValue(cfg.size);
+    setBrushSize(cfg.size);
     if (m_minSizeScale) m_minSizeScale->setValue(cfg.minSizeRatio * 100.0);
     if (m_densityScale) m_densityScale->setValue(cfg.density * 100.0);
     if (m_hardnessScale) m_hardnessScale->setValue(cfg.hardness);
@@ -201,6 +221,55 @@ void BrushSettingsWidget::setConfig(const BrushConfig& cfg) {
     setScatterScaleUpEnabled(cfg.scatterScaleUp);
 }
 
+void BrushSettingsWidget::applySizeMultiplier(int index) {
+    if (!m_sizeScale) return;
+    switch (index) {
+    case 0: // x 0.1: 0.1～10
+        m_sizeScale->setDecimals(2);
+        m_sizeScale->setStep(0.1);
+        m_sizeScale->setRange(0.1, 10.0);
+        break;
+    case 1: // x 1.0: 1～100
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(0.5);
+        m_sizeScale->setRange(1.0, 100.0);
+        break;
+    case 2: // x 5.0: 5～500
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(1.0);
+        m_sizeScale->setRange(5.0, 500.0);
+        break;
+    case 3: // x 10.0: 10～1000
+        m_sizeScale->setDecimals(1);
+        m_sizeScale->setStep(1.0);
+        m_sizeScale->setRange(10.0, 1000.0);
+        break;
+    default:
+        break;
+    }
+}
+
+float BrushSettingsWidget::sizeMultiplier() const {
+    if (m_sizeMultiplierCombo) {
+        return static_cast<float>(m_sizeMultiplierCombo->currentData().toDouble());
+    }
+    return 1.0f;
+}
+
+void BrushSettingsWidget::setSizeMultiplier(float multiplier) {
+    if (!m_sizeMultiplierCombo) return;
+    int idx = 1;
+    if (std::abs(multiplier - 0.1f) < 0.05f) idx = 0;
+    else if (std::abs(multiplier - 1.0f) < 0.05f) idx = 1;
+    else if (std::abs(multiplier - 5.0f) < 0.05f) idx = 2;
+    else if (std::abs(multiplier - 10.0f) < 0.05f) idx = 3;
+    if (m_sizeMultiplierCombo->currentIndex() != idx) {
+        m_sizeMultiplierCombo->setCurrentIndex(idx);
+    } else {
+        applySizeMultiplier(idx);
+    }
+}
+
 BlendMode BrushSettingsWidget::blendMode() const {
     if (!m_blendCombo || m_blendCombo->currentIndex() < 0) return BlendMode::Normal;
     return static_cast<BlendMode>(m_blendCombo->currentData().toInt());
@@ -215,7 +284,26 @@ void BrushSettingsWidget::setBlendMode(BlendMode mode) {
 }
 
 void BrushSettingsWidget::setBrushSize(float size) {
-    if (m_sizeScale) m_sizeScale->setValue(size);
+    if (!m_sizeScale) return;
+    if (m_sizeMultiplierCombo) {
+        int curIdx = m_sizeMultiplierCombo->currentIndex();
+        bool needChange = false;
+        if (curIdx == 0 && (size < 0.1f || size > 10.0f)) needChange = true;
+        else if (curIdx == 1 && (size < 1.0f || size > 100.0f)) needChange = true;
+        else if (curIdx == 2 && (size < 5.0f || size > 500.0f)) needChange = true;
+        else if (curIdx == 3 && (size < 10.0f || size > 1000.0f)) needChange = true;
+
+        if (needChange) {
+            int newIdx = 1;
+            if (size <= 10.0f && size < 1.0f) newIdx = 0;
+            else if (size <= 100.0f) newIdx = 1;
+            else if (size <= 500.0f) newIdx = 2;
+            else newIdx = 3;
+            m_sizeMultiplierCombo->setCurrentIndex(newIdx);
+            applySizeMultiplier(newIdx);
+        }
+    }
+    m_sizeScale->setValue(size);
 }
 
 void BrushSettingsWidget::setMinSizeRatio(float ratio) {

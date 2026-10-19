@@ -54,6 +54,8 @@ public:
     void setBlendMode(BlendMode mode);
     float brushSize() const;
     void setBrushSize(float sz);
+    float sizeMultiplier() const;
+    void setSizeMultiplier(float multiplier);
     float minSizeRatio() const;
     void setMinSizeRatio(float r);
     int spacing() const;
@@ -101,6 +103,7 @@ public:
 signals:
     void blendModeChanged(BlendMode mode);
     void brushSizeChanged(float size);
+    void sizeMultiplierChanged(float multiplier);
     void minSizeChanged(float ratio);
     void spacingChanged(int spacing);
     void densityChanged(float density);
@@ -131,9 +134,11 @@ private:
     void updateRandomRotateVisibility();
     void updateRandomSizeVisibility();
     void selectImageByName(const QString& name);
+    void applySizeMultiplier(int index);
 
     // UIパーツ
     QComboBox* m_blendCombo = nullptr;
+    QComboBox* m_sizeMultiplierCombo = nullptr;
     SpinScale* m_sizeScale = nullptr;
     SpinScale* m_minSizeScale = nullptr;
     SpinScale* m_spacingScale = nullptr;

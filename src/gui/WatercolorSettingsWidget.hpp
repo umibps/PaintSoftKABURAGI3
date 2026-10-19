@@ -94,6 +94,8 @@ public:
     void setConfig(const WatercolorConfig& cfg);
     void setBlendMode(BlendMode mode);
     void setWatercolorSize(float size);
+    float sizeMultiplier() const;
+    void setSizeMultiplier(float multiplier);
     void setMinSizeRatio(float ratio);
     void setWatercolorDensity(float density);
     void setHardness(int hardness);
@@ -117,6 +119,7 @@ signals:
     void blendModeChanged(BlendMode mode);
     void watercolorSizeChanged(float size);
     void sizeChanged(float size);
+    void sizeMultiplierChanged(float multiplier);
     void minSizeChanged(float ratio);
     void densityChanged(float density);
     void hardnessChanged(int hardness);
@@ -138,8 +141,10 @@ signals:
 
 private:
     void createSizePresetButton(float size, int row, int col, QGridLayout* grid);
+    void applySizeMultiplier(int index);
 
     QComboBox* m_blendCombo = nullptr;
+    QComboBox* m_sizeMultiplierCombo = nullptr;
     SpinScale* m_sizeScale = nullptr;
     SpinScale* m_minSizeScale = nullptr;
     SpinScale* m_densityScale = nullptr;

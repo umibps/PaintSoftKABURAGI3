@@ -105,6 +105,8 @@ public:
     void setBlendMode(BlendMode mode);
     void setReferenceMode(CompositeBrushReference ref);
     void setCompositeBrushSize(float size);
+    float sizeMultiplier() const;
+    void setSizeMultiplier(float multiplier);
     void setMinSizeRatio(float ratio);
     void setCompositeBrushDensity(float density);
     void setHardness(int hardness);
@@ -129,6 +131,7 @@ signals:
     void referenceModeChanged(CompositeBrushReference ref);
     void compositeBrushSizeChanged(float size);
     void sizeChanged(float size);
+    void sizeMultiplierChanged(float multiplier);
     void minSizeChanged(float ratio);
     void densityChanged(float density);
     void hardnessChanged(int hardness);
@@ -150,8 +153,10 @@ signals:
 
 private:
     void createSizePresetButton(float size, int row, int col, QGridLayout* grid);
+    void applySizeMultiplier(int index);
 
     QComboBox* m_blendCombo = nullptr;
+    QComboBox* m_sizeMultiplierCombo = nullptr;
     QRadioButton* m_canvasRadio = nullptr;
     QRadioButton* m_layerBelowRadio = nullptr;
     QButtonGroup* m_refGroup = nullptr;

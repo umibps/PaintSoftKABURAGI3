@@ -322,6 +322,149 @@ std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal base
 
 namespace {
 
+static std::vector<std::vector<FormattedToken>> wrapHorizontalTokens(
+    const std::vector<FormattedToken>& tokens,
+    qreal maxWidth,
+    const QFont& baseFont)
+{
+    if (maxWidth <= 1.0) {
+        return { tokens };
+    }
+
+    std::vector<std::vector<FormattedToken>> result;
+    std::vector<FormattedToken> currentLine;
+    qreal currentLineWidth = 0.0;
+
+    for (const auto& tok : tokens) {
+        QFont tokFont = getEffectiveFont(baseFont, tok.style);
+        QFontMetricsF fm(tokFont);
+
+        if (tok.hasRuby) {
+            QFont rubyFont = tokFont;
+            qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+            if (ps <= 0) ps = 12.0;
+            rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+            QFontMetricsF rfm(rubyFont);
+            qreal bw = fm.horizontalAdvance(tok.baseText);
+            qreal rw = rfm.horizontalAdvance(tok.rubyText);
+            qreal tw = std::max(bw, rw);
+
+            if (currentLineWidth + tw > maxWidth && !currentLine.empty()) {
+                result.push_back(std::move(currentLine));
+                currentLine.clear();
+                currentLineWidth = 0.0;
+            }
+            currentLine.push_back(tok);
+            currentLineWidth += tw;
+        } else {
+            FormattedToken curSubTok;
+            curSubTok.style = tok.style;
+            curSubTok.hasRuby = false;
+
+            for (int ci = 0; ci < tok.baseText.length(); ++ci) {
+                QChar ch = tok.baseText[ci];
+                qreal cw = fm.horizontalAdvance(ch);
+
+                if (currentLineWidth + cw > maxWidth && (!currentLine.empty() || !curSubTok.baseText.isEmpty())) {
+                    if (!curSubTok.baseText.isEmpty()) {
+                        currentLine.push_back(curSubTok);
+                        curSubTok.baseText.clear();
+                    }
+                    result.push_back(std::move(currentLine));
+                    currentLine.clear();
+                    currentLineWidth = 0.0;
+                }
+                curSubTok.baseText.append(ch);
+                currentLineWidth += cw;
+            }
+
+            if (!curSubTok.baseText.isEmpty()) {
+                currentLine.push_back(curSubTok);
+            }
+        }
+    }
+
+    if (!currentLine.empty()) {
+        result.push_back(std::move(currentLine));
+    } else if (result.empty()) {
+        result.push_back({});
+    }
+
+    return result;
+}
+
+static std::vector<std::vector<FormattedToken>> wrapVerticalTokens(
+    const std::vector<FormattedToken>& tokens,
+    qreal maxHeight,
+    const QFont& baseFont)
+{
+    if (maxHeight <= 1.0) {
+        return { tokens };
+    }
+
+    std::vector<std::vector<FormattedToken>> result;
+    std::vector<FormattedToken> currentCol;
+    qreal currentColHeight = 0.0;
+
+    for (const auto& tok : tokens) {
+        QFont tokFont = getEffectiveFont(baseFont, tok.style);
+        QFontMetricsF fm(tokFont);
+        qreal charSpacing = fm.height();
+
+        if (tok.hasRuby) {
+            QFont rubyFont = tokFont;
+            qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+            if (ps <= 0) ps = 12.0;
+            rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+            QFontMetricsF rfm(rubyFont);
+            qreal rubyCharSpacing = rfm.height();
+
+            qreal bh = tok.baseText.length() * charSpacing;
+            qreal rh = tok.rubyText.length() * rubyCharSpacing;
+            qreal th = std::max(bh, rh);
+
+            if (currentColHeight + th > maxHeight && !currentCol.empty()) {
+                result.push_back(std::move(currentCol));
+                currentCol.clear();
+                currentColHeight = 0.0;
+            }
+            currentCol.push_back(tok);
+            currentColHeight += th;
+        } else {
+            FormattedToken curSubTok;
+            curSubTok.style = tok.style;
+            curSubTok.hasRuby = false;
+
+            for (int ci = 0; ci < tok.baseText.length(); ++ci) {
+                QChar ch = tok.baseText[ci];
+                if (currentColHeight + charSpacing > maxHeight && (!currentCol.empty() || !curSubTok.baseText.isEmpty())) {
+                    if (!curSubTok.baseText.isEmpty()) {
+                        currentCol.push_back(curSubTok);
+                        curSubTok.baseText.clear();
+                    }
+                    result.push_back(std::move(currentCol));
+                    currentCol.clear();
+                    currentColHeight = 0.0;
+                }
+                curSubTok.baseText.append(ch);
+                currentColHeight += charSpacing;
+            }
+
+            if (!curSubTok.baseText.isEmpty()) {
+                currentCol.push_back(curSubTok);
+            }
+        }
+    }
+
+    if (!currentCol.empty()) {
+        result.push_back(std::move(currentCol));
+    } else if (result.empty()) {
+        result.push_back({});
+    }
+
+    return result;
+}
+
 void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& textRect, QPainter& painter) {
     qreal basePointSize = item.font.pointSizeF() > 0 ? item.font.pointSizeF() : static_cast<qreal>(item.font.pixelSize());
     if (basePointSize <= 0) basePointSize = 12.0;
@@ -329,16 +472,28 @@ void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& tex
     QStringList lines = item.text.split(QLatin1Char('\n'));
     if (lines.isEmpty()) return;
 
-    std::vector<std::vector<FormattedToken>> parsedLines(lines.size());
-    std::vector<bool> lineHasRuby(lines.size(), false);
-    std::vector<qreal> lineHeights(lines.size(), 0.0);
-    std::vector<qreal> maxAscents(lines.size(), 0.0);
-    std::vector<qreal> maxRubyHeights(lines.size(), 0.0);
-    std::vector<qreal> maxRubyAscents(lines.size(), 0.0);
+    std::vector<std::vector<FormattedToken>> parsedLines;
+    for (int l = 0; l < lines.size(); ++l) {
+        auto tokens = parseFormattedTokens(lines[l], basePointSize);
+        if (item.overflowMode == TextOverflowMode::Wrap) {
+            auto wrapped = wrapHorizontalTokens(tokens, textRect.width(), item.font);
+            for (auto& wl : wrapped) {
+                parsedLines.push_back(std::move(wl));
+            }
+        } else {
+            parsedLines.push_back(std::move(tokens));
+        }
+    }
+    if (parsedLines.empty()) return;
+
+    std::vector<bool> lineHasRuby(parsedLines.size(), false);
+    std::vector<qreal> lineHeights(parsedLines.size(), 0.0);
+    std::vector<qreal> maxAscents(parsedLines.size(), 0.0);
+    std::vector<qreal> maxRubyHeights(parsedLines.size(), 0.0);
+    std::vector<qreal> maxRubyAscents(parsedLines.size(), 0.0);
     qreal totalHeight = 0.0;
 
-    for (int l = 0; l < lines.size(); ++l) {
-        parsedLines[l] = parseFormattedTokens(lines[l], basePointSize);
+    for (size_t l = 0; l < parsedLines.size(); ++l) {
         bool hasRuby = false;
         qreal maxA = 0.0;
         qreal maxD = 0.0;
@@ -468,15 +623,27 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
     QStringList lines = item.text.split(QLatin1Char('\n'));
     if (lines.isEmpty()) return;
 
-    std::vector<std::vector<FormattedToken>> parsedLines(lines.size());
-    std::vector<bool> lineHasRuby(lines.size(), false);
-    std::vector<qreal> colWidths(lines.size(), 0.0);
-    std::vector<qreal> colBaseWidths(lines.size(), 0.0);
-    std::vector<qreal> colRubyWidths(lines.size(), 0.0);
+    std::vector<std::vector<FormattedToken>> parsedLines;
+    for (int l = 0; l < lines.size(); ++l) {
+        auto tokens = parseFormattedTokens(lines[l], basePointSize);
+        if (item.overflowMode == TextOverflowMode::Wrap) {
+            auto wrapped = wrapVerticalTokens(tokens, textRect.height(), item.font);
+            for (auto& wc : wrapped) {
+                parsedLines.push_back(std::move(wc));
+            }
+        } else {
+            parsedLines.push_back(std::move(tokens));
+        }
+    }
+    if (parsedLines.empty()) return;
+
+    std::vector<bool> lineHasRuby(parsedLines.size(), false);
+    std::vector<qreal> colWidths(parsedLines.size(), 0.0);
+    std::vector<qreal> colBaseWidths(parsedLines.size(), 0.0);
+    std::vector<qreal> colRubyWidths(parsedLines.size(), 0.0);
     qreal totalColumnsWidth = 0.0;
 
-    for (int l = 0; l < lines.size(); ++l) {
-        parsedLines[l] = parseFormattedTokens(lines[l], basePointSize);
+    for (size_t l = 0; l < parsedLines.size(); ++l) {
         bool hasRuby = false;
         qreal maxColBaseW = 0.0;
         qreal maxRubyColW = 0.0;
@@ -861,6 +1028,14 @@ void TextLayer::renderItem(const TextBalloonItem& item, QPainter& painter) {
         if (item.shape != BalloonShape::None) {
             float pad = item.frameWidth + 6.0f;
             textRect.adjust(pad, pad, -pad, -pad);
+        }
+
+        if (item.overflowMode == TextOverflowMode::Clip || item.overflowMode == TextOverflowMode::Wrap) {
+            if (item.shape != BalloonShape::None) {
+                painter.setClipPath(path);
+            } else {
+                painter.setClipRect(item.rect);
+            }
         }
 
         if (item.direction == WritingDirection::Vertical) {

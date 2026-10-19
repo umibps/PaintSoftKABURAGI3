@@ -45,6 +45,12 @@ enum class WritingDirection {
     Vertical = 1    // 縦書き
 };
 
+enum class TextOverflowMode {
+    Overflow = 0, // テキストを吹き出し/枠からはみ出して表示する
+    Clip = 1,     // テキストが吹き出し/枠からはみ出る部分は表示しない
+    Wrap = 2      // テキストが吹き出し/枠からはみ出る場合は折り返す
+};
+
 struct TextBalloonItem {
     QString id;
     QRectF rect;                  // 吹き出し本体の矩形 (キャンバス座標)
@@ -56,6 +62,7 @@ struct TextBalloonItem {
     float frameWidth = 3.0f;      // 枠線の太さ
     BalloonShape shape = BalloonShape::Ellipse; // 形状
     WritingDirection direction = WritingDirection::Horizontal; // 書字方向 (横書き / 縦書き)
+    TextOverflowMode overflowMode = TextOverflowMode::Overflow; // はみ出し・折り返しモード
 
     // しっぽパラメータ
     bool hasTail = true;          // しっぽの有無
