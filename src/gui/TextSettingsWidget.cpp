@@ -66,9 +66,10 @@ void TextSettingsWidget::setupUi() {
     m_spinInlineSize = new QSpinBox(textGroup);
     m_spinInlineSize->setRange(6, 300);
     m_spinInlineSize->setValue(24);
-    m_spinInlineSize->setSuffix("pt");
+    m_spinInlineSize->setSuffix(" pt");
     m_spinInlineSize->setToolTip("選択部分の文字サイズ");
-    m_spinInlineSize->setFixedWidth(56);
+    m_spinInlineSize->setFixedWidth(78);
+    m_spinInlineSize->setMinimumWidth(75);
 
     m_btnInlineSize = new QPushButton("サイズ", textGroup);
     m_btnInlineSize->setToolTip("選択部分に文字サイズを適用する (<size=24>...</size>)");
@@ -84,11 +85,33 @@ void TextSettingsWidget::setupUi() {
     inlineToolbarLayout->addWidget(m_spinInlineSize);
     inlineToolbarLayout->addWidget(m_btnInlineSize);
     inlineToolbarLayout->addWidget(m_btnInlineRuby);
+    inlineToolbarLayout->addSpacing(4);
+
+    // タグあり / タグなし 表示切り替え
+    m_tagViewModeGroup = new QButtonGroup(textGroup);
+    m_btnShowTags = new QPushButton("タグあり", textGroup);
+    m_btnShowTags->setCheckable(true);
+    m_btnShowTags->setChecked(true);
+    m_btnShowTags->setToolTip("タグ（<b>や<color>等）を表示して直接編集します");
+    m_btnShowTags->setFixedWidth(56);
+    m_btnShowTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+
+    m_btnHideTags = new QPushButton("タグなし", textGroup);
+    m_btnHideTags->setCheckable(true);
+    m_btnHideTags->setToolTip("タグを非表示にし、装飾（太字・文字色・サイズ・ルビ）をプレビュー表示します");
+    m_btnHideTags->setFixedWidth(56);
+    m_btnHideTags->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+
+    m_tagViewModeGroup->addButton(m_btnShowTags, 0);
+    m_tagViewModeGroup->addButton(m_btnHideTags, 1);
+
+    inlineToolbarLayout->addWidget(m_btnShowTags);
+    inlineToolbarLayout->addWidget(m_btnHideTags);
     inlineToolbarLayout->addStretch(1);
 
     textGroupLayout->addLayout(inlineToolbarLayout);
 
-    m_textEdit = new QPlainTextEdit(textGroup);
+    m_textEdit = new QTextEdit(textGroup);
     m_textEdit->setPlaceholderText("テキストを入力...\n※ツールバーのボタンで太字・文字色・サイズ・ルビを挿入可能");
     m_textEdit->setMinimumHeight(60);
     textGroupLayout->addWidget(m_textEdit);
@@ -112,6 +135,7 @@ void TextSettingsWidget::setupUi() {
     m_fontSizeSpin->setRange(6, 300);
     m_fontSizeSpin->setValue(24);
     m_fontSizeSpin->setSuffix(" pt");
+    m_fontSizeSpin->setMinimumWidth(75);
     sizeStyleLayout->addWidget(m_fontSizeSpin, 1);
 
     m_btnBold = new QPushButton("B", fontGroup);
@@ -391,10 +415,17 @@ void TextSettingsWidget::setupUi() {
         }
     };
 
-    connect(m_textEdit, &QPlainTextEdit::textChanged, this, [this]() {
+    connect(m_textEdit, &QTextEdit::textChanged, this, [this]() {
         if (!m_updatingUi) {
-            emit textChanged(m_textEdit->toPlainText());
+            if (!m_hideTags) {
+                m_rawText = m_textEdit->toPlainText();
+            }
+            emit textChanged(m_rawText);
         }
+    });
+
+    connect(m_tagViewModeGroup, &QButtonGroup::idClicked, this, [this](int id) {
+        setHideTags(id == 1);
     });
 
     connect(m_btnInlineBold, &QPushButton::clicked, this, &TextSettingsWidget::onInlineBoldClicked);
@@ -545,13 +576,30 @@ Qt::Alignment TextSettingsWidget::verticalAlignment() const {
 }
 
 QString TextSettingsWidget::text() const {
-    return m_textEdit->toPlainText();
+    if (!m_hideTags && m_textEdit) {
+        return m_textEdit->toPlainText();
+    }
+    return m_rawText;
 }
 
 void TextSettingsWidget::setText(const QString& text) {
-    m_updatingUi = true;
-    m_textEdit->setPlainText(text);
-    m_updatingUi = false;
+    m_rawText = text;
+    updateTextDisplay();
+}
+
+void TextSettingsWidget::setHideTags(bool hide) {
+    if (m_hideTags == hide) return;
+    if (!m_hideTags && m_textEdit) {
+        m_rawText = m_textEdit->toPlainText();
+    }
+    m_hideTags = hide;
+    if (m_btnShowTags && m_btnHideTags) {
+        m_updatingUi = true;
+        m_btnShowTags->setChecked(!hide);
+        m_btnHideTags->setChecked(hide);
+        m_updatingUi = false;
+    }
+    updateTextDisplay();
 }
 
 BalloonShape TextSettingsWidget::balloonShape() const {
@@ -730,12 +778,66 @@ void TextSettingsWidget::focusTextEdit() {
     if (m_tabWidget) {
         m_tabWidget->setCurrentIndex(0);
     }
+    if (m_hideTags) {
+        setHideTags(false);
+    }
     m_textEdit->setFocus();
     m_textEdit->selectAll();
 }
 
+void TextSettingsWidget::updateTextDisplay() {
+    m_updatingUi = true;
+    if (m_hideTags) {
+        m_textEdit->setHtml(convertTagsToHtml(m_rawText));
+        m_textEdit->setReadOnly(true);
+    } else {
+        m_textEdit->setPlainText(m_rawText);
+        m_textEdit->setReadOnly(false);
+    }
+    m_updatingUi = false;
+}
+
+QString TextSettingsWidget::convertTagsToHtml(const QString& rawText) const {
+    QStringList lines = rawText.split(QLatin1Char('\n'));
+    QString html;
+    qreal basePt = fontSize();
+
+    for (int l = 0; l < lines.size(); ++l) {
+        if (l > 0) html += "<br>";
+        auto tokens = parseFormattedTokens(lines[l], basePt);
+        for (const auto& tok : tokens) {
+            QString spanStyle;
+            if (tok.style.color.has_value()) {
+                spanStyle += QString("color:%1;").arg(tok.style.color->name(QColor::HexRgb));
+            }
+            if (tok.style.fontSize.has_value()) {
+                spanStyle += QString("font-size:%1pt;").arg(*tok.style.fontSize);
+            }
+
+            QString content = tok.baseText.toHtmlEscaped();
+            if (tok.style.bold) content = "<b>" + content + "</b>";
+            if (tok.style.italic) content = "<i>" + content + "</i>";
+
+            if (!spanStyle.isEmpty()) {
+                content = QString("<span style=\"%1\">%2</span>").arg(spanStyle, content);
+            }
+
+            if (tok.hasRuby && !tok.rubyText.isEmpty()) {
+                QString rubyEscaped = tok.rubyText.toHtmlEscaped();
+                content += QString("<span style=\"font-size:70%;vertical-align:super;color:#888888;\">(%1)</span>").arg(rubyEscaped);
+            }
+
+            html += content;
+        }
+    }
+    return html;
+}
+
 void TextSettingsWidget::wrapSelectionWithTags(const QString& openTag, const QString& closeTag) {
     if (!m_textEdit) return;
+    if (m_hideTags) {
+        setHideTags(false);
+    }
     QTextCursor cursor = m_textEdit->textCursor();
     if (cursor.hasSelection()) {
         QString selected = cursor.selectedText();
@@ -771,6 +873,9 @@ void TextSettingsWidget::onInlineSizeClicked() {
 
 void TextSettingsWidget::onInlineRubyClicked() {
     if (!m_textEdit) return;
+    if (m_hideTags) {
+        setHideTags(false);
+    }
     QTextCursor cursor = m_textEdit->textCursor();
     QString selected = cursor.selectedText();
     bool ok = false;

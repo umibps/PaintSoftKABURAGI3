@@ -55,24 +55,6 @@ int TextLayer::findItemAt(const QPointF& docPos) const {
 
 namespace {
 
-struct InlineStyle {
-    bool bold = false;
-    bool italic = false;
-    std::optional<QColor> color;
-    std::optional<qreal> fontSize; // pt
-
-    bool operator==(const InlineStyle& o) const {
-        return bold == o.bold && italic == o.italic && color == o.color && fontSize == o.fontSize;
-    }
-};
-
-struct FormattedToken {
-    QString baseText;
-    QString rubyText;
-    bool hasRuby = false;
-    InlineStyle style;
-};
-
 struct StyleContext {
     std::vector<bool> boldStack;
     std::vector<bool> italicStack;
@@ -131,6 +113,8 @@ bool shouldRotateVertical(QChar c) {
         ":;：；");
     return rotateChars.contains(c);
 }
+
+} // namespace
 
 std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal basePointSize) {
     std::vector<FormattedToken> tokens;
@@ -299,6 +283,8 @@ std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal base
 
     return tokens;
 }
+
+namespace {
 
 void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& textRect, QPainter& painter) {
     qreal basePointSize = item.font.pointSizeF() > 0 ? item.font.pointSizeF() : static_cast<qreal>(item.font.pixelSize());

@@ -6,7 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QButtonGroup>
-#include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QComboBox>
 #include <QCheckBox>
 #include <QSlider>
@@ -43,6 +43,10 @@ public:
 
     QString text() const;
     void setText(const QString& text);
+
+    // タグ表示モード (タグあり / タグなし)
+    bool isHideTags() const { return m_hideTags; }
+    void setHideTags(bool hide);
 
     // 吹き出し属性
     BalloonShape balloonShape() const;
@@ -83,6 +87,8 @@ private:
     void onInlineColorClicked();
     void onInlineSizeClicked();
     void onInlineRubyClicked();
+    QString convertTagsToHtml(const QString& rawText) const;
+    void updateTextDisplay();
 
     QTabWidget* m_tabWidget = nullptr;
 
@@ -93,7 +99,14 @@ private:
     QSpinBox* m_spinInlineSize = nullptr;
     QPushButton* m_btnInlineSize = nullptr;
     QPushButton* m_btnInlineRuby = nullptr;
-    QPlainTextEdit* m_textEdit = nullptr;
+
+    QButtonGroup* m_tagViewModeGroup = nullptr;
+    QPushButton* m_btnShowTags = nullptr;
+    QPushButton* m_btnHideTags = nullptr;
+    bool m_hideTags = false;
+    QString m_rawText;
+
+    QTextEdit* m_textEdit = nullptr;
 
     // 2. フォント設定
     QFontComboBox* m_fontCombo = nullptr;

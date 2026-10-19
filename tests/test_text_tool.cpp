@@ -4,6 +4,7 @@
 #include <QTemporaryFile>
 #include <QDir>
 #include <QPainter>
+#include <QTextEdit>
 #include "core/Document.hpp"
 #include "core/TextLayer.hpp"
 #include "core/DocumentSerializer.hpp"
@@ -113,7 +114,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[PASS] TextSettingsWidget setFromItem & tab separation work!" << std::endl;
 
     // 入力支援ボタンの検証 (太字、斜体、サイズタグの挿入)
-    auto textEdit = textSettings.findChild<QPlainTextEdit*>();
+    auto textEdit = textSettings.findChild<QTextEdit*>();
     assert(textEdit != nullptr);
     textEdit->setPlainText("Hello World");
     QTextCursor cur = textEdit->textCursor();
@@ -127,14 +128,20 @@ int main(int argc, char* argv[]) {
     QPushButton* btnInlineBold = nullptr;
     QPushButton* btnInlineItalic = nullptr;
     QPushButton* btnInlineSize = nullptr;
+    QPushButton* btnShowTags = nullptr;
+    QPushButton* btnHideTags = nullptr;
     for (auto btn : inlineButtons) {
         if (btn->text() == "B" && btn->toolTip().contains("<b>")) btnInlineBold = btn;
         else if (btn->text() == "I" && btn->toolTip().contains("<i>")) btnInlineItalic = btn;
         else if (btn->text() == "サイズ") btnInlineSize = btn;
+        else if (btn->text() == "タグあり") btnShowTags = btn;
+        else if (btn->text() == "タグなし") btnHideTags = btn;
     }
     assert(btnInlineBold != nullptr);
     assert(btnInlineItalic != nullptr);
     assert(btnInlineSize != nullptr);
+    assert(btnShowTags != nullptr);
+    assert(btnHideTags != nullptr);
 
     btnInlineBold->click();
     assert(textEdit->toPlainText() == "Hello <b>World</b>");
@@ -146,7 +153,21 @@ int main(int argc, char* argv[]) {
     btnInlineItalic->click();
     assert(textEdit->toPlainText() == "<i>Hello</i> <b>World</b>");
 
-    std::cout << "[PASS] TextSettingsWidget inline formatting buttons work!" << std::endl;
+    // タグあり / タグなし 表示切り替えの検証
+    assert(textSettings.isHideTags() == false);
+    btnHideTags->click();
+    assert(textSettings.isHideTags() == true);
+    assert(textEdit->isReadOnly() == true);
+    // text() は生テキストを保持していること
+    assert(textSettings.text() == "<i>Hello</i> <b>World</b>");
+
+    // 再びタグあり表示に切り替え
+    btnShowTags->click();
+    assert(textSettings.isHideTags() == false);
+    assert(textEdit->isReadOnly() == false);
+    assert(textEdit->toPlainText() == "<i>Hello</i> <b>World</b>");
+
+    std::cout << "[PASS] TextSettingsWidget inline formatting & tag view mode work!" << std::endl;
 
     // applyToItemの検証
     TextBalloonItem targetItem;

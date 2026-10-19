@@ -7,8 +7,29 @@
 #include <QColor>
 #include <QPointF>
 #include <vector>
+#include <optional>
 
 namespace Kaburagi {
+
+struct InlineStyle {
+    bool bold = false;
+    bool italic = false;
+    std::optional<QColor> color;
+    std::optional<qreal> fontSize; // pt
+
+    bool operator==(const InlineStyle& o) const {
+        return bold == o.bold && italic == o.italic && color == o.color && fontSize == o.fontSize;
+    }
+};
+
+struct FormattedToken {
+    QString baseText;
+    QString rubyText;
+    bool hasRuby = false;
+    InlineStyle style;
+};
+
+std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal basePointSize);
 
 enum class BalloonShape {
     Ellipse,      // 楕円吹き出し
