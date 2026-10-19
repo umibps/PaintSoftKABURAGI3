@@ -11,9 +11,12 @@
 #include <QCheckBox>
 #include <QSlider>
 #include <QLabel>
+#include <QTabWidget>
 #include "TextLayer.hpp"
 
 namespace Kaburagi {
+
+enum class ToolType;
 
 class TextSettingsWidget : public QWidget {
     Q_OBJECT
@@ -21,11 +24,16 @@ public:
     explicit TextSettingsWidget(QWidget* parent = nullptr);
     ~TextSettingsWidget() override = default;
 
+    void setToolType(ToolType tool);
+
     // テキスト属性
     QFont currentFont() const;
     int fontSize() const;
     bool isBold() const;
     bool isItalic() const;
+
+    QColor textColor() const;
+    void setTextColor(const QColor& color);
 
     Qt::Alignment horizontalAlignment() const;
     Qt::Alignment verticalAlignment() const;
@@ -66,6 +74,8 @@ private:
     void updateColorButtons();
     void updateSpecialShapeVisibility();
 
+    QTabWidget* m_tabWidget = nullptr;
+
     // 1. テキスト入力
     QPlainTextEdit* m_textEdit = nullptr;
 
@@ -74,6 +84,7 @@ private:
     QSpinBox* m_fontSizeSpin = nullptr;
     QPushButton* m_btnBold = nullptr;
     QPushButton* m_btnItalic = nullptr;
+    QPushButton* m_btnTextColor = nullptr;
 
     // 3. 配置
     QButtonGroup* m_hAlignGroup = nullptr;
@@ -113,6 +124,7 @@ private:
     QDoubleSpinBox* m_outlineWidthSpin = nullptr;
     QPushButton* m_btnOutlineColor = nullptr;
 
+    QColor m_textColor{Qt::black};
     QColor m_frameColor{Qt::black};
     QColor m_fillColor{Qt::white};
     QColor m_outlineColor{Qt::white};

@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
     srcItem.hasTail = true;
     srcItem.tailBaseWidth = 30.0f;
     srcItem.tailCurvature = 50.0f;
+    srcItem.textColor = QColor(10, 20, 30);
     srcItem.frameWidth = 4.0f;
     srcItem.frameColor = QColor(255, 0, 0);
     srcItem.fillColor = QColor(255, 255, 200);
@@ -69,6 +70,7 @@ int main(int argc, char* argv[]) {
     assert(textSettings.fontSize() == 24);
     assert(textSettings.isBold() == true);
     assert(textSettings.isItalic() == false);
+    assert(textSettings.textColor() == QColor(10, 20, 30));
     assert(textSettings.horizontalAlignment() == Qt::AlignHCenter);
     assert(textSettings.verticalAlignment() == Qt::AlignVCenter);
     assert(textSettings.text() == "テスト本文");
@@ -85,13 +87,27 @@ int main(int argc, char* argv[]) {
     assert(textSettings.hasOutline() == true);
     assert(textSettings.outlineWidth() == 5.0f);
     assert(textSettings.outlineColor() == QColor(0, 0, 255));
-    std::cout << "[PASS] TextSettingsWidget setFromItem works with all balloon properties!" << std::endl;
+
+    // タブ分離 & setToolTypeの検証
+    auto tabWidget = textSettings.findChild<QTabWidget*>();
+    assert(tabWidget != nullptr);
+    assert(tabWidget->count() == 2);
+    assert(tabWidget->tabText(0) == "テキスト");
+    assert(tabWidget->tabText(1) == "吹き出し");
+
+    textSettings.setToolType(ToolType::Text);
+    assert(tabWidget->currentIndex() == 0);
+    textSettings.setToolType(ToolType::TextBalloon);
+    assert(tabWidget->currentIndex() == 1);
+
+    std::cout << "[PASS] TextSettingsWidget setFromItem & tab separation work!" << std::endl;
 
     // applyToItemの検証
     TextBalloonItem targetItem;
     textSettings.applyToItem(targetItem);
     assert(targetItem.font.family() == "Arial");
     assert(targetItem.font.pointSize() == 24);
+    assert(targetItem.textColor == QColor(10, 20, 30));
     assert(targetItem.shape == BalloonShape::Spike);
     assert(targetItem.spikeCount() == 20 || targetItem.spikeCount == 20);
     assert(targetItem.hasOutline == true);

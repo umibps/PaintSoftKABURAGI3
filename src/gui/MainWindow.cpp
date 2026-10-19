@@ -3727,6 +3727,9 @@ void MainWindow::updateLayerTools() {
                         m_toolSettingsStack->setCurrentWidget(m_vectorPressureSettings);
                     }
                 } else if (m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon) {
+                    if (m_textSettings) {
+                        m_textSettings->setToolType(m_currentTool);
+                    }
                     m_toolSettingsStack->setCurrentWidget(m_textSettings);
                 } else if (activeL->type() == LayerType::ThreeD) {
                     auto threeD = dynamic_cast<ThreeDLayer*>(activeL.get());
@@ -3826,6 +3829,9 @@ void MainWindow::onToolChanged(ToolType tool) {
         } else if (tool == ToolType::LayerSelect) {
             m_toolSettingsStack->setCurrentWidget(m_layerSelectSettings);
         } else if (tool == ToolType::Text || tool == ToolType::TextBalloon) {
+            if (m_textSettings) {
+                m_textSettings->setToolType(tool);
+            }
             m_toolSettingsStack->setCurrentWidget(m_textSettings);
         } else if (tool == ToolType::PanelFrame || tool == ToolType::PanelSplit) {
             if (m_panelSettings) {

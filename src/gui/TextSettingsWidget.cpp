@@ -1,4 +1,5 @@
 #include "TextSettingsWidget.hpp"
+#include "ToolBoxWidget.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -13,13 +14,31 @@ TextSettingsWidget::TextSettingsWidget(QWidget* parent)
     setupUi();
 }
 
+void TextSettingsWidget::setToolType(ToolType tool) {
+    if (tool == ToolType::TextBalloon) {
+        if (m_tabWidget) m_tabWidget->setCurrentIndex(1);
+    } else if (tool == ToolType::Text) {
+        if (m_tabWidget) m_tabWidget->setCurrentIndex(0);
+    }
+}
+
 void TextSettingsWidget::setupUi() {
     auto mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(4, 4, 4, 4);
-    mainLayout->setSpacing(6);
+    mainLayout->setContentsMargins(2, 2, 2, 2);
+    mainLayout->setSpacing(4);
+
+    m_tabWidget = new QTabWidget(this);
+
+    // ==========================================
+    // タブ 1: テキスト設定 (入力・フォント・配置)
+    // ==========================================
+    auto textTab = new QWidget(m_tabWidget);
+    auto textTabLayout = new QVBoxLayout(textTab);
+    textTabLayout->setContentsMargins(4, 6, 4, 4);
+    textTabLayout->setSpacing(6);
 
     // 1. テキスト入力エリア
-    auto textGroup = new QGroupBox("テキスト入力", this);
+    auto textGroup = new QGroupBox("テキスト入力", textTab);
     auto textGroupLayout = new QVBoxLayout(textGroup);
     textGroupLayout->setContentsMargins(4, 6, 4, 4);
     textGroupLayout->setSpacing(4);
@@ -28,10 +47,10 @@ void TextSettingsWidget::setupUi() {
     m_textEdit->setPlaceholderText("テキストを入力...");
     m_textEdit->setMinimumHeight(60);
     textGroupLayout->addWidget(m_textEdit);
-    mainLayout->addWidget(textGroup);
+    textTabLayout->addWidget(textGroup);
 
-    // 2. フォント・サイズ設定
-    auto fontGroup = new QGroupBox("フォント設定", this);
+    // 2. フォント・サイズ・文字色設定
+    auto fontGroup = new QGroupBox("フォント設定", textTab);
     auto fontGroupLayout = new QVBoxLayout(fontGroup);
     fontGroupLayout->setContentsMargins(4, 6, 4, 4);
     fontGroupLayout->setSpacing(4);
@@ -65,10 +84,23 @@ void TextSettingsWidget::setupUi() {
     sizeStyleLayout->addWidget(m_btnItalic);
 
     fontGroupLayout->addLayout(sizeStyleLayout);
-    mainLayout->addWidget(fontGroup);
+
+    // 文字色変更ボタン
+    auto colorRow = new QHBoxLayout();
+    colorRow->setContentsMargins(0, 0, 0, 0);
+    colorRow->setSpacing(4);
+    colorRow->addWidget(new QLabel("文字色:", fontGroup));
+
+    m_btnTextColor = new QPushButton("文字色変更", fontGroup);
+    m_btnTextColor->setFixedHeight(26);
+    m_btnTextColor->setToolTip("テキストの文字色を選択");
+    colorRow->addWidget(m_btnTextColor, 1);
+    fontGroupLayout->addLayout(colorRow);
+
+    textTabLayout->addWidget(fontGroup);
 
     // 3. 配置・揃え (水平・垂直)
-    auto alignGroup = new QGroupBox("配置・揃え", this);
+    auto alignGroup = new QGroupBox("配置・揃え", textTab);
     auto alignGroupLayout = new QVBoxLayout(alignGroup);
     alignGroupLayout->setContentsMargins(4, 6, 4, 4);
     alignGroupLayout->setSpacing(4);
@@ -125,10 +157,21 @@ void TextSettingsWidget::setupUi() {
     vAlignRow->addWidget(m_btnAlignBottom);
     alignGroupLayout->addLayout(vAlignRow);
 
-    mainLayout->addWidget(alignGroup);
+    textTabLayout->addWidget(alignGroup);
+    textTabLayout->addStretch();
 
-    // 4. 吹き出し形状・デザイン設定
-    auto balloonGroup = new QGroupBox("吹き出し形状・外観", this);
+    m_tabWidget->addTab(textTab, "テキスト");
+
+    // ==========================================
+    // タブ 2: 吹き出し設定 (形状・しっぽ・枠線・背景・フチ)
+    // ==========================================
+    auto balloonTab = new QWidget(m_tabWidget);
+    auto balloonTabLayout = new QVBoxLayout(balloonTab);
+    balloonTabLayout->setContentsMargins(4, 6, 4, 4);
+    balloonTabLayout->setSpacing(6);
+
+    // 4. 吹き出し形状・外観
+    auto balloonGroup = new QGroupBox("吹き出し形状・外観", balloonTab);
     auto balloonLayout = new QVBoxLayout(balloonGroup);
     balloonLayout->setContentsMargins(4, 6, 4, 4);
     balloonLayout->setSpacing(4);
@@ -170,12 +213,19 @@ void TextSettingsWidget::setupUi() {
     specialLayout->addRow("回転オフセット:", m_spikePhaseSpin);
     balloonLayout->addWidget(m_specialShapeWidget);
 
-    // 6. しっぽ設定
-    m_hasTailCheck = new QCheckBox("しっぽを付ける", balloonGroup);
-    m_hasTailCheck->setChecked(true);
-    balloonLayout->addWidget(m_hasTailCheck);
+    balloonTabLayout->addWidget(balloonGroup);
 
-    m_tailParamsWidget = new QWidget(balloonGroup);
+    // 6. しっぽ設定
+    auto tailGroup = new QGroupBox("しっぽ設定", balloonTab);
+    auto tailGroupLayout = new QVBoxLayout(tailGroup);
+    tailGroupLayout->setContentsMargins(4, 6, 4, 4);
+    tailGroupLayout->setSpacing(4);
+
+    m_hasTailCheck = new QCheckBox("しっぽを付ける", tailGroup);
+    m_hasTailCheck->setChecked(true);
+    tailGroupLayout->addWidget(m_hasTailCheck);
+
+    m_tailParamsWidget = new QWidget(tailGroup);
     auto tailLayout = new QFormLayout(m_tailParamsWidget);
     tailLayout->setContentsMargins(0, 0, 0, 0);
     tailLayout->setSpacing(4);
@@ -195,41 +245,54 @@ void TextSettingsWidget::setupUi() {
     curveRow->addWidget(m_tailCurvatureSlider, 1);
     curveRow->addWidget(m_tailCurvatureLabel);
     tailLayout->addRow("カーブ曲率:", curveRow);
-    balloonLayout->addWidget(m_tailParamsWidget);
+    tailGroupLayout->addWidget(m_tailParamsWidget);
+
+    balloonTabLayout->addWidget(tailGroup);
 
     // 7. スタイル (枠線・背景色)
+    auto styleGroup = new QGroupBox("スタイル (線・背景)", balloonTab);
+    auto styleGroupLayout = new QVBoxLayout(styleGroup);
+    styleGroupLayout->setContentsMargins(4, 6, 4, 4);
+    styleGroupLayout->setSpacing(4);
+
     auto styleLayout = new QFormLayout();
-    styleLayout->setContentsMargins(0, 4, 0, 0);
+    styleLayout->setContentsMargins(0, 0, 0, 0);
     styleLayout->setSpacing(4);
 
     auto frameRow = new QHBoxLayout();
-    m_frameWidthSpin = new QDoubleSpinBox(balloonGroup);
+    m_frameWidthSpin = new QDoubleSpinBox(styleGroup);
     m_frameWidthSpin->setRange(0.0, 50.0);
     m_frameWidthSpin->setValue(3.0);
     m_frameWidthSpin->setSuffix(" px");
     frameRow->addWidget(m_frameWidthSpin, 1);
 
-    m_btnFrameColor = new QPushButton("枠線色", balloonGroup);
+    m_btnFrameColor = new QPushButton("枠線色", styleGroup);
     m_btnFrameColor->setFixedWidth(56);
     frameRow->addWidget(m_btnFrameColor);
     styleLayout->addRow("枠線の太さ/色:", frameRow);
 
     auto fillRow = new QHBoxLayout();
-    m_btnFillColor = new QPushButton("背景色", balloonGroup);
+    m_btnFillColor = new QPushButton("背景色", styleGroup);
     m_btnFillColor->setFixedWidth(56);
     fillRow->addWidget(m_btnFillColor);
 
-    m_transparentFillCheck = new QCheckBox("背景透明", balloonGroup);
+    m_transparentFillCheck = new QCheckBox("背景透明", styleGroup);
     fillRow->addWidget(m_transparentFillCheck, 1);
     styleLayout->addRow("背景色:", fillRow);
 
-    balloonLayout->addLayout(styleLayout);
+    styleGroupLayout->addLayout(styleLayout);
+    balloonTabLayout->addWidget(styleGroup);
 
     // 8. フチ取り設定
-    m_hasOutlineCheck = new QCheckBox("フチ取りを付ける (二重枠)", balloonGroup);
-    balloonLayout->addWidget(m_hasOutlineCheck);
+    auto outlineGroup = new QGroupBox("フチ取り (二重枠)", balloonTab);
+    auto outlineGroupLayout = new QVBoxLayout(outlineGroup);
+    outlineGroupLayout->setContentsMargins(4, 6, 4, 4);
+    outlineGroupLayout->setSpacing(4);
 
-    m_outlineParamsWidget = new QWidget(balloonGroup);
+    m_hasOutlineCheck = new QCheckBox("フチ取りを付ける", outlineGroup);
+    outlineGroupLayout->addWidget(m_hasOutlineCheck);
+
+    m_outlineParamsWidget = new QWidget(outlineGroup);
     auto outlineLayout = new QHBoxLayout(m_outlineParamsWidget);
     outlineLayout->setContentsMargins(0, 0, 0, 0);
     outlineLayout->setSpacing(4);
@@ -244,9 +307,14 @@ void TextSettingsWidget::setupUi() {
     m_btnOutlineColor = new QPushButton("フチ色", m_outlineParamsWidget);
     m_btnOutlineColor->setFixedWidth(56);
     outlineLayout->addWidget(m_btnOutlineColor);
-    balloonLayout->addWidget(m_outlineParamsWidget);
+    outlineGroupLayout->addWidget(m_outlineParamsWidget);
 
-    mainLayout->addWidget(balloonGroup);
+    balloonTabLayout->addWidget(outlineGroup);
+    balloonTabLayout->addStretch();
+
+    m_tabWidget->addTab(balloonTab, "吹き出し");
+
+    mainLayout->addWidget(m_tabWidget);
 
     // シグナル接続
     auto onSettingsChanged = [this]() {
@@ -265,6 +333,14 @@ void TextSettingsWidget::setupUi() {
     connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
     connect(m_btnBold, &QPushButton::toggled, this, onSettingsChanged);
     connect(m_btnItalic, &QPushButton::toggled, this, onSettingsChanged);
+    connect(m_btnTextColor, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        QColor col = QColorDialog::getColor(m_textColor, this, "文字色を選択");
+        if (col.isValid()) {
+            m_textColor = col;
+            updateColorButtons();
+            onSettingsChanged();
+        }
+    });
     connect(m_hAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
     connect(m_vAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
 
@@ -342,13 +418,14 @@ void TextSettingsWidget::updateColorButtons() {
         if (c.alpha() == 0) {
             return QString("QPushButton { background: #e0e0e0; color: #888888; border: 1px dashed #999; }");
         }
-        return QString("QPushButton { background-color: %1; color: %2; border: 1px solid #777; border-radius: 2px; }")
+        return QString("QPushButton { background-color: %1; color: %2; border: 1px solid #777; border-radius: 2px; font-weight: bold; }")
             .arg(c.name(QColor::HexArgb), textCol);
     };
 
-    m_btnFrameColor->setStyleSheet(makeBtnStyle(m_frameColor));
-    m_btnFillColor->setStyleSheet(makeBtnStyle(m_transparentFillCheck->isChecked() ? Qt::transparent : m_fillColor));
-    m_btnOutlineColor->setStyleSheet(makeBtnStyle(m_outlineColor));
+    if (m_btnTextColor) m_btnTextColor->setStyleSheet(makeBtnStyle(m_textColor));
+    if (m_btnFrameColor) m_btnFrameColor->setStyleSheet(makeBtnStyle(m_frameColor));
+    if (m_btnFillColor) m_btnFillColor->setStyleSheet(makeBtnStyle(m_transparentFillCheck->isChecked() ? Qt::transparent : m_fillColor));
+    if (m_btnOutlineColor) m_btnOutlineColor->setStyleSheet(makeBtnStyle(m_outlineColor));
 }
 
 void TextSettingsWidget::updateSpecialShapeVisibility() {
@@ -431,6 +508,15 @@ float TextSettingsWidget::frameWidth() const {
     return static_cast<float>(m_frameWidthSpin->value());
 }
 
+QColor TextSettingsWidget::textColor() const {
+    return m_textColor;
+}
+
+void TextSettingsWidget::setTextColor(const QColor& color) {
+    m_textColor = color;
+    updateColorButtons();
+}
+
 QColor TextSettingsWidget::frameColor() const {
     return m_frameColor;
 }
@@ -461,12 +547,13 @@ QColor TextSettingsWidget::outlineColor() const {
 void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
     m_updatingUi = true;
 
-    // 1. テキスト & フォント
+    // 1. テキスト & フォント & 文字色
     m_textEdit->setPlainText(item.text);
     m_fontCombo->setCurrentFont(item.font);
     m_fontSizeSpin->setValue(item.font.pointSize() > 0 ? item.font.pointSize() : 16);
     m_btnBold->setChecked(item.font.bold());
     m_btnItalic->setChecked(item.font.italic());
+    m_textColor = item.textColor;
 
     // 2. 配置
     if (item.horizontalAlign == Qt::AlignHCenter) {
@@ -522,6 +609,7 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
 void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
     item.text = m_textEdit->toPlainText();
     item.font = currentFont();
+    item.textColor = textColor();
     item.horizontalAlign = horizontalAlignment();
     item.verticalAlign = verticalAlignment();
 
@@ -544,6 +632,9 @@ void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
 }
 
 void TextSettingsWidget::focusTextEdit() {
+    if (m_tabWidget) {
+        m_tabWidget->setCurrentIndex(0);
+    }
     m_textEdit->setFocus();
     m_textEdit->selectAll();
 }
