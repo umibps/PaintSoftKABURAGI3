@@ -234,7 +234,7 @@ QString AiComponentDownloader::resolveLatestDownloadUrl(ComponentType type) {
         // GitHub API から動的に最新アセットを検索（タイムアウト2秒）
         QNetworkAccessManager mgr;
         QNetworkRequest req(QUrl("https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest"));
-        req.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1");
+        req.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.2");
 
         QNetworkReply* reply = mgr.get(req);
         QEventLoop loop;
@@ -534,7 +534,7 @@ void AiComponentDownloader::startDownload(ComponentType type, const QString& cus
 
     QNetworkRequest request(QUrl(m_currentInfo.downloadUrl));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1 (ComponentDownloader)");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.2 (ComponentDownloader)");
 
     m_currentReply = m_netManager->get(request);
     connect(m_currentReply, &QNetworkReply::downloadProgress, this, &AiComponentDownloader::onDownloadProgress);

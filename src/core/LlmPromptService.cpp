@@ -73,7 +73,7 @@ void LlmPromptService::fetchModels(LlmBackend backend, const QString& serverUrl,
     }
 
     QNetworkRequest request{QUrl(endpointUrl)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.2");
     if (!apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + apiKey.toUtf8());
     }
@@ -306,7 +306,7 @@ void LlmPromptService::generatePrompt(const LlmConfig& config,
 
     QNetworkRequest request{QUrl(chatEndpoint)};
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1 (LlmPromptService)");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.2 (LlmPromptService)");
     if (!config.apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + config.apiKey.toUtf8());
     }
@@ -349,7 +349,7 @@ void LlmPromptService::refinePrompt(const LlmConfig& config,
 
     QNetworkRequest request{QUrl(chatEndpoint)};
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.1 (LlmPromptService)");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "PaintSoftKABURAGI/3.0.2 (LlmPromptService)");
     if (!config.apiKey.isEmpty()) {
         request.setRawHeader("Authorization", "Bearer " + config.apiKey.toUtf8());
     }
