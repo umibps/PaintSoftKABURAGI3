@@ -345,8 +345,13 @@ int main(int argc, char* argv[]) {
     assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(100, 150), 1.0) == CanvasWidget::BalloonHandle::Left);
     assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(300, 150), 1.0) == CanvasWidget::BalloonHandle::Right);
 
-    // しっぽ先端
+    // しっぽ先端 (Ellipse吹き出し)
+    testHandleItem.shape = BalloonShape::Ellipse;
     assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(50, 50), 1.0) == CanvasWidget::BalloonHandle::TailTip);
+
+    // 枠なし (文字のみ) の場合は、しっぽハンドルが無効化され表示・ヒットしないこと！
+    testHandleItem.shape = BalloonShape::None;
+    assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(50, 50), 1.0) == CanvasWidget::BalloonHandle::None);
 
     // 内部 (Body)
     assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(200, 150), 1.0) == CanvasWidget::BalloonHandle::Body);

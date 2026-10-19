@@ -340,7 +340,7 @@ CanvasWidget::BalloonHandle CanvasWidget::hitTestBalloonHandles(const TextBalloo
     const QRectF& rect = item.rect;
 
     // 1. しっぽハンドル (TailTip, TailCurve, TailBaseWidth)
-    if (item.hasTail) {
+    if (item.hasTail && item.shape != BalloonShape::None) {
         QPointF center = rect.center();
         QPointF tip = item.tailTip;
         QPointF dir = tip - center;
@@ -5534,7 +5534,7 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
                 QPointF newTopLeft = m_cursorDocPos - m_balloonMoveOffset;
                 QPointF delta = newTopLeft - item.rect.topLeft();
                 item.rect.moveTopLeft(newTopLeft);
-                if (item.hasTail) {
+                if (item.hasTail && item.shape != BalloonShape::None) {
                     item.tailTip += delta;
                 }
                 textLayer->rasterizeAll();
@@ -7065,7 +7065,7 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
             painter.drawRect(QRectF(item.rect.left() - edgeSz * 0.5, item.rect.center().y() - edgeSz * 0.5, edgeSz, edgeSz));
             painter.drawRect(QRectF(item.rect.right() - edgeSz * 0.5, item.rect.center().y() - edgeSz * 0.5, edgeSz, edgeSz));
 
-            if (item.hasTail) {
+            if (item.hasTail && item.shape != BalloonShape::None) {
                 QPointF center = item.rect.center();
                 QPointF tip = item.tailTip;
                 QPointF dir = tip - center;

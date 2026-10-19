@@ -570,6 +570,13 @@ void TextSettingsWidget::updateSpecialShapeVisibility() {
     auto shape = balloonShape();
     bool isSpecial = (shape == BalloonShape::Spike || shape == BalloonShape::Cloud);
     m_specialShapeWidget->setVisible(isSpecial);
+    bool isNone = (shape == BalloonShape::None);
+    if (m_hasTailCheck) {
+        m_hasTailCheck->setEnabled(!isNone);
+    }
+    if (m_tailParamsWidget) {
+        m_tailParamsWidget->setVisible(!isNone && m_hasTailCheck->isChecked());
+    }
 }
 
 QFont TextSettingsWidget::currentFont() const {
@@ -650,6 +657,7 @@ BalloonShape TextSettingsWidget::balloonShape() const {
 }
 
 bool TextSettingsWidget::hasTail() const {
+    if (balloonShape() == BalloonShape::None) return false;
     return m_hasTailCheck->isChecked();
 }
 
@@ -786,7 +794,7 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
 
     updateColorButtons();
     updateSpecialShapeVisibility();
-    m_tailParamsWidget->setVisible(item.hasTail);
+    m_tailParamsWidget->setVisible(item.shape != BalloonShape::None && item.hasTail);
     m_outlineParamsWidget->setVisible(item.hasOutline);
 
     m_updatingUi = false;

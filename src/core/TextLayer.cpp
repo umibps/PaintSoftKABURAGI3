@@ -41,7 +41,7 @@ int TextLayer::findItemAt(const QPointF& docPos) const {
         if (item.rect.adjusted(-6, -6, 6, 6).contains(docPos)) {
             return i;
         }
-        if (item.hasTail) {
+        if (item.hasTail && item.shape != BalloonShape::None) {
             float dx = item.tailTip.x() - docPos.x();
             float dy = item.tailTip.y() - docPos.y();
             if (dx * dx + dy * dy <= 20.0f * 20.0f) {
