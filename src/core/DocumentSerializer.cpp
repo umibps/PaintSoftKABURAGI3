@@ -325,6 +325,13 @@ bool DocumentSerializer::saveToFile(const Document* document, const QString& fil
                 stream << item.outlineWidth;
                 stream << item.outlineColor;
                 stream << static_cast<qint32>(item.direction);
+                stream << static_cast<qint32>(item.spikeRandomness);
+                stream << static_cast<quint32>(item.randomSeed);
+                qint32 customVertCount = static_cast<qint32>(item.customVertices.size());
+                stream << customVertCount;
+                for (const auto& pt : item.customVertices) {
+                    stream << pt;
+                }
             }
             break;
         }
@@ -590,6 +597,24 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
                     item.direction = static_cast<WritingDirection>(dirInt);
                 } else {
                     item.direction = WritingDirection::Horizontal;
+                }
+                if (version >= 8) {
+                    qint32 randVal = 0;
+                    quint32 seedVal = 12345;
+                    qint32 cvCount = 0;
+                    stream >> randVal >> seedVal >> cvCount;
+                    item.spikeRandomness = randVal;
+                    item.randomSeed = seedVal;
+                    item.customVertices.clear();
+                    for (qint32 ci = 0; ci < cvCount; ++ci) {
+                        QPointF pt;
+                        stream >> pt;
+                        item.customVertices.push_back(pt);
+                    }
+                } else {
+                    item.spikeRandomness = 0;
+                    item.randomSeed = 12345;
+                    item.customVertices.clear();
                 }
                 tLayer->addItem(item);
             }

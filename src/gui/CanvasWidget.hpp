@@ -722,12 +722,15 @@ private:
         Right,
         TailTip,
         TailCurve,
-        TailBaseWidth
+        TailBaseWidth,
+        SpikeVertex
     };
     bool m_isCreatingBalloon = false;
     bool m_isMovingBalloon = false;
     bool m_isMovingTail = false;
     bool m_isResizingBalloon = false;
+    bool m_isDraggingSpikeVertex = false;
+    int m_balloonDragVertexIndex = -1;
     BalloonHandle m_balloonDragHandle = BalloonHandle::None;
     QPointF m_balloonStartPos;
     QPointF m_balloonCurrentPos;
@@ -738,6 +741,7 @@ private:
     TextBalloonItem m_balloonPreEditItem;
 
     BalloonHandle hitTestBalloonHandles(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const;
+    int hitTestBalloonSpikeVertex(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const;
 
     std::shared_ptr<TextLayer> ensureTextLayer();
     TextSettingsWidget* m_textSettings = nullptr;

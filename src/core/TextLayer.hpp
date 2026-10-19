@@ -68,6 +68,9 @@ struct TextBalloonItem {
     int spikeCount = 16;          // トゲ / モコモコの個数 (4 ~ 64)
     float spikeDepth = 20.0f;     // トゲの深さ / モコモコの大きさ (px)
     float spikePhase = 0.0f;      // 形状の回転オフセット・位置 (度: 0 ~ 360)
+    int spikeRandomness = 0;      // 凸凹のランダム変更度合い (0 ~ 100, 0: なし)
+    uint32_t randomSeed = 12345;  // ランダム生成用シード
+    std::vector<QPointF> customVertices; // ユーザーがドラッグした頂点座標 (空なら自動生成)
 
     // フチ取りパラメータ
     bool hasOutline = false;          // フチ取りの有無
@@ -77,6 +80,8 @@ struct TextBalloonItem {
     Qt::Alignment horizontalAlign = Qt::AlignLeft;
     Qt::Alignment verticalAlign = Qt::AlignTop;
 };
+
+std::vector<QPointF> getBalloonSpikeVertices(const TextBalloonItem& item);
 
 class TextLayer : public Layer {
 public:

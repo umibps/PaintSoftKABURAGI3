@@ -334,10 +334,31 @@ void CanvasWidget::updateSelectionCursor(RectHandle handle) {
     }
 }
 
+int CanvasWidget::hitTestBalloonSpikeVertex(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const {
+    if (item.shape != BalloonShape::Spike && item.shape != BalloonShape::Cloud) {
+        return -1;
+    }
+    qreal r = 9.0 / zoom;
+    auto vertices = getBalloonSpikeVertices(item);
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        if (std::hypot(vertices[i].x() - docPt.x(), vertices[i].y() - docPt.y()) <= r * 1.2) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 CanvasWidget::BalloonHandle CanvasWidget::hitTestBalloonHandles(const TextBalloonItem& item, const QPointF& docPt, qreal zoom) const {
     qreal r = 9.0 / zoom;
     qreal edgeMargin = 7.0 / zoom;
     const QRectF& rect = item.rect;
+
+    // 0. 特殊形状の頂点 (Spike / Cloud)
+    if (item.shape == BalloonShape::Spike || item.shape == BalloonShape::Cloud) {
+        if (hitTestBalloonSpikeVertex(item, docPt, zoom) >= 0) {
+            return BalloonHandle::SpikeVertex;
+        }
+    }
 
     // 1. しっぽハンドル (TailTip, TailCurve, TailBaseWidth)
     if (item.hasTail && item.shape != BalloonShape::None) {
@@ -4547,6 +4568,12 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                         m_balloonMoveOffset = docPt - selItem.rect.topLeft();
                     } else if (handle == BalloonHandle::TailTip || handle == BalloonHandle::TailCurve || handle == BalloonHandle::TailBaseWidth) {
                         m_isMovingTail = true;
+                    } else if (handle == BalloonHandle::SpikeVertex) {
+                        m_isDraggingSpikeVertex = true;
+                        m_balloonDragVertexIndex = hitTestBalloonSpikeVertex(selItem, docPt, m_zoom);
+                        if (selItem.customVertices.size() != getBalloonSpikeVertices(selItem).size()) {
+                            selItem.customVertices = getBalloonSpikeVertices(selItem);
+                        }
                     } else {
                         m_isResizingBalloon = true;
                     }
@@ -4591,6 +4618,12 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
                     m_balloonMoveOffset = docPt - item.rect.topLeft();
                 } else if (m_balloonDragHandle == BalloonHandle::TailTip || m_balloonDragHandle == BalloonHandle::TailCurve || m_balloonDragHandle == BalloonHandle::TailBaseWidth) {
                     m_isMovingTail = true;
+                } else if (m_balloonDragHandle == BalloonHandle::SpikeVertex) {
+                    m_isDraggingSpikeVertex = true;
+                    m_balloonDragVertexIndex = hitTestBalloonSpikeVertex(item, docPt, m_zoom);
+                    if (item.customVertices.size() != getBalloonSpikeVertices(item).size()) {
+                        item.customVertices = getBalloonSpikeVertices(item);
+                    }
                 } else {
                     m_isResizingBalloon = true;
                 }
@@ -5520,6 +5553,15 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
                 }
 
                 item.rect = newRect;
+                if (!m_balloonPreEditItem.customVertices.empty() && orig.width() > 0 && orig.height() > 0) {
+                    item.customVertices = m_balloonPreEditItem.customVertices;
+                    for (auto& vPt : item.customVertices) {
+                        qreal u = (vPt.x() - orig.left()) / orig.width();
+                        qreal v = (vPt.y() - orig.top()) / orig.height();
+                        vPt.setX(newRect.left() + u * newRect.width());
+                        vPt.setY(newRect.top() + v * newRect.height());
+                    }
+                }
                 textLayer->rasterizeAll();
                 m_document->composite();
                 update();
@@ -5536,6 +5578,9 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
                 item.rect.moveTopLeft(newTopLeft);
                 if (item.hasTail && item.shape != BalloonShape::None) {
                     item.tailTip += delta;
+                }
+                for (auto& vPt : item.customVertices) {
+                    vPt += delta;
                 }
                 textLayer->rasterizeAll();
                 m_document->composite();
@@ -5586,6 +5631,20 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
+        if (m_isDraggingSpikeVertex && m_selectedBalloonIndex >= 0) {
+            auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
+            if (textLayer && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
+                auto& item = textLayer->items()[m_selectedBalloonIndex];
+                if (m_balloonDragVertexIndex >= 0 && m_balloonDragVertexIndex < static_cast<int>(item.customVertices.size())) {
+                    item.customVertices[m_balloonDragVertexIndex] = m_cursorDocPos;
+                    textLayer->rasterizeAll();
+                    m_document->composite();
+                    update();
+                }
+            }
+            event->accept();
+            return;
+        }
 
         // ホバー時のカーソル形状の更新
         auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
@@ -5609,6 +5668,7 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
             case BalloonHandle::Right:
                 setCursor(Qt::SizeHorCursor);
                 break;
+            case BalloonHandle::SpikeVertex:
             case BalloonHandle::TailTip:
             case BalloonHandle::TailCurve:
             case BalloonHandle::TailBaseWidth:
@@ -6308,7 +6368,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             event->accept();
             return;
         }
-        if (m_isMovingBalloon || m_isMovingTail || m_isResizingBalloon) {
+        if (m_isMovingBalloon || m_isMovingTail || m_isResizingBalloon || m_isDraggingSpikeVertex) {
             QPointF docPt = viewToDoc(event->position());
             bool isBody = m_isMovingBalloon;
             float dist = std::hypot(docPt.x() - m_balloonPressPos.x(), docPt.y() - m_balloonPressPos.y());
@@ -6316,6 +6376,8 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             m_isMovingBalloon = false;
             m_isMovingTail = false;
             m_isResizingBalloon = false;
+            m_isDraggingSpikeVertex = false;
+            m_balloonDragVertexIndex = -1;
             m_balloonDragHandle = BalloonHandle::None;
             auto textLayer = std::dynamic_pointer_cast<TextLayer>(m_document->activeLayer());
             if (actuallyMoved && textLayer && m_selectedBalloonIndex >= 0 && m_selectedBalloonIndex < static_cast<int>(textLayer->items().size())) {
@@ -7096,6 +7158,17 @@ void CanvasWidget::paintEvent(QPaintEvent* /*event*/) {
                     painter.setPen(QPen(Qt::white, 1.2 * invZoom));
                     painter.setBrush(QColor(50, 205, 50));
                     painter.drawEllipse(p1, 5.0 * invZoom, 5.0 * invZoom);
+                }
+            }
+
+            // 4. 特殊形状の頂点ハンドル (Spike / Cloud)
+            if (item.shape == BalloonShape::Spike || item.shape == BalloonShape::Cloud) {
+                auto vertices = getBalloonSpikeVertices(item);
+                painter.setPen(QPen(Qt::white, 1.2 * invZoom));
+                painter.setBrush(QColor(230, 36, 94));
+                qreal vRad = 4.5 * invZoom;
+                for (const auto& vPt : vertices) {
+                    painter.drawEllipse(vPt, vRad, vRad);
                 }
             }
         }

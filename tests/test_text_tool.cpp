@@ -68,6 +68,9 @@ int main(int argc, char* argv[]) {
     srcItem.hasOutline = true;
     srcItem.outlineWidth = 5.0f;
     srcItem.outlineColor = QColor(0, 0, 255);
+    srcItem.spikeRandomness = 45;
+    srcItem.randomSeed = 88888;
+    srcItem.customVertices = { QPointF(1, 2), QPointF(3, 4) };
 
     textSettings.setFromItem(srcItem);
     assert(textSettings.currentFont().family() == "Arial");
@@ -83,6 +86,8 @@ int main(int argc, char* argv[]) {
     assert(textSettings.spikeCount() == 20);
     assert(textSettings.spikeDepth() == 25.0f);
     assert(textSettings.spikePhase() == 45.0f);
+    assert(textSettings.spikeRandomness() == 45);
+    assert(textSettings.randomSeed() == 88888);
     assert(textSettings.hasTail() == true);
     assert(textSettings.tailBaseWidth() == 30.0f);
     assert(textSettings.tailCurvature() == 50.0f);
@@ -358,9 +363,42 @@ int main(int argc, char* argv[]) {
 
     // 範囲外 (None)
     assert(canvas.hitTestBalloonHandles(testHandleItem, QPointF(10, 10), 1.0) == CanvasWidget::BalloonHandle::None);
-    std::cout << "[PASS] Balloon handles (vertices, edges, body, tail) hit-testing succeed!" << std::endl;
 
-    // 4. DocumentSerializer 保存 & 読込テスト（アライメント、特殊形状、カーブしっぽ、フチ取り）
+    // 特殊形状 (Spike / Cloud) 頂点ハンドル判定
+    TextBalloonItem spikeTestItem;
+    spikeTestItem.shape = BalloonShape::Spike;
+    spikeTestItem.rect = QRectF(100, 100, 200, 200);
+    spikeTestItem.spikeCount = 8;
+    spikeTestItem.spikeDepth = 20.0f;
+    spikeTestItem.spikeRandomness = 0;
+    auto spikeVerts = getBalloonSpikeVertices(spikeTestItem);
+    assert(spikeVerts.size() == 8);
+    // 頂点直上ヒットテスト
+    assert(canvas.hitTestBalloonHandles(spikeTestItem, spikeVerts[0], 1.0) == CanvasWidget::BalloonHandle::SpikeVertex);
+
+    // ランダム凸凹度合いの変更テスト
+    spikeTestItem.spikeRandomness = 60;
+    auto spikeRandVerts = getBalloonSpikeVertices(spikeTestItem);
+    assert(spikeRandVerts.size() == 8);
+    bool diffFound = false;
+    for (size_t i = 0; i < 8; ++i) {
+        if (std::abs(spikeRandVerts[i].x() - spikeVerts[i].x()) > 0.01 || std::abs(spikeRandVerts[i].y() - spikeVerts[i].y()) > 0.01) {
+            diffFound = true;
+            break;
+        }
+    }
+    assert(diffFound);
+
+    // ユーザーによるカスタム頂点ドラッグ位置の反映テスト
+    spikeTestItem.customVertices = spikeRandVerts;
+    spikeTestItem.customVertices[0] = QPointF(500.0, 500.0);
+    auto spikeCustomVerts = getBalloonSpikeVertices(spikeTestItem);
+    assert(spikeCustomVerts[0] == QPointF(500.0, 500.0));
+    assert(canvas.hitTestBalloonHandles(spikeTestItem, QPointF(500.0, 500.0), 1.0) == CanvasWidget::BalloonHandle::SpikeVertex);
+
+    std::cout << "[PASS] Balloon handles (vertices, edges, body, tail, spike vertices) hit-testing succeed!" << std::endl;
+
+    // 4. DocumentSerializer 保存 & 読込テスト（アライメント、特殊形状、カーブしっぽ、フチ取り、ランダム凸凹、カスタム頂点）
     std::cout << "[TEST] Testing DocumentSerializer serialization..." << std::endl;
     QString tempPath = QDir::tempPath() + "/test_text_tool_file.kab";
     QFile::remove(tempPath);
@@ -388,6 +426,11 @@ int main(int argc, char* argv[]) {
     assert(loadedSpike.spikeCount == 20);
     assert(loadedSpike.spikeDepth == 25.0f);
     assert(loadedSpike.spikePhase == 45.0f);
+    assert(loadedSpike.spikeRandomness == 45);
+    assert(loadedSpike.randomSeed == 88888);
+    assert(loadedSpike.customVertices.size() == 2);
+    assert(loadedSpike.customVertices[0] == QPointF(1, 2));
+    assert(loadedSpike.customVertices[1] == QPointF(3, 4));
     assert(loadedSpike.hasTail == true);
     assert(loadedSpike.tailBaseWidth == 30.0f);
     assert(loadedSpike.tailCurvature == 50.0f);

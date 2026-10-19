@@ -7,6 +7,7 @@
 #include <QColorDialog>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QRandomGenerator>
 #include <algorithm>
 
 namespace Kaburagi {
@@ -326,6 +327,14 @@ void TextSettingsWidget::setupUi() {
     m_spikePhaseSpin->setValue(0.0);
     m_spikePhaseSpin->setSuffix(" °");
     specialLayout->addRow("回転オフセット:", m_spikePhaseSpin);
+
+    m_spikeRandomSpin = new QSpinBox(m_specialShapeWidget);
+    m_spikeRandomSpin->setRange(0, 100);
+    m_spikeRandomSpin->setValue(0);
+    specialLayout->addRow("ランダム凸凹:", m_spikeRandomSpin);
+
+    m_btnRandomizeSpikes = new QPushButton("ランダム再配置", m_specialShapeWidget);
+    specialLayout->addRow("", m_btnRandomizeSpikes);
     balloonLayout->addWidget(m_specialShapeWidget);
 
     balloonTabLayout->addWidget(balloonGroup);
@@ -489,6 +498,11 @@ void TextSettingsWidget::setupUi() {
     connect(m_spikeCountSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
     connect(m_spikeDepthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
     connect(m_spikePhaseSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_spikeRandomSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_btnRandomizeSpikes, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        m_currentSeed = QRandomGenerator::global()->generate();
+        onSettingsChanged();
+    });
 
     connect(m_hasTailCheck, &QCheckBox::toggled, this, [this, onSettingsChanged](bool checked) {
         m_tailParamsWidget->setVisible(checked);
@@ -681,6 +695,14 @@ float TextSettingsWidget::spikePhase() const {
     return static_cast<float>(m_spikePhaseSpin->value());
 }
 
+int TextSettingsWidget::spikeRandomness() const {
+    return m_spikeRandomSpin->value();
+}
+
+uint32_t TextSettingsWidget::randomSeed() const {
+    return m_currentSeed;
+}
+
 float TextSettingsWidget::frameWidth() const {
     return static_cast<float>(m_frameWidthSpin->value());
 }
@@ -774,6 +796,8 @@ void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
     m_spikeCountSpin->setValue(item.spikeCount);
     m_spikeDepthSpin->setValue(item.spikeDepth);
     m_spikePhaseSpin->setValue(item.spikePhase);
+    m_spikeRandomSpin->setValue(item.spikeRandomness);
+    m_currentSeed = item.randomSeed;
 
     // 5. しっぽ
     m_hasTailCheck->setChecked(item.hasTail);
@@ -809,9 +833,14 @@ void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
     item.verticalAlign = verticalAlignment();
 
     item.shape = balloonShape();
+    if (item.spikeCount != spikeCount() || item.spikeRandomness != spikeRandomness() || item.randomSeed != randomSeed()) {
+        item.customVertices.clear();
+    }
     item.spikeCount = spikeCount();
     item.spikeDepth = spikeDepth();
     item.spikePhase = spikePhase();
+    item.spikeRandomness = spikeRandomness();
+    item.randomSeed = randomSeed();
 
     item.hasTail = hasTail();
     item.tailBaseWidth = tailBaseWidth();

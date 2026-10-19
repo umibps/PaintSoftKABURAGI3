@@ -647,6 +647,78 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
 
 } // namespace
 
+static float getDeterministicHash(uint32_t seed, int index, int streamId) {
+    uint32_t h = seed ^ (static_cast<uint32_t>(index) * 0x27d4eb2d) ^ (static_cast<uint32_t>(streamId) * 0x165667b1);
+    h = (h ^ (h >> 16)) * 0x45d9f3b;
+    h = (h ^ (h >> 16)) * 0x45d9f3b;
+    h = h ^ (h >> 16);
+    // map to [-1.0, 1.0]
+    return (static_cast<float>(h & 0xFFFF) / 32767.5f) - 1.0f;
+}
+
+std::vector<QPointF> getBalloonSpikeVertices(const TextBalloonItem& item) {
+    constexpr double PI = 3.14159265358979323846;
+    if (item.shape == BalloonShape::Spike) {
+        int n = std::clamp(item.spikeCount, 4, 64);
+        if (!item.customVertices.empty() && static_cast<int>(item.customVertices.size()) == n) {
+            return item.customVertices;
+        }
+        std::vector<QPointF> vertices;
+        vertices.reserve(n);
+        float phaseRad = item.spikePhase * static_cast<float>(PI / 180.0);
+        QPointF c = item.rect.center();
+        float rx = static_cast<float>(item.rect.width() * 0.5);
+        float ry = static_cast<float>(item.rect.height() * 0.5);
+        float randFactor = std::clamp(item.spikeRandomness, 0, 100) / 100.0f;
+
+        for (int i = 0; i < n; ++i) {
+            float baseAngle = phaseRad + (static_cast<float>(i) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
+            float angleOut = baseAngle;
+            float rFactor = 1.0f;
+            if (randFactor > 0.0f) {
+                angleOut += getDeterministicHash(item.randomSeed, i, 1) * (0.35f * 2.0f * static_cast<float>(PI) / static_cast<float>(n)) * randFactor;
+                rFactor += getDeterministicHash(item.randomSeed, i, 2) * 0.35f * randFactor;
+            }
+            float pxOut = c.x() + rx * rFactor * std::cos(angleOut);
+            float pyOut = c.y() + ry * rFactor * std::sin(angleOut);
+            vertices.push_back(QPointF(pxOut, pyOut));
+        }
+        return vertices;
+    } else if (item.shape == BalloonShape::Cloud) {
+        int n = std::clamp(item.spikeCount, 4, 48);
+        if (!item.customVertices.empty() && static_cast<int>(item.customVertices.size()) == n) {
+            return item.customVertices;
+        }
+        std::vector<QPointF> vertices;
+        vertices.reserve(n);
+        float phaseRad = item.spikePhase * static_cast<float>(PI / 180.0);
+        QPointF c = item.rect.center();
+        float rx = static_cast<float>(item.rect.width() * 0.5);
+        float ry = static_cast<float>(item.rect.height() * 0.5);
+        float bump = item.spikeDepth;
+        float randFactor = std::clamp(item.spikeRandomness, 0, 100) / 100.0f;
+
+        for (int i = 0; i < n; ++i) {
+            float a0 = phaseRad + (static_cast<float>(i) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
+            float a1 = phaseRad + (static_cast<float>(i + 1) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
+            if (randFactor > 0.0f) {
+                a0 += getDeterministicHash(item.randomSeed, i, 1) * (0.3f * 2.0f * static_cast<float>(PI) / static_cast<float>(n)) * randFactor;
+                a1 += getDeterministicHash(item.randomSeed, (i + 1) % n, 1) * (0.3f * 2.0f * static_cast<float>(PI) / static_cast<float>(n)) * randFactor;
+            }
+            float aMid = (a0 + a1) * 0.5f;
+            float bump_i = bump;
+            if (randFactor > 0.0f) {
+                bump_i *= (1.0f + getDeterministicHash(item.randomSeed, i, 2) * 0.6f * randFactor);
+                bump_i = std::max(2.0f, bump_i);
+            }
+            QPointF ctrl(c.x() + (rx + bump_i) * std::cos(aMid), c.y() + (ry + bump_i) * std::sin(aMid));
+            vertices.push_back(ctrl);
+        }
+        return vertices;
+    }
+    return {};
+}
+
 void TextLayer::renderItem(const TextBalloonItem& item, QPainter& painter) {
     constexpr double PI = 3.14159265358979323846;
     QPainterPath path;
@@ -660,23 +732,40 @@ void TextLayer::renderItem(const TextBalloonItem& item, QPainter& painter) {
     } else if (item.shape == BalloonShape::Spike) {
         // ウニフラッシュ / 叫び
         int n = std::clamp(item.spikeCount, 4, 64);
-        float phaseRad = item.spikePhase * static_cast<float>(PI / 180.0);
         QPointF c = item.rect.center();
         float rx = static_cast<float>(item.rect.width() * 0.5);
         float ry = static_cast<float>(item.rect.height() * 0.5);
         float depth = std::min(item.spikeDepth, std::min(rx, ry) * 0.8f);
+        float randFactor = std::clamp(item.spikeRandomness, 0, 100) / 100.0f;
+
+        auto tips = getBalloonSpikeVertices(item);
 
         QPolygonF poly;
         poly.reserve(n * 2);
         for (int i = 0; i < n; ++i) {
-            float angleOut = phaseRad + (static_cast<float>(i) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
-            float pxOut = c.x() + rx * std::cos(angleOut);
-            float pyOut = c.y() + ry * std::sin(angleOut);
-            poly << QPointF(pxOut, pyOut);
+            poly << tips[i];
 
-            float angleIn = angleOut + static_cast<float>(PI) / static_cast<float>(n);
-            float pxIn = c.x() + (rx - depth) * std::cos(angleIn);
-            float pyIn = c.y() + (ry - depth) * std::sin(angleIn);
+            // 谷（根元）の計算
+            QPointF pA = tips[i];
+            QPointF pB = tips[(i + 1) % n];
+            float angleA = std::atan2(pA.y() - c.y(), pA.x() - c.x());
+            float angleB = std::atan2(pB.y() - c.y(), pB.x() - c.x());
+            while (angleB < angleA) angleB += 2.0f * static_cast<float>(PI);
+            if (angleB - angleA > 2.0f * static_cast<float>(PI)) {
+                angleB -= 2.0f * static_cast<float>(PI);
+            }
+
+            float tIn = 0.5f;
+            float depthVar = depth;
+            if (randFactor > 0.0f) {
+                tIn += getDeterministicHash(item.randomSeed, i, 3) * 0.25f * randFactor;
+                tIn = std::clamp(tIn, 0.2f, 0.8f);
+                depthVar *= (1.0f + getDeterministicHash(item.randomSeed, i, 4) * 0.4f * randFactor);
+                depthVar = std::max(2.0f, depthVar);
+            }
+            float angleIn = angleA + (angleB - angleA) * tIn;
+            float pxIn = c.x() + (rx - depthVar) * std::cos(angleIn);
+            float pyIn = c.y() + (ry - depthVar) * std::sin(angleIn);
             poly << QPointF(pxIn, pyIn);
         }
         path.addPolygon(poly);
@@ -688,16 +777,23 @@ void TextLayer::renderItem(const TextBalloonItem& item, QPainter& painter) {
         QPointF c = item.rect.center();
         float rx = static_cast<float>(item.rect.width() * 0.5);
         float ry = static_cast<float>(item.rect.height() * 0.5);
-        float bump = item.spikeDepth;
+        float randFactor = std::clamp(item.spikeRandomness, 0, 100) / 100.0f;
+
+        auto ctrlPoints = getBalloonSpikeVertices(item);
+
+        std::vector<QPointF> basePoints(n);
+        for (int i = 0; i < n; ++i) {
+            float a = phaseRad + (static_cast<float>(i) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
+            if (randFactor > 0.0f) {
+                a += getDeterministicHash(item.randomSeed, i, 1) * (0.3f * 2.0f * static_cast<float>(PI) / static_cast<float>(n)) * randFactor;
+            }
+            basePoints[i] = QPointF(c.x() + rx * std::cos(a), c.y() + ry * std::sin(a));
+        }
 
         for (int i = 0; i < n; ++i) {
-            float a0 = phaseRad + (static_cast<float>(i) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
-            float a1 = phaseRad + (static_cast<float>(i + 1) * 2.0f * static_cast<float>(PI)) / static_cast<float>(n);
-            float aMid = (a0 + a1) * 0.5f;
-
-            QPointF p0(c.x() + rx * std::cos(a0), c.y() + ry * std::sin(a0));
-            QPointF p1(c.x() + rx * std::cos(a1), c.y() + ry * std::sin(a1));
-            QPointF ctrl(c.x() + (rx + bump) * std::cos(aMid), c.y() + (ry + bump) * std::sin(aMid));
+            QPointF p0 = basePoints[i];
+            QPointF p1 = basePoints[(i + 1) % n];
+            QPointF ctrl = ctrlPoints[i];
 
             if (i == 0) {
                 path.moveTo(p0);

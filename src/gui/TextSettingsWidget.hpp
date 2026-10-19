@@ -61,6 +61,8 @@ public:
     int spikeCount() const;
     float spikeDepth() const;
     float spikePhase() const;
+    int spikeRandomness() const;
+    uint32_t randomSeed() const;
 
     float frameWidth() const;
     QColor frameColor() const;
@@ -149,6 +151,9 @@ private:
     QSpinBox* m_spikeCountSpin = nullptr;
     QDoubleSpinBox* m_spikeDepthSpin = nullptr;
     QDoubleSpinBox* m_spikePhaseSpin = nullptr;
+    QSpinBox* m_spikeRandomSpin = nullptr;
+    QPushButton* m_btnRandomizeSpikes = nullptr;
+    uint32_t m_currentSeed = 12345;
 
     // 6. しっぽパラメータ
     QCheckBox* m_hasTailCheck = nullptr;
