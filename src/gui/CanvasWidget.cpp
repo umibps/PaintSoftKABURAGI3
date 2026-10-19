@@ -6385,6 +6385,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
                 if (m_document->undoStack()) {
                     m_document->undoStack()->push(new EditTextBalloonCommand(m_document, m_document->activeLayerIndex(), m_selectedBalloonIndex, m_balloonPreEditItem, curItem));
                 }
+                emit textItemSelected(curItem);
             } else if (!actuallyMoved && isBody && m_selectedBalloonIndex >= 0) {
                 // アクティブなテキストエリアが左クリックされたらテキスト編集可能にする
                 if (m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon) {
@@ -9914,7 +9915,13 @@ void CanvasWidget::applyTextSettingsToSelected() {
     auto activeL = m_document->activeLayer();
     auto textLayer = std::dynamic_pointer_cast<TextLayer>(activeL);
     if (!textLayer) return;
-    if (m_selectedBalloonIndex < 0 || m_selectedBalloonIndex >= static_cast<int>(textLayer->items().size())) return;
+    if (m_selectedBalloonIndex < 0 || m_selectedBalloonIndex >= static_cast<int>(textLayer->items().size())) {
+        if (!textLayer->items().empty()) {
+            m_selectedBalloonIndex = static_cast<int>(textLayer->items().size()) - 1;
+        } else {
+            return;
+        }
+    }
 
     const auto& oldItem = textLayer->items()[m_selectedBalloonIndex];
     TextBalloonItem newItem = oldItem;
@@ -9932,6 +9939,9 @@ void CanvasWidget::applyTextSettingsToSelected() {
                     oldItem.spikeCount != newItem.spikeCount ||
                     std::abs(oldItem.spikeDepth - newItem.spikeDepth) > 0.001f ||
                     std::abs(oldItem.spikePhase - newItem.spikePhase) > 0.001f ||
+                    oldItem.spikeRandomness != newItem.spikeRandomness ||
+                    oldItem.randomSeed != newItem.randomSeed ||
+                    oldItem.customVertices != newItem.customVertices ||
                     oldItem.hasTail != newItem.hasTail ||
                     std::abs(oldItem.tailBaseWidth - newItem.tailBaseWidth) > 0.001f ||
                     std::abs(oldItem.tailCurvature - newItem.tailCurvature) > 0.001f ||

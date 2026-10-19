@@ -35,6 +35,7 @@ public:
 
     void setTextSettingsWidget(TextSettingsWidget* settings) { m_textSettings = settings; }
     int selectedBalloonIndex() const { return m_selectedBalloonIndex; }
+    void setSelectedBalloonIndex(int idx) { m_selectedBalloonIndex = idx; }
 
     void setPanelSettingsWidget(PanelSettingsWidget* settings) { m_panelSettings = settings; }
     void applyPanelSettingsToSelected();

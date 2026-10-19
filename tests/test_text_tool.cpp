@@ -242,6 +242,21 @@ int main(int argc, char* argv[]) {
     assert(targetItem.hasOutline == true);
     assert(targetItem.outlineWidth == 5.0f);
     assert(targetItem.tailCurvature == 50.0f);
+
+    // ランダム再配置ボタンの動作検証
+    QPushButton* randBtn = nullptr;
+    for (auto* btn : textSettings.findChildren<QPushButton*>()) {
+        if (btn->text().contains("ランダム再配置")) {
+            randBtn = btn;
+            break;
+        }
+    }
+    assert(randBtn != nullptr);
+    uint32_t seedBefore = textSettings.randomSeed();
+    randBtn->click();
+    assert(textSettings.randomSeed() != seedBefore);
+    assert(textSettings.spikeRandomness() > 0);
+
     std::cout << "[PASS] TextSettingsWidget applies correctly to TextBalloonItem!" << std::endl;
 
     // 3. TextLayer特殊形状・カーブしっぽ・フチ取りのラスタライズ描画検証 (縦書き + ルビ + インライン書式)
@@ -329,6 +344,23 @@ int main(int argc, char* argv[]) {
 
     assert(textLayer->items().size() == 2);
     std::cout << "[PASS] TextLayer item hit-test and rasterize succeed for Vertical and Horizontal Ruby!" << std::endl;
+
+    // MainWindow のキャンバスと設定ウィジェットのランダム再配置連動テスト
+    auto winTextSettings = win.findChild<TextSettingsWidget*>();
+    assert(winTextSettings != nullptr);
+    QPushButton* winRandBtn = nullptr;
+    for (auto* btn : winTextSettings->findChildren<QPushButton*>()) {
+        if (btn->text().contains("ランダム再配置")) {
+            winRandBtn = btn;
+            break;
+        }
+    }
+    assert(winRandBtn != nullptr);
+    win.canvasWidget()->setSelectedBalloonIndex(0);
+    uint32_t oldDocSeed = textLayer->items()[0].randomSeed;
+    winRandBtn->click();
+    assert(textLayer->items()[0].randomSeed != oldDocSeed);
+    std::cout << "[PASS] Randomize button successfully updates balloon on canvas!" << std::endl;
 
     // 3-2. テキスト・吹き出しの頂点、辺、しっぽのハンドル判定テスト
     std::cout << "[TEST] Testing balloon handles (vertices, edges, body, tail)..." << std::endl;

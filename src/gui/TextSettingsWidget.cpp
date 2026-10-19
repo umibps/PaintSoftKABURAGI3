@@ -500,6 +500,11 @@ void TextSettingsWidget::setupUi() {
     connect(m_spikePhaseSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, onSettingsChanged);
     connect(m_spikeRandomSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
     connect(m_btnRandomizeSpikes, &QPushButton::clicked, this, [this, onSettingsChanged]() {
+        if (m_spikeRandomSpin->value() == 0) {
+            m_updatingUi = true;
+            m_spikeRandomSpin->setValue(30);
+            m_updatingUi = false;
+        }
         m_currentSeed = QRandomGenerator::global()->generate();
         onSettingsChanged();
     });
