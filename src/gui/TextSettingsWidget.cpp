@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QColorDialog>
+#include <QInputDialog>
 #include <algorithm>
 
 namespace Kaburagi {
@@ -43,8 +44,52 @@ void TextSettingsWidget::setupUi() {
     textGroupLayout->setContentsMargins(4, 6, 4, 4);
     textGroupLayout->setSpacing(4);
 
+    // 入力支援ツールバー
+    auto inlineToolbarLayout = new QHBoxLayout();
+    inlineToolbarLayout->setContentsMargins(0, 0, 0, 0);
+    inlineToolbarLayout->setSpacing(2);
+
+    m_btnInlineBold = new QPushButton("B", textGroup);
+    m_btnInlineBold->setToolTip("選択部分を太字にする (<b>...</b> または **...**)");
+    m_btnInlineBold->setFixedWidth(26);
+    m_btnInlineBold->setStyleSheet("font-weight: bold;");
+
+    m_btnInlineItalic = new QPushButton("I", textGroup);
+    m_btnInlineItalic->setToolTip("選択部分を斜体にする (<i>...</i>)");
+    m_btnInlineItalic->setFixedWidth(26);
+    m_btnInlineItalic->setStyleSheet("font-style: italic;");
+
+    m_btnInlineColor = new QPushButton("色", textGroup);
+    m_btnInlineColor->setToolTip("選択部分の文字色を指定する (<color=#RRGGBB>...</color>)");
+    m_btnInlineColor->setFixedWidth(28);
+
+    m_spinInlineSize = new QSpinBox(textGroup);
+    m_spinInlineSize->setRange(6, 300);
+    m_spinInlineSize->setValue(24);
+    m_spinInlineSize->setSuffix("pt");
+    m_spinInlineSize->setToolTip("選択部分の文字サイズ");
+    m_spinInlineSize->setFixedWidth(56);
+
+    m_btnInlineSize = new QPushButton("サイズ", textGroup);
+    m_btnInlineSize->setToolTip("選択部分に文字サイズを適用する (<size=24>...</size>)");
+    m_btnInlineSize->setFixedWidth(44);
+
+    m_btnInlineRuby = new QPushButton("ルビ", textGroup);
+    m_btnInlineRuby->setToolTip("選択部分にルビ（ふりがな）を振る (親文字《ルビ》)");
+    m_btnInlineRuby->setFixedWidth(36);
+
+    inlineToolbarLayout->addWidget(m_btnInlineBold);
+    inlineToolbarLayout->addWidget(m_btnInlineItalic);
+    inlineToolbarLayout->addWidget(m_btnInlineColor);
+    inlineToolbarLayout->addWidget(m_spinInlineSize);
+    inlineToolbarLayout->addWidget(m_btnInlineSize);
+    inlineToolbarLayout->addWidget(m_btnInlineRuby);
+    inlineToolbarLayout->addStretch(1);
+
+    textGroupLayout->addLayout(inlineToolbarLayout);
+
     m_textEdit = new QPlainTextEdit(textGroup);
-    m_textEdit->setPlaceholderText("テキストを入力...\n※ルビ記法: 漢字《かんじ》、｜親文字《ルビ》、[親文字](ルビ)");
+    m_textEdit->setPlaceholderText("テキストを入力...\n※ツールバーのボタンで太字・文字色・サイズ・ルビを挿入可能");
     m_textEdit->setMinimumHeight(60);
     textGroupLayout->addWidget(m_textEdit);
     textTabLayout->addWidget(textGroup);
@@ -352,8 +397,17 @@ void TextSettingsWidget::setupUi() {
         }
     });
 
+    connect(m_btnInlineBold, &QPushButton::clicked, this, &TextSettingsWidget::onInlineBoldClicked);
+    connect(m_btnInlineItalic, &QPushButton::clicked, this, &TextSettingsWidget::onInlineItalicClicked);
+    connect(m_btnInlineColor, &QPushButton::clicked, this, &TextSettingsWidget::onInlineColorClicked);
+    connect(m_btnInlineSize, &QPushButton::clicked, this, &TextSettingsWidget::onInlineSizeClicked);
+    connect(m_btnInlineRuby, &QPushButton::clicked, this, &TextSettingsWidget::onInlineRubyClicked);
+
     connect(m_fontCombo, &QFontComboBox::currentFontChanged, this, onSettingsChanged);
-    connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, onSettingsChanged);
+    connect(m_fontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, onSettingsChanged](int val) {
+        if (m_spinInlineSize) m_spinInlineSize->setValue(val);
+        onSettingsChanged();
+    });
     connect(m_btnBold, &QPushButton::toggled, this, onSettingsChanged);
     connect(m_btnItalic, &QPushButton::toggled, this, onSettingsChanged);
     connect(m_btnTextColor, &QPushButton::clicked, this, [this, onSettingsChanged]() {
@@ -678,6 +732,59 @@ void TextSettingsWidget::focusTextEdit() {
     }
     m_textEdit->setFocus();
     m_textEdit->selectAll();
+}
+
+void TextSettingsWidget::wrapSelectionWithTags(const QString& openTag, const QString& closeTag) {
+    if (!m_textEdit) return;
+    QTextCursor cursor = m_textEdit->textCursor();
+    if (cursor.hasSelection()) {
+        QString selected = cursor.selectedText();
+        cursor.insertText(openTag + selected + closeTag);
+    } else {
+        int pos = cursor.position();
+        cursor.insertText(openTag + closeTag);
+        cursor.setPosition(pos + openTag.length());
+    }
+    m_textEdit->setTextCursor(cursor);
+    m_textEdit->setFocus();
+}
+
+void TextSettingsWidget::onInlineBoldClicked() {
+    wrapSelectionWithTags("<b>", "</b>");
+}
+
+void TextSettingsWidget::onInlineItalicClicked() {
+    wrapSelectionWithTags("<i>", "</i>");
+}
+
+void TextSettingsWidget::onInlineColorClicked() {
+    QColor c = QColorDialog::getColor(textColor(), this, "選択部分の文字色を選択");
+    if (c.isValid()) {
+        wrapSelectionWithTags(QString("<color=%1>").arg(c.name(QColor::HexRgb)), "</color>");
+    }
+}
+
+void TextSettingsWidget::onInlineSizeClicked() {
+    int sz = m_spinInlineSize ? m_spinInlineSize->value() : fontSize();
+    wrapSelectionWithTags(QString("<size=%1>").arg(sz), "</size>");
+}
+
+void TextSettingsWidget::onInlineRubyClicked() {
+    if (!m_textEdit) return;
+    QTextCursor cursor = m_textEdit->textCursor();
+    QString selected = cursor.selectedText();
+    bool ok = false;
+    QString prompt = selected.isEmpty() ? "ルビ（ふりがな）を入力:" : QString("「%1」のルビ（ふりがな）を入力:").arg(selected);
+    QString ruby = QInputDialog::getText(this, "ルビ設定", prompt, QLineEdit::Normal, "", &ok);
+    if (ok && !ruby.isEmpty()) {
+        if (selected.isEmpty()) {
+            cursor.insertText(QString("親文字《%1》").arg(ruby));
+        } else {
+            cursor.insertText(QString("%1《%2》").arg(selected, ruby));
+        }
+        m_textEdit->setTextCursor(cursor);
+        m_textEdit->setFocus();
+    }
 }
 
 } // namespace Kaburagi

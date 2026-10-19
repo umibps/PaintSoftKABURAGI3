@@ -55,11 +55,56 @@ int TextLayer::findItemAt(const QPointF& docPos) const {
 
 namespace {
 
-struct RubyToken {
+struct InlineStyle {
+    bool bold = false;
+    bool italic = false;
+    std::optional<QColor> color;
+    std::optional<qreal> fontSize; // pt
+
+    bool operator==(const InlineStyle& o) const {
+        return bold == o.bold && italic == o.italic && color == o.color && fontSize == o.fontSize;
+    }
+};
+
+struct FormattedToken {
     QString baseText;
     QString rubyText;
     bool hasRuby = false;
+    InlineStyle style;
 };
+
+struct StyleContext {
+    std::vector<bool> boldStack;
+    std::vector<bool> italicStack;
+    std::vector<QColor> colorStack;
+    std::vector<qreal> sizeStack;
+
+    InlineStyle currentStyle() const {
+        InlineStyle s;
+        s.bold = !boldStack.empty() && boldStack.back();
+        s.italic = !italicStack.empty() && italicStack.back();
+        if (!colorStack.empty()) s.color = colorStack.back();
+        if (!sizeStack.empty()) s.fontSize = sizeStack.back();
+        return s;
+    }
+};
+
+QFont getEffectiveFont(const QFont& baseFont, const InlineStyle& style) {
+    QFont f = baseFont;
+    if (style.bold) f.setBold(true);
+    if (style.italic) f.setItalic(true);
+    if (style.fontSize.has_value()) {
+        f.setPointSizeF(std::max(4.0, *style.fontSize));
+    }
+    return f;
+}
+
+QColor getEffectiveColor(const QColor& baseColor, const InlineStyle& style) {
+    if (style.color.has_value()) {
+        return *style.color;
+    }
+    return baseColor;
+}
 
 bool isKanji(QChar c) {
     ushort u = c.unicode();
@@ -87,23 +132,100 @@ bool shouldRotateVertical(QChar c) {
     return rotateChars.contains(c);
 }
 
-std::vector<RubyToken> parseRubyTokens(const QString& line) {
-    std::vector<RubyToken> tokens;
+std::vector<FormattedToken> parseFormattedTokens(const QString& line, qreal basePointSize) {
+    std::vector<FormattedToken> tokens;
+    StyleContext styleCtx;
     int i = 0;
     int len = line.length();
 
     while (i < len) {
-        // 1. 青空文庫記法: ｜親文字《ルビ》 または |親文字《ルビ》
+        // 1. HTML風タグ: <b>, </b>, <i>, </i>, <color=...>, </color>, <size=...>, </size>
+        if (line[i] == QLatin1Char('<')) {
+            int closeTag = line.indexOf(QLatin1Char('>'), i + 1);
+            if (closeTag != -1) {
+                QString tagContent = line.mid(i + 1, closeTag - i - 1).trimmed();
+                QString tagLower = tagContent.toLower();
+
+                if (tagLower == "b") {
+                    styleCtx.boldStack.push_back(true);
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower == "/b") {
+                    if (!styleCtx.boldStack.empty()) styleCtx.boldStack.pop_back();
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower == "i") {
+                    styleCtx.italicStack.push_back(true);
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower == "/i") {
+                    if (!styleCtx.italicStack.empty()) styleCtx.italicStack.pop_back();
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower.startsWith("color=") || tagLower.startsWith("color:")) {
+                    QString val = tagContent.mid(6).trimmed();
+                    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith('\'') && val.endsWith('\''))) {
+                        val = val.mid(1, val.length() - 2);
+                    }
+                    QColor col(val);
+                    if (col.isValid()) {
+                        styleCtx.colorStack.push_back(col);
+                    }
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower == "/color") {
+                    if (!styleCtx.colorStack.empty()) styleCtx.colorStack.pop_back();
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower.startsWith("size=") || tagLower.startsWith("size:")) {
+                    QString val = tagContent.mid(5).trimmed();
+                    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith('\'') && val.endsWith('\''))) {
+                        val = val.mid(1, val.length() - 2);
+                    }
+                    bool ok = false;
+                    if (val.startsWith('+')) {
+                        double diff = val.mid(1).toDouble(&ok);
+                        if (ok) styleCtx.sizeStack.push_back(basePointSize + diff);
+                    } else if (val.startsWith('-')) {
+                        double diff = val.mid(1).toDouble(&ok);
+                        if (ok) styleCtx.sizeStack.push_back(std::max(4.0, basePointSize - diff));
+                    } else {
+                        double sz = val.toDouble(&ok);
+                        if (ok && sz > 0) styleCtx.sizeStack.push_back(sz);
+                    }
+                    i = closeTag + 1;
+                    continue;
+                } else if (tagLower == "/size") {
+                    if (!styleCtx.sizeStack.empty()) styleCtx.sizeStack.pop_back();
+                    i = closeTag + 1;
+                    continue;
+                }
+            }
+        }
+
+        // 2. Markdown風 **太字** のトグル
+        if (i + 1 < len && line[i] == QLatin1Char('*') && line[i + 1] == QLatin1Char('*')) {
+            if (!styleCtx.boldStack.empty()) {
+                styleCtx.boldStack.pop_back();
+            } else {
+                styleCtx.boldStack.push_back(true);
+            }
+            i += 2;
+            continue;
+        }
+
+        // 3. 青空文庫記法: ｜親文字《ルビ》 または |親文字《ルビ》
         if (line[i] == QLatin1Char('|') || line[i] == QChar(0xFF5C)) {
             int start = i + 1;
             int rubyStart = line.indexOf(QChar(0x300A), start); // 《
             if (rubyStart != -1) {
                 int rubyEnd = line.indexOf(QChar(0x300B), rubyStart + 1); // 》
                 if (rubyEnd != -1) {
-                    RubyToken tok;
+                    FormattedToken tok;
                     tok.baseText = line.mid(start, rubyStart - start);
                     tok.rubyText = line.mid(rubyStart + 1, rubyEnd - rubyStart - 1);
                     tok.hasRuby = true;
+                    tok.style = styleCtx.currentStyle();
                     tokens.push_back(tok);
                     i = rubyEnd + 1;
                     continue;
@@ -111,16 +233,17 @@ std::vector<RubyToken> parseRubyTokens(const QString& line) {
             }
         }
 
-        // 2. Markdown風記法: [親文字](ルビ)
+        // 4. Markdown風記法: [親文字](ルビ)
         if (line[i] == QLatin1Char('[')) {
             int closeBracket = line.indexOf(QLatin1Char(']'), i + 1);
             if (closeBracket != -1 && closeBracket + 1 < len && line[closeBracket + 1] == QLatin1Char('(')) {
                 int closeParen = line.indexOf(QLatin1Char(')'), closeBracket + 2);
                 if (closeParen != -1) {
-                    RubyToken tok;
+                    FormattedToken tok;
                     tok.baseText = line.mid(i + 1, closeBracket - i - 1);
                     tok.rubyText = line.mid(closeBracket + 2, closeParen - closeBracket - 2);
                     tok.hasRuby = true;
+                    tok.style = styleCtx.currentStyle();
                     tokens.push_back(tok);
                     i = closeParen + 1;
                     continue;
@@ -128,12 +251,12 @@ std::vector<RubyToken> parseRubyTokens(const QString& line) {
             }
         }
 
-        // 3. 漢字《ルビ》 記法
+        // 5. 漢字《ルビ》 記法
         if (line[i] == QChar(0x300A)) { // 《
             int rubyEnd = line.indexOf(QChar(0x300B), i + 1); // 》
             if (rubyEnd != -1 && !tokens.empty()) {
                 // 直前のトークンから末尾の漢字列を切り出す
-                RubyToken& prev = tokens.back();
+                FormattedToken& prev = tokens.back();
                 if (!prev.hasRuby && !prev.baseText.isEmpty()) {
                     int k = prev.baseText.length() - 1;
                     while (k >= 0 && isKanji(prev.baseText[k])) {
@@ -143,13 +266,15 @@ std::vector<RubyToken> parseRubyTokens(const QString& line) {
                     if (kanjiStart < prev.baseText.length()) {
                         QString kanji = prev.baseText.mid(kanjiStart);
                         prev.baseText.truncate(kanjiStart);
+                        InlineStyle prevStyle = prev.style;
                         if (prev.baseText.isEmpty()) {
                             tokens.pop_back();
                         }
-                        RubyToken tok;
+                        FormattedToken tok;
                         tok.baseText = kanji;
                         tok.rubyText = line.mid(i + 1, rubyEnd - i - 1);
                         tok.hasRuby = true;
+                        tok.style = prevStyle;
                         tokens.push_back(tok);
                         i = rubyEnd + 1;
                         continue;
@@ -158,11 +283,13 @@ std::vector<RubyToken> parseRubyTokens(const QString& line) {
             }
         }
 
-        // 4. 通常文字
-        if (tokens.empty() || tokens.back().hasRuby) {
-            RubyToken tok;
+        // 6. 通常文字
+        InlineStyle curStyle = styleCtx.currentStyle();
+        if (tokens.empty() || tokens.back().hasRuby || !(tokens.back().style == curStyle)) {
+            FormattedToken tok;
             tok.baseText = QString(line[i]);
             tok.hasRuby = false;
+            tok.style = curStyle;
             tokens.push_back(tok);
         } else {
             tokens.back().baseText.append(line[i]);
@@ -174,37 +301,60 @@ std::vector<RubyToken> parseRubyTokens(const QString& line) {
 }
 
 void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& textRect, QPainter& painter) {
-    QFont font = item.font;
-    QFont rubyFont = font;
-    qreal pointSize = font.pointSizeF() > 0 ? font.pointSizeF() : static_cast<qreal>(font.pixelSize());
-    if (pointSize <= 0) pointSize = 12.0;
-    rubyFont.setPointSizeF(std::max(4.0, pointSize * 0.5));
-
-    QFontMetricsF fm(font);
-    QFontMetricsF rfm(rubyFont);
+    qreal basePointSize = item.font.pointSizeF() > 0 ? item.font.pointSizeF() : static_cast<qreal>(item.font.pixelSize());
+    if (basePointSize <= 0) basePointSize = 12.0;
 
     QStringList lines = item.text.split(QLatin1Char('\n'));
     if (lines.isEmpty()) return;
 
-    qreal baseLineHeight = fm.lineSpacing();
-    qreal rubyLineHeight = rfm.height();
-
-    // 全体の高さを計算
+    std::vector<std::vector<FormattedToken>> parsedLines(lines.size());
     std::vector<bool> lineHasRuby(lines.size(), false);
-    std::vector<std::vector<RubyToken>> parsedLines(lines.size());
-    qreal totalHeight = 0;
+    std::vector<qreal> lineHeights(lines.size(), 0.0);
+    std::vector<qreal> maxAscents(lines.size(), 0.0);
+    std::vector<qreal> maxRubyHeights(lines.size(), 0.0);
+    std::vector<qreal> maxRubyAscents(lines.size(), 0.0);
+    qreal totalHeight = 0.0;
 
     for (int l = 0; l < lines.size(); ++l) {
-        parsedLines[l] = parseRubyTokens(lines[l]);
+        parsedLines[l] = parseFormattedTokens(lines[l], basePointSize);
         bool hasRuby = false;
+        qreal maxA = 0.0;
+        qreal maxD = 0.0;
+        qreal maxRA = 0.0;
+        qreal maxRD = 0.0;
+
         for (const auto& tok : parsedLines[l]) {
+            QFont tokFont = getEffectiveFont(item.font, tok.style);
+            QFontMetricsF fm(tokFont);
+            maxA = std::max(maxA, fm.ascent());
+            maxD = std::max(maxD, fm.descent());
+
             if (tok.hasRuby) {
                 hasRuby = true;
-                break;
+                QFont rubyFont = tokFont;
+                qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+                if (ps <= 0) ps = 12.0;
+                rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+                QFontMetricsF rfm(rubyFont);
+                maxRA = std::max(maxRA, rfm.ascent());
+                maxRD = std::max(maxRD, rfm.descent());
             }
         }
+
+        if (maxA <= 0) {
+            QFontMetricsF defFm(item.font);
+            maxA = defFm.ascent();
+            maxD = defFm.descent();
+        }
+
         lineHasRuby[l] = hasRuby;
-        totalHeight += baseLineHeight + (hasRuby ? rubyLineHeight : 0.0);
+        maxAscents[l] = maxA;
+        qreal baseH = (maxA + maxD) * 1.2;
+        qreal rubyH = hasRuby ? (maxRA + maxRD) * 1.1 : 0.0;
+        maxRubyHeights[l] = rubyH;
+        maxRubyAscents[l] = maxRA;
+        lineHeights[l] = baseH + rubyH;
+        totalHeight += lineHeights[l];
     }
 
     // 垂直方向の配置
@@ -218,13 +368,26 @@ void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& tex
     for (size_t l = 0; l < parsedLines.size(); ++l) {
         const auto& tokens = parsedLines[l];
         bool hasRuby = lineHasRuby[l];
+        qreal maxA = maxAscents[l];
+        qreal rubyH = maxRubyHeights[l];
+        qreal maxRA = maxRubyAscents[l];
 
         // 各トークンの幅を計算
         qreal lineWidth = 0.0;
         std::vector<qreal> tokWidths(tokens.size(), 0.0);
         for (size_t t = 0; t < tokens.size(); ++t) {
+            QFont tokFont = getEffectiveFont(item.font, tokens[t].style);
+            QFontMetricsF fm(tokFont);
             qreal bw = fm.horizontalAdvance(tokens[t].baseText);
-            qreal rw = tokens[t].hasRuby ? rfm.horizontalAdvance(tokens[t].rubyText) : 0.0;
+            qreal rw = 0.0;
+            if (tokens[t].hasRuby) {
+                QFont rubyFont = tokFont;
+                qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+                if (ps <= 0) ps = 12.0;
+                rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+                QFontMetricsF rfm(rubyFont);
+                rw = rfm.horizontalAdvance(tokens[t].rubyText);
+            }
             tokWidths[t] = std::max(bw, rw);
             lineWidth += tokWidths[t];
         }
@@ -236,22 +399,34 @@ void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& tex
             currentX = textRect.right() - lineWidth;
         }
 
-        qreal rubyBaseline = currentY + rfm.ascent();
-        qreal baseBaseline = (hasRuby ? currentY + rubyLineHeight : currentY) + fm.ascent();
+        qreal rubyBaseline = currentY + maxRA;
+        qreal baseBaseline = currentY + (hasRuby ? rubyH : 0.0) + maxA;
 
         for (size_t t = 0; t < tokens.size(); ++t) {
             const auto& tok = tokens[t];
+            QFont tokFont = getEffectiveFont(item.font, tok.style);
+            QColor tokColor = getEffectiveColor(item.textColor, tok.style);
+            QFontMetricsF fm(tokFont);
+
             qreal w = tokWidths[t];
             qreal bw = fm.horizontalAdvance(tok.baseText);
 
             // 親文字
-            painter.setFont(font);
+            painter.setFont(tokFont);
+            painter.setPen(tokColor);
             qreal baseX = currentX + (w - bw) * 0.5;
             painter.drawText(QPointF(baseX, baseBaseline), tok.baseText);
 
             // ルビ
             if (tok.hasRuby) {
+                QFont rubyFont = tokFont;
+                qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+                if (ps <= 0) ps = 12.0;
+                rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+                QFontMetricsF rfm(rubyFont);
+
                 painter.setFont(rubyFont);
+                painter.setPen(tokColor);
                 qreal rw = rfm.horizontalAdvance(tok.rubyText);
                 qreal rubyX = currentX + (w - rw) * 0.5;
                 painter.drawText(QPointF(rubyX, rubyBaseline), tok.rubyText);
@@ -260,45 +435,55 @@ void renderHorizontalTextWithRuby(const TextBalloonItem& item, const QRectF& tex
             currentX += w;
         }
 
-        currentY += baseLineHeight + (hasRuby ? rubyLineHeight : 0.0);
+        currentY += lineHeights[l];
     }
 }
 
 void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textRect, QPainter& painter) {
-    QFont font = item.font;
-    QFont rubyFont = font;
-    qreal pointSize = font.pointSizeF() > 0 ? font.pointSizeF() : static_cast<qreal>(font.pixelSize());
-    if (pointSize <= 0) pointSize = 12.0;
-    rubyFont.setPointSizeF(std::max(4.0, pointSize * 0.5));
-
-    QFontMetricsF fm(font);
-    QFontMetricsF rfm(rubyFont);
+    qreal basePointSize = item.font.pointSizeF() > 0 ? item.font.pointSizeF() : static_cast<qreal>(item.font.pixelSize());
+    if (basePointSize <= 0) basePointSize = 12.0;
 
     QStringList lines = item.text.split(QLatin1Char('\n'));
     if (lines.isEmpty()) return;
 
-    qreal charSpacing = fm.height();
-    qreal rubyCharSpacing = rfm.height();
-    qreal colBaseWidth = fm.horizontalAdvance(QStringLiteral("漢"));
-    qreal rubyColWidth = rfm.horizontalAdvance(QStringLiteral("漢"));
-
-    // 列（行）の幅を計算
-    std::vector<std::vector<RubyToken>> parsedLines(lines.size());
+    std::vector<std::vector<FormattedToken>> parsedLines(lines.size());
     std::vector<bool> lineHasRuby(lines.size(), false);
     std::vector<qreal> colWidths(lines.size(), 0.0);
+    std::vector<qreal> colBaseWidths(lines.size(), 0.0);
+    std::vector<qreal> colRubyWidths(lines.size(), 0.0);
     qreal totalColumnsWidth = 0.0;
 
     for (int l = 0; l < lines.size(); ++l) {
-        parsedLines[l] = parseRubyTokens(lines[l]);
+        parsedLines[l] = parseFormattedTokens(lines[l], basePointSize);
         bool hasRuby = false;
+        qreal maxColBaseW = 0.0;
+        qreal maxRubyColW = 0.0;
+
         for (const auto& tok : parsedLines[l]) {
+            QFont tokFont = getEffectiveFont(item.font, tok.style);
+            QFontMetricsF fm(tokFont);
+            maxColBaseW = std::max(maxColBaseW, fm.horizontalAdvance(QStringLiteral("漢")));
+
             if (tok.hasRuby) {
                 hasRuby = true;
-                break;
+                QFont rubyFont = tokFont;
+                qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+                if (ps <= 0) ps = 12.0;
+                rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+                QFontMetricsF rfm(rubyFont);
+                maxRubyColW = std::max(maxRubyColW, rfm.horizontalAdvance(QStringLiteral("漢")));
             }
         }
+
+        if (maxColBaseW <= 0) {
+            QFontMetricsF defFm(item.font);
+            maxColBaseW = defFm.horizontalAdvance(QStringLiteral("漢"));
+        }
+
         lineHasRuby[l] = hasRuby;
-        qreal cw = colBaseWidth + (hasRuby ? rubyColWidth + 2.0 : 0.0);
+        colBaseWidths[l] = maxColBaseW;
+        colRubyWidths[l] = maxRubyColW;
+        qreal cw = maxColBaseW + (hasRuby ? maxRubyColW + 2.0 : 0.0);
         colWidths[l] = cw;
         totalColumnsWidth += cw;
     }
@@ -318,6 +503,8 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
         bool hasRuby = lineHasRuby[l];
         qreal cw = colWidths[l];
         qreal colLeft = currentColRight - cw;
+        qreal colBaseWidth = colBaseWidths[l];
+        qreal rubyColWidth = colRubyWidths[l];
 
         // 親文字の列中央Xと、ルビ列の中央X
         qreal rubyCenterX = currentColRight - (rubyColWidth * 0.5);
@@ -326,8 +513,20 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
         // 各トークンの高さを計算
         qreal totalLineHeight = 0.0;
         for (const auto& tok : tokens) {
+            QFont tokFont = getEffectiveFont(item.font, tok.style);
+            QFontMetricsF fm(tokFont);
+            qreal charSpacing = fm.height();
             qreal bh = tok.baseText.length() * charSpacing;
-            qreal rh = tok.hasRuby ? tok.rubyText.length() * rubyCharSpacing : 0.0;
+
+            qreal rh = 0.0;
+            if (tok.hasRuby) {
+                QFont rubyFont = tokFont;
+                qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+                if (ps <= 0) ps = 12.0;
+                rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+                QFontMetricsF rfm(rubyFont);
+                rh = tok.rubyText.length() * rfm.height();
+            }
             totalLineHeight += std::max(bh, rh);
         }
 
@@ -339,12 +538,25 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
         }
 
         for (const auto& tok : tokens) {
+            QFont tokFont = getEffectiveFont(item.font, tok.style);
+            QColor tokColor = getEffectiveColor(item.textColor, tok.style);
+            QFontMetricsF fm(tokFont);
+            qreal charSpacing = fm.height();
             qreal bh = tok.baseText.length() * charSpacing;
+
+            QFont rubyFont = tokFont;
+            qreal ps = tokFont.pointSizeF() > 0 ? tokFont.pointSizeF() : static_cast<qreal>(tokFont.pixelSize());
+            if (ps <= 0) ps = 12.0;
+            rubyFont.setPointSizeF(std::max(4.0, ps * 0.5));
+            QFontMetricsF rfm(rubyFont);
+            qreal rubyCharSpacing = rfm.height();
             qreal rh = tok.hasRuby ? tok.rubyText.length() * rubyCharSpacing : 0.0;
+
             qreal blockHeight = std::max(bh, rh);
 
             // 親文字の縦描画
-            painter.setFont(font);
+            painter.setFont(tokFont);
+            painter.setPen(tokColor);
             qreal y = currentY;
             for (int ci = 0; ci < tok.baseText.length(); ++ci) {
                 QChar ch = tok.baseText[ci];
@@ -379,8 +591,8 @@ void renderVerticalTextWithRuby(const TextBalloonItem& item, const QRectF& textR
             // ルビの縦描画（親文字の右側）
             if (tok.hasRuby && !tok.rubyText.isEmpty()) {
                 painter.setFont(rubyFont);
+                painter.setPen(tokColor);
                 qreal ry = currentY;
-                // 親文字領域の中央または均等配置
                 if (rh < blockHeight && tok.rubyText.length() > 0) {
                     ry = currentY + (blockHeight - rh) * 0.5;
                 }

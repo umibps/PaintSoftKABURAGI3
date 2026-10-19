@@ -112,6 +112,42 @@ int main(int argc, char* argv[]) {
 
     std::cout << "[PASS] TextSettingsWidget setFromItem & tab separation work!" << std::endl;
 
+    // 入力支援ボタンの検証 (太字、斜体、サイズタグの挿入)
+    auto textEdit = textSettings.findChild<QPlainTextEdit*>();
+    assert(textEdit != nullptr);
+    textEdit->setPlainText("Hello World");
+    QTextCursor cur = textEdit->textCursor();
+    cur.setPosition(6);
+    cur.setPosition(11, QTextCursor::KeepAnchor); // "World" を選択
+    textEdit->setTextCursor(cur);
+
+    auto btnBold = textSettings.findChild<QPushButton*>("", Qt::FindDirectChildrenOnly);
+    // ボタンの動作を直接検証
+    auto inlineButtons = textSettings.findChildren<QPushButton*>();
+    QPushButton* btnInlineBold = nullptr;
+    QPushButton* btnInlineItalic = nullptr;
+    QPushButton* btnInlineSize = nullptr;
+    for (auto btn : inlineButtons) {
+        if (btn->text() == "B" && btn->toolTip().contains("<b>")) btnInlineBold = btn;
+        else if (btn->text() == "I" && btn->toolTip().contains("<i>")) btnInlineItalic = btn;
+        else if (btn->text() == "サイズ") btnInlineSize = btn;
+    }
+    assert(btnInlineBold != nullptr);
+    assert(btnInlineItalic != nullptr);
+    assert(btnInlineSize != nullptr);
+
+    btnInlineBold->click();
+    assert(textEdit->toPlainText() == "Hello <b>World</b>");
+
+    // "Hello" を斜体
+    cur.setPosition(0);
+    cur.setPosition(5, QTextCursor::KeepAnchor);
+    textEdit->setTextCursor(cur);
+    btnInlineItalic->click();
+    assert(textEdit->toPlainText() == "<i>Hello</i> <b>World</b>");
+
+    std::cout << "[PASS] TextSettingsWidget inline formatting buttons work!" << std::endl;
+
     // applyToItemの検証
     TextBalloonItem targetItem;
     textSettings.applyToItem(targetItem);
@@ -126,7 +162,7 @@ int main(int argc, char* argv[]) {
     assert(targetItem.tailCurvature == 50.0f);
     std::cout << "[PASS] TextSettingsWidget applies correctly to TextBalloonItem!" << std::endl;
 
-    // 3. TextLayer特殊形状・カーブしっぽ・フチ取りのラスタライズ描画検証 (縦書き + ルビ)
+    // 3. TextLayer特殊形状・カーブしっぽ・フチ取りのラスタライズ描画検証 (縦書き + ルビ + インライン書式)
     std::cout << "[TEST] Testing TextLayer rasterize and special shapes (vertical + ruby)..." << std::endl;
     auto textLayer = std::dynamic_pointer_cast<TextLayer>(addedLayer);
     assert(textLayer != nullptr);
@@ -138,11 +174,11 @@ int main(int argc, char* argv[]) {
     int hit = textLayer->findItemAt(QPointF(100, 100));
     assert(hit == 0);
 
-    // モコモコ (Cloud) + 横書きルビ [世界](ワールド) も追加して描画テスト
+    // モコモコ (Cloud) + 横書きルビ + インライン書式 (太字・文字色・サイズ変更) も追加して描画テスト
     TextBalloonItem cloudItem = srcItem;
     cloudItem.shape = BalloonShape::Cloud;
     cloudItem.direction = WritingDirection::Horizontal;
-    cloudItem.text = "ここは[世界](ワールド)の｜果て《はて》だ！";
+    cloudItem.text = "ここは<b><color=red>[世界](ワールド)</color></b>の<size=+6>｜果て《はて》</size>だ！";
     cloudItem.rect = QRectF(50, 200, 200, 100);
     textLayer->addItem(cloudItem);
     textLayer->rasterizeAll();

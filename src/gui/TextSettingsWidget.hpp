@@ -77,9 +77,22 @@ private:
     void updateColorButtons();
     void updateSpecialShapeVisibility();
 
+    void wrapSelectionWithTags(const QString& openTag, const QString& closeTag);
+    void onInlineBoldClicked();
+    void onInlineItalicClicked();
+    void onInlineColorClicked();
+    void onInlineSizeClicked();
+    void onInlineRubyClicked();
+
     QTabWidget* m_tabWidget = nullptr;
 
-    // 1. テキスト入力
+    // 1. テキスト入力 & 入力支援ボタン
+    QPushButton* m_btnInlineBold = nullptr;
+    QPushButton* m_btnInlineItalic = nullptr;
+    QPushButton* m_btnInlineColor = nullptr;
+    QSpinBox* m_spinInlineSize = nullptr;
+    QPushButton* m_btnInlineSize = nullptr;
+    QPushButton* m_btnInlineRuby = nullptr;
     QPlainTextEdit* m_textEdit = nullptr;
 
     // 2. フォント設定
