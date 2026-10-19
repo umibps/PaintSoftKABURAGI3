@@ -9627,6 +9627,7 @@ void CanvasWidget::applyTextSettingsToSelected() {
     }
     bool changed = (oldItem.font != newItem.font ||
                     oldItem.textColor != newItem.textColor ||
+                    oldItem.direction != newItem.direction ||
                     oldItem.horizontalAlign != newItem.horizontalAlign ||
                     oldItem.verticalAlign != newItem.verticalAlign ||
                     oldItem.text != newItem.text ||

@@ -44,7 +44,7 @@ void TextSettingsWidget::setupUi() {
     textGroupLayout->setSpacing(4);
 
     m_textEdit = new QPlainTextEdit(textGroup);
-    m_textEdit->setPlaceholderText("テキストを入力...");
+    m_textEdit->setPlaceholderText("テキストを入力...\n※ルビ記法: 漢字《かんじ》、｜親文字《ルビ》、[親文字](ルビ)");
     m_textEdit->setMinimumHeight(60);
     textGroupLayout->addWidget(m_textEdit);
     textTabLayout->addWidget(textGroup);
@@ -99,11 +99,34 @@ void TextSettingsWidget::setupUi() {
 
     textTabLayout->addWidget(fontGroup);
 
-    // 3. 配置・揃え (水平・垂直)
-    auto alignGroup = new QGroupBox("配置・揃え", textTab);
+    // 3. 配置・書字方向
+    auto alignGroup = new QGroupBox("配置・書字方向", textTab);
     auto alignGroupLayout = new QVBoxLayout(alignGroup);
     alignGroupLayout->setContentsMargins(4, 6, 4, 4);
     alignGroupLayout->setSpacing(4);
+
+    // 書字方向 (横書き / 縦書き)
+    auto dirRow = new QHBoxLayout();
+    dirRow->setContentsMargins(0, 0, 0, 0);
+    dirRow->setSpacing(4);
+    dirRow->addWidget(new QLabel("方向:", alignGroup));
+
+    m_dirGroup = new QButtonGroup(this);
+    m_dirGroup->setExclusive(true);
+
+    m_btnHorizontal = new QPushButton("横書き", alignGroup);
+    m_btnHorizontal->setCheckable(true);
+    m_btnHorizontal->setChecked(true);
+    m_btnHorizontal->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+    m_dirGroup->addButton(m_btnHorizontal, 0);
+    dirRow->addWidget(m_btnHorizontal, 1);
+
+    m_btnVertical = new QPushButton("縦書き", alignGroup);
+    m_btnVertical->setCheckable(true);
+    m_btnVertical->setStyleSheet("QPushButton:checked { font-weight: bold; background: #0078d7; color: white; }");
+    m_dirGroup->addButton(m_btnVertical, 1);
+    dirRow->addWidget(m_btnVertical, 1);
+    alignGroupLayout->addLayout(dirRow);
 
     // 水平
     auto hAlignRow = new QHBoxLayout();
@@ -343,6 +366,7 @@ void TextSettingsWidget::setupUi() {
     });
     connect(m_hAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
     connect(m_vAlignGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
+    connect(m_dirGroup, &QButtonGroup::idClicked, this, onSettingsChanged);
 
     connect(m_shapeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, onSettingsChanged]() {
         updateSpecialShapeVisibility();
@@ -508,6 +532,21 @@ float TextSettingsWidget::frameWidth() const {
     return static_cast<float>(m_frameWidthSpin->value());
 }
 
+WritingDirection TextSettingsWidget::direction() const {
+    if (m_btnVertical && m_btnVertical->isChecked()) {
+        return WritingDirection::Vertical;
+    }
+    return WritingDirection::Horizontal;
+}
+
+void TextSettingsWidget::setDirection(WritingDirection dir) {
+    if (dir == WritingDirection::Vertical) {
+        if (m_btnVertical) m_btnVertical->setChecked(true);
+    } else {
+        if (m_btnHorizontal) m_btnHorizontal->setChecked(true);
+    }
+}
+
 QColor TextSettingsWidget::textColor() const {
     return m_textColor;
 }
@@ -547,13 +586,14 @@ QColor TextSettingsWidget::outlineColor() const {
 void TextSettingsWidget::setFromItem(const TextBalloonItem& item) {
     m_updatingUi = true;
 
-    // 1. テキスト & フォント & 文字色
+    // 1. テキスト & フォント & 文字色 & 書字方向
     m_textEdit->setPlainText(item.text);
     m_fontCombo->setCurrentFont(item.font);
     m_fontSizeSpin->setValue(item.font.pointSize() > 0 ? item.font.pointSize() : 16);
     m_btnBold->setChecked(item.font.bold());
     m_btnItalic->setChecked(item.font.italic());
     m_textColor = item.textColor;
+    setDirection(item.direction);
 
     // 2. 配置
     if (item.horizontalAlign == Qt::AlignHCenter) {
@@ -610,6 +650,7 @@ void TextSettingsWidget::applyToItem(TextBalloonItem& item) const {
     item.text = m_textEdit->toPlainText();
     item.font = currentFont();
     item.textColor = textColor();
+    item.direction = direction();
     item.horizontalAlign = horizontalAlignment();
     item.verticalAlign = verticalAlignment();
 

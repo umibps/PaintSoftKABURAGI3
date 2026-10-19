@@ -35,6 +35,9 @@ public:
     QColor textColor() const;
     void setTextColor(const QColor& color);
 
+    WritingDirection direction() const;
+    void setDirection(WritingDirection dir);
+
     Qt::Alignment horizontalAlignment() const;
     Qt::Alignment verticalAlignment() const;
 
@@ -86,7 +89,11 @@ private:
     QPushButton* m_btnItalic = nullptr;
     QPushButton* m_btnTextColor = nullptr;
 
-    // 3. 配置
+    // 3. 配置・書字方向
+    QButtonGroup* m_dirGroup = nullptr;
+    QPushButton* m_btnHorizontal = nullptr;
+    QPushButton* m_btnVertical = nullptr;
+
     QButtonGroup* m_hAlignGroup = nullptr;
     QPushButton* m_btnAlignLeft = nullptr;
     QPushButton* m_btnAlignCenter = nullptr;

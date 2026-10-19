@@ -19,6 +19,11 @@ enum class BalloonShape {
     None          // 枠なし文字のみ
 };
 
+enum class WritingDirection {
+    Horizontal = 0, // 横書き
+    Vertical = 1    // 縦書き
+};
+
 struct TextBalloonItem {
     QString id;
     QRectF rect;                  // 吹き出し本体の矩形 (キャンバス座標)
@@ -29,6 +34,7 @@ struct TextBalloonItem {
     QColor fillColor{Qt::white};  // 背景色 (デフォルト白)
     float frameWidth = 3.0f;      // 枠線の太さ
     BalloonShape shape = BalloonShape::Ellipse; // 形状
+    WritingDirection direction = WritingDirection::Horizontal; // 書字方向 (横書き / 縦書き)
 
     // しっぽパラメータ
     bool hasTail = true;          // しっぽの有無

@@ -324,6 +324,7 @@ bool DocumentSerializer::saveToFile(const Document* document, const QString& fil
                 stream << item.hasOutline;
                 stream << item.outlineWidth;
                 stream << item.outlineColor;
+                stream << static_cast<qint32>(item.direction);
             }
             break;
         }
@@ -582,6 +583,13 @@ Document* DocumentSerializer::loadFromFile(const QString& filePath, QObject* par
                     stream >> item.tailBaseWidth >> item.tailCurvature >> sCount >> item.spikeDepth >> item.spikePhase;
                     stream >> item.hasOutline >> item.outlineWidth >> item.outlineColor;
                     item.spikeCount = sCount;
+                }
+                if (version >= 7) {
+                    qint32 dirInt = 0;
+                    stream >> dirInt;
+                    item.direction = static_cast<WritingDirection>(dirInt);
+                } else {
+                    item.direction = WritingDirection::Horizontal;
                 }
                 tLayer->addItem(item);
             }
