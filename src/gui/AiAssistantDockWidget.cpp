@@ -829,29 +829,35 @@ void AiAssistantDockWidget::detectAvailableDevices() {
     QString current = m_comboDevice->currentData().toString();
     m_comboDevice->clear();
 
-    // 組み込み推論エンジン(sd.exe)の実機デバイス検出を試行
-    auto embeddedDevices = AiService::detectEmbeddedDevices();
-    if (!embeddedDevices.empty()) {
-        for (const auto& dev : embeddedDevices) {
-            QString label = QString("%1 (%2)").arg(dev.id, dev.description);
-            m_comboDevice->addItem(label, dev.id);
-        }
-    } else {
-        // フォールバック
+    if (m_radioComfyUi && m_radioComfyUi->isChecked()) {
+        m_comboDevice->setEnabled(true);
         m_comboDevice->addItem(tr("CUDA (NVIDIA GPU - 推奨)"), "cuda");
-        m_comboDevice->addItem(tr("ROCm (AMD GPU)"), "rocm");
-        m_comboDevice->addItem(tr("OpenVINO (Intel CPU/GPU/NPU)"), "openvino");
-    }
-
-    // 常にCPUオプションを確実に追加
-    bool hasCpu = false;
-    for (int i = 0; i < m_comboDevice->count(); ++i) {
-        if (m_comboDevice->itemData(i).toString().compare("cpu", Qt::CaseInsensitive) == 0) {
-            hasCpu = true;
-            break;
+        m_comboDevice->addItem(tr("CPU (低速・安全)"), "cpu");
+    } else if (m_radioWebUi && m_radioWebUi->isChecked()) {
+        m_comboDevice->setEnabled(true);
+        m_comboDevice->addItem(tr("CUDA (NVIDIA GPU - 推奨)"), "cuda");
+        m_comboDevice->addItem(tr("DirectML / ROCm (AMD GPU)"), "rocm");
+        m_comboDevice->addItem(tr("CPU (低速・安全)"), "cpu");
+    } else if (m_radioCloud && m_radioCloud->isChecked()) {
+        m_comboDevice->setEnabled(false);
+        m_comboDevice->addItem(tr("クラウドサーバー側で自動推論"), "cloud");
+    } else {
+        // 組み込み推論エンジン(sd.exe)の実機デバイス検出を試行
+        m_comboDevice->setEnabled(true);
+        auto embeddedDevices = AiService::detectEmbeddedDevices();
+        if (!embeddedDevices.empty()) {
+            for (const auto& dev : embeddedDevices) {
+                QString label = QString("%1 (%2)").arg(dev.id, dev.description);
+                if (dev.id.startsWith("vulkan", Qt::CaseInsensitive)) {
+                    label = QString("%1 (%2 - GPU高速推論)").arg(dev.id, dev.description);
+                }
+                m_comboDevice->addItem(label, dev.id);
+            }
+        } else {
+            // フォールバック
+            m_comboDevice->addItem(tr("Vulkan (GPUハードウェアアクセラレーション - 推奨)"), "vulkan0");
+            m_comboDevice->addItem(tr("CUDA (NVIDIA GPU - 要CUDA版sd.exe)"), "cuda");
         }
-    }
-    if (!hasCpu) {
         m_comboDevice->addItem(tr("CPU (安全・確実)"), "cpu");
     }
 
@@ -2119,6 +2125,7 @@ void AiAssistantDockWidget::loadSettings() {
     }
 
     updateBackendUiState();
+    detectAvailableDevices();
 
     if (m_editServerUrl && settings.contains("serverUrl")) {
         m_editServerUrl->setText(settings.value("serverUrl").toString());

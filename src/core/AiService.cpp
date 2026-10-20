@@ -1244,7 +1244,9 @@ void AiService::executeEmbeddedInference(const AiGenerateParams& params) {
         args << "-t" << QString::number(cpuThreads);
     } else if (dev.startsWith("vulkan", Qt::CaseInsensitive)) {
         args << "--backend" << dev.toLower();
-    } else if (dev.compare("cuda", Qt::CaseInsensitive) == 0 || dev.compare("rocm", Qt::CaseInsensitive) == 0) {
+    } else if (dev.startsWith("cuda", Qt::CaseInsensitive)) {
+        args << "--backend" << dev.toLower();
+    } else if (dev.compare("rocm", Qt::CaseInsensitive) == 0) {
         args << "--backend" << "vulkan0";
     }
 
