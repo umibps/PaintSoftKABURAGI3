@@ -89,9 +89,18 @@ Document* Document::fromQImage(const QImage& img, double dpi, QObject* parent) {
     QImage converted = img.convertToFormat(QImage::Format_ARGB32);
     auto doc = new Document(converted.width(), converted.height(), dpi, false, Qt::white, parent);
 
-    auto layer = std::make_shared<Layer>("レイヤー 1", converted.width(), converted.height(), LayerType::Raster);
     int w = converted.width();
     int h = converted.height();
+
+    // 1. 画像サイズと同じサイズの背景レイヤーを一番下に作成
+    auto bgLayer = std::make_shared<Layer>("背景", w, h, LayerType::Raster);
+    uint32_t bgArgb = (doc->primaryBackgroundColor().alpha() == 0) ? 0x00000000 : doc->primaryBackgroundColor().rgba();
+    bgLayer->tileManager().clear(bgArgb);
+    bgLayer->invalidateContentBounds();
+    doc->addExistingLayer(bgLayer);
+
+    // 2. 開いた画像を格納する通常レイヤーを作成
+    auto layer = std::make_shared<Layer>("レイヤー 1", w, h, LayerType::Raster);
     for (int ty = 0; ty < layer->tileManager().tilesY(); ++ty) {
         for (int tx = 0; tx < layer->tileManager().tilesX(); ++tx) {
             int startX = tx * TileMemoryPool::TILE_WIDTH;
@@ -110,7 +119,7 @@ Document* Document::fromQImage(const QImage& img, double dpi, QObject* parent) {
     }
     layer->invalidateContentBounds();
     doc->addExistingLayer(layer);
-    doc->setActiveLayerIndex(0);
+    doc->setActiveLayerIndex(1);
     doc->composite(QRect(0, 0, w, h));
     return doc;
 }

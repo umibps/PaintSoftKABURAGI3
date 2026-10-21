@@ -179,12 +179,21 @@ int main(int argc, char* argv[]) {
         f.remove();
     }
 
-    // 7. QImage から Document の構築検証 (ドラッグ＆ドロップ機能の基盤)
+    // 7. QImage から Document の構築検証 (画像ファイル読み込み・ドラッグ＆ドロップ機能の基盤)
     Document* fromImgDoc = Document::fromQImage(thumb, 350.0);
     assert(fromImgDoc != nullptr);
     assert(fromImgDoc->width() == thumb.width());
     assert(fromImgDoc->height() == thumb.height());
-    assert(fromImgDoc->layers().size() == 1);
+    // .kab 以外の画像を開いた際、一番下に画像サイズと同じサイズの背景レイヤー、上に画像レイヤーが作られる
+    assert(fromImgDoc->layers().size() == 2);
+    assert(fromImgDoc->layers()[0]->name() == "背景");
+    assert(fromImgDoc->layers()[0]->width() == thumb.width());
+    assert(fromImgDoc->layers()[0]->height() == thumb.height());
+    assert(fromImgDoc->layers()[1]->name() == "レイヤー 1");
+    assert(fromImgDoc->layers()[1]->width() == thumb.width());
+    assert(fromImgDoc->layers()[1]->height() == thumb.height());
+    assert(fromImgDoc->activeLayerIndex() == 1);
+    assert(fromImgDoc->backgroundLayer() == fromImgDoc->layers()[0]);
     delete fromImgDoc;
 
     // クリーンアップ
