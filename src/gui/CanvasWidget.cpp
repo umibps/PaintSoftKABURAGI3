@@ -118,7 +118,9 @@ void CanvasWidget::updateCursorForActiveLayer() {
     } else if (m_currentTool == ToolType::Pipette) {
         setCursor(Qt::CrossCursor);
         m_showBrushOutline = false;
-    } else if (m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::MagicWand ||
+    } else if (m_currentTool == ToolType::RectSelect || m_currentTool == ToolType::EllipseSelect ||
+               m_currentTool == ToolType::LassoSelect || m_currentTool == ToolType::ColorSelect ||
+               m_currentTool == ToolType::MagicWand ||
                m_currentTool == ToolType::Bucket || m_currentTool == ToolType::PatternFill || m_currentTool == ToolType::Gradient ||
                m_currentTool == ToolType::VectorPolyline || m_currentTool == ToolType::VectorCurve ||
                m_currentTool == ToolType::VectorEllipse || m_currentTool == ToolType::VectorCircle ||
@@ -305,7 +307,7 @@ CanvasWidget::RectHandle CanvasWidget::hitTestRectHandle(const QPointF& mouseVie
 }
 
 void CanvasWidget::updateSelectionCursor(RectHandle handle) {
-    if (m_currentTool != ToolType::RectSelect) return;
+    if (m_currentTool != ToolType::RectSelect && m_currentTool != ToolType::EllipseSelect) return;
 
     switch (handle) {
     case RectHandle::TopLeft:
@@ -4161,7 +4163,9 @@ void CanvasWidget::mousePressEvent(QMouseEvent* event) {
     // 1. キャンバス回転: Shift + 中ボタン、または (Space または Alt) + Shift + 左ボタン
     bool isShift = (event->modifiers() & Qt::ShiftModifier);
     bool isAlt = (event->modifiers() & Qt::AltModifier);
-    bool isPanOrRotateAlt = isAlt && (m_currentTool != ToolType::RectSelect && m_currentTool != ToolType::MagicWand);
+    bool isPanOrRotateAlt = isAlt && (m_currentTool != ToolType::RectSelect && m_currentTool != ToolType::EllipseSelect &&
+                                      m_currentTool != ToolType::LassoSelect && m_currentTool != ToolType::ColorSelect &&
+                                      m_currentTool != ToolType::MagicWand);
     if ((event->button() == Qt::MiddleButton && isShift) ||
         (event->button() == Qt::LeftButton && (m_isSpacePressed || isPanOrRotateAlt) && isShift)) {
         m_isRotating = true;
@@ -5057,7 +5061,10 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
     if (m_currentTool == ToolType::ColorSelect) {
         if (event->buttons() & Qt::LeftButton) {
             handleColorSelectDrag(m_cursorDocPos, false);
+        } else {
+            setCursor(Qt::CrossCursor);
         }
+        update();
         event->accept();
         return;
     }
@@ -5068,6 +5075,8 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
             // 高頻度イベントによる無駄な全画面再描画・処理を完全に防ぐ
             event->accept();
             return;
+        } else {
+            setCursor(Qt::CrossCursor);
         }
     }
 
@@ -5798,8 +5807,19 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent* event) {
         if (m_hasActiveRect && !m_isSelecting && !m_isModifyingRect) {
             m_hoverHandle = hitTestRectHandle(event->position());
             updateSelectionCursor(m_hoverHandle);
+        } else if (!m_isSelecting && !m_isModifyingRect) {
+            setCursor(Qt::CrossCursor);
         }
         update();
+        return;
+    }
+
+    if (m_currentTool == ToolType::LassoSelect) {
+        if (!m_isLassoSelecting) {
+            setCursor(Qt::CrossCursor);
+        }
+        update();
+        event->accept();
         return;
     }
 
@@ -6065,6 +6085,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
 
     if (event->button() == Qt::LeftButton && m_currentTool == ToolType::ColorSelect) {
         finishColorSelectDrag();
+        setCursor(Qt::CrossCursor);
         event->accept();
         return;
     }
@@ -6296,6 +6317,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
             m_hasActiveRect = false;
         }
         m_lassoPointsDoc.clear();
+        setCursor(Qt::CrossCursor);
         updateAntsTimer();
         update();
         event->accept();

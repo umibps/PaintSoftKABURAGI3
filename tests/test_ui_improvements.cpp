@@ -296,6 +296,51 @@ int main(int argc, char* argv[]) {
         std::cout << "  -> PASSED!" << std::endl;
     }
 
+    // 7. Selection tools cursor behavior check (RectSelect, EllipseSelect, LassoSelect, ColorSelect)
+    {
+        std::cout << "[TEST] 7. Checking Selection tools cursor behavior..." << std::endl;
+        Document doc(200, 200);
+        CanvasWidget canvas;
+        canvas.setDocument(&doc);
+
+        // RectSelect
+        canvas.setCurrentTool(ToolType::RectSelect);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        // EllipseSelect
+        canvas.setCurrentTool(ToolType::EllipseSelect);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        // LassoSelect
+        canvas.setCurrentTool(ToolType::LassoSelect);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        // ColorSelect
+        canvas.setCurrentTool(ToolType::ColorSelect);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        // Simulate mouse move over canvas for each selection tool
+        QMouseEvent moveEvent(QEvent::MouseMove, QPointF(50, 50), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+
+        canvas.setCurrentTool(ToolType::RectSelect);
+        QApplication::sendEvent(&canvas, &moveEvent);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        canvas.setCurrentTool(ToolType::EllipseSelect);
+        QApplication::sendEvent(&canvas, &moveEvent);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        canvas.setCurrentTool(ToolType::LassoSelect);
+        QApplication::sendEvent(&canvas, &moveEvent);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        canvas.setCurrentTool(ToolType::ColorSelect);
+        QApplication::sendEvent(&canvas, &moveEvent);
+        assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
     std::cout << "[ALL UI IMPROVEMENTS TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }
