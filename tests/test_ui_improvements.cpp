@@ -13,6 +13,8 @@
 #include "PatternFillSettingsWidget.hpp"
 #include "NewCanvasDialog.hpp"
 #include "FilterDialogs.hpp"
+#include "DocumentSerializer.hpp"
+#include <QTranslator>
 
 using namespace Kaburagi;
 
@@ -389,6 +391,116 @@ int main(int argc, char* argv[]) {
         assert(dlg.mode() == GradientMapDialog::GradientMode::Preset);
         // Buttons should be hidden again
         assert(colorSelectWidget->isVisible() == false);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 9. ReferenceImageWindow Japanese translations check
+    {
+        std::cout << "[TEST] 9. Checking ReferenceImageWindow Japanese translations..." << std::endl;
+        QTranslator translator;
+        bool loaded = translator.load("paintsoft_ja", "translations");
+        assert(loaded);
+        app.installTranslator(&translator);
+
+        ReferenceImageWindow win;
+        auto placeholder = win.findChild<QLabel*>();
+        assert(placeholder != nullptr);
+        assert(placeholder->text().contains("ドラッグ＆ドロップ"));
+        assert(placeholder->text().contains("スポイト"));
+
+        QImage testImg(32, 32, QImage::Format_ARGB32_Premultiplied);
+        ReferenceImageView view(testImg);
+        assert(view.tr("Register to Palette") == QString("パレットに登録"));
+        assert(view.tr("Close Image") == QString("画像を閉じる"));
+
+        app.removeTranslator(&translator);
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 10. Gradient Map on move.kab layer 1 and clipping toggle on layer 4 check
+    {
+        std::cout << "[TEST] 10. Checking Gradient Map persistence when toggling clipping on move.kab..." << std::endl;
+        QString err;
+        std::unique_ptr<Document> doc(DocumentSerializer::loadFromFile("move.kab", nullptr, &err));
+        assert(doc != nullptr);
+
+        int layer1Index = -1;
+        int layer4Index = -1;
+        for (int i = 0; i < doc->layers().size(); ++i) {
+            auto l = doc->layers()[i];
+            if (l->name() == "レイヤー1" || l->name() == "レイヤー 1") {
+                layer1Index = i;
+            } else if (l->name() == "レイヤー4" || l->name() == "レイヤー 4") {
+                layer4Index = i;
+            }
+        }
+        std::cout << "  [INFO] layer1Index: " << layer1Index << ", layer4Index: " << layer4Index << std::endl;
+        assert(layer1Index != -1);
+        assert(layer4Index != -1);
+
+        doc->setActiveLayerIndex(layer1Index);
+        CanvasWidget canvas;
+        canvas.setDocument(doc.get());
+
+        auto layer1 = doc->getLayer(layer1Index);
+        assert(layer1 != nullptr);
+
+        // Find a non-transparent pixel in layer1
+        int sampleX = -1, sampleY = -1;
+        uint32_t origColor = 0;
+        for (int y = 0; y < doc->height() && sampleX == -1; ++y) {
+            for (int x = 0; x < doc->width(); ++x) {
+                uint32_t px = layer1->tileManager().getPixel(x, y);
+                if ((px >> 24) > 10) {
+                    sampleX = x;
+                    sampleY = y;
+                    origColor = px;
+                    break;
+                }
+            }
+        }
+        std::cout << "  [INFO] Found non-transparent pixel at (" << sampleX << ", " << sampleY << ") = 0x" << std::hex << origColor << std::dec << std::endl;
+        assert(sampleX != -1);
+
+        // Apply Gradient Map Dialog
+        {
+            GradientMapDialog dlg(doc.get(), &canvas);
+            dlg.setModeIndex(1); // 選択2色
+            dlg.setColor1(QColor(255, 0, 0)); // 暗部: 赤
+            dlg.setColor2(QColor(0, 255, 0)); // 明部: 緑
+            dlg.accept(); // accept will apply the filter and push undo command
+        }
+
+        uint32_t filteredColor = layer1->tileManager().getPixel(sampleX, sampleY);
+        std::cout << "  [INFO] Filtered pixel color: 0x" << std::hex << filteredColor << std::dec << std::endl;
+        // Verify filter was applied and changed the color
+        assert(filteredColor != origColor);
+
+        // Now toggle clipping mask on layer 4 and re-composite
+        auto layer4 = doc->getLayer(layer4Index);
+        assert(layer4 != nullptr);
+        layer4->setClippingMask(!layer4->isClippingMask());
+        doc->composite();
+
+        // Check if layer 1's pixel reverted or remained filtered!
+        uint32_t postClippingColor = layer1->tileManager().getPixel(sampleX, sampleY);
+        std::cout << "  [INFO] Color after toggling layer 4 clipping: 0x" << std::hex << postClippingColor << std::dec << std::endl;
+        assert(postClippingColor == filteredColor);
+
+        // Also test undo/redo
+        doc->undoStack()->undo();
+        doc->composite();
+        assert(layer1->tileManager().getPixel(sampleX, sampleY) == origColor);
+
+        doc->undoStack()->redo();
+        doc->composite();
+        assert(layer1->tileManager().getPixel(sampleX, sampleY) == filteredColor);
+
+        // Toggle clipping again and verify it still stays filtered
+        layer4->setClippingMask(!layer4->isClippingMask());
+        doc->composite();
+        assert(layer1->tileManager().getPixel(sampleX, sampleY) == filteredColor);
 
         std::cout << "  -> PASSED!" << std::endl;
     }

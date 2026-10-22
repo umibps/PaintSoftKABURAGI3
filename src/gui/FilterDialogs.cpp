@@ -135,29 +135,39 @@ void FilterBaseDialog::accept() {
     for (auto& info : m_targets) {
         if (!info.layer) continue;
 
+        // プレビュー状態によらず最終的なフィルター適用後の画像を確実に生成・適用
+        QImage filtered;
+        applyFilterToImage(info.originalImage, filtered);
+
+        // 選択範囲がある場合は選択範囲内のみブレンド
+        if (m_document->hasSelection()) {
+            if (m_document->selectionMaskLayer()) {
+                FilterProcessor::blendWithSelectionMask(filtered, info.originalImage,
+                                                       m_document->selectionMaskLayer().get(),
+                                                       m_document->width(), m_document->height());
+            } else {
+                FilterProcessor::blendWithSelection(filtered, info.originalImage,
+                                                    m_document->selection(),
+                                                    m_document->width(), m_document->height());
+            }
+        }
+
+        info.layer->tileManager().fromQImage(filtered);
+        info.layer->invalidateContentBounds();
+
         MultiLayerFilterCommand::Entry entry;
         entry.layerIndex = info.layerIndex;
         entry.preTiles = info.originalTiles.clone();
         entry.postTiles = info.layer->tileManager().clone();
         entry.dirtyRect = QRect(0, 0, m_document->width(), m_document->height());
         entries.push_back(std::move(entry));
-
-        // 一旦元の状態に戻して UndoStack->push() に適用させる
-        info.layer->tileManager() = info.originalTiles.clone();
     }
+
+    m_document->composite();
 
     if (m_document->undoStack()) {
         auto cmd = new MultiLayerFilterCommand(m_document, filterName(), std::move(entries));
         m_document->undoStack()->push(cmd);
-    } else {
-        // UndoStack がない場合は手動で適用
-        for (const auto& entry : entries) {
-            auto l = m_document->getLayer(entry.layerIndex);
-            if (l) {
-                l->tileManager() = entry.postTiles.clone();
-            }
-        }
-        m_document->composite();
     }
 
     if (m_canvas) m_canvas->update();

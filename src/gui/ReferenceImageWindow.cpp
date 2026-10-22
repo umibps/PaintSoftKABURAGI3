@@ -115,7 +115,7 @@ void ReferenceImageView::CanvasWidget::mousePressEvent(QMouseEvent* event) {
         QMenu menu(this);
         menu.setStyleSheet("QMenu { font-size: 11px; }");
 
-        QAction* actPalette = menu.addAction(tr("Register to Palette"));
+        QAction* actPalette = menu.addAction(m_view->tr("Register to Palette"));
         if (!inside || !pickedColor.isValid()) {
             actPalette->setEnabled(false);
         } else {
@@ -126,7 +126,7 @@ void ReferenceImageView::CanvasWidget::mousePressEvent(QMouseEvent* event) {
 
         menu.addSeparator();
 
-        QAction* actClose = menu.addAction(tr("Close Image"));
+        QAction* actClose = menu.addAction(m_view->tr("Close Image"));
         connect(actClose, &QAction::triggered, this, [this]() {
             emit m_view->closeRequested();
         });

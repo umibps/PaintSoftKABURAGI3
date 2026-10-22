@@ -2999,7 +2999,7 @@ ONの場合、描画ツールで選択マスクを直接編集できます。</t
     <message>
         <location filename="../src/gui/ReferenceImageWindow.cpp" line="118"/>
         <source>Register to Palette</source>
-        <translation>パレットに登録する</translation>
+        <translation>パレットに登録</translation>
     </message>
     <message>
         <location filename="../src/gui/ReferenceImageWindow.cpp" line="129"/>
@@ -3042,12 +3042,17 @@ ONの場合、描画ツールで選択マスクを直接編集できます。</t
 ・Right click: Register to palette / Close image
 ・Middle drag: Pan view
 ・Mouse wheel: Zoom in / out</source>
-        <translation type="unfinished"></translation>
+        <translation>ドラッグ＆ドロップ、[ファイル] &gt; [画像を開く]、または [編集] &gt; [貼り付け] で画像を開きます。
+
+・左クリック: スポイト（クリックした色を描画色に設定）
+・右クリック: メニュー（パレットに登録 / 画像を閉じる）
+・中ボタンドラッグ: スクロール（移動）
+・マウスホイール: 拡大 / 縮小</translation>
     </message>
     <message>
         <location filename="../src/gui/ReferenceImageWindow.cpp" line="483"/>
         <source>Dropped Image %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ドロップされた画像 %1</translation>
     </message>
     <message>
         <source>Open an image via [File] &gt; [Open Image] or [Edit] &gt; [Paste].
