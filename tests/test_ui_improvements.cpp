@@ -12,6 +12,7 @@
 #include "ReferenceImageWindow.hpp"
 #include "PatternFillSettingsWidget.hpp"
 #include "NewCanvasDialog.hpp"
+#include "FilterDialogs.hpp"
 
 using namespace Kaburagi;
 
@@ -337,6 +338,57 @@ int main(int argc, char* argv[]) {
         canvas.setCurrentTool(ToolType::ColorSelect);
         QApplication::sendEvent(&canvas, &moveEvent);
         assert(canvas.cursor().shape() == Qt::CrossCursor);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 8. GradientMapDialog modes (Foreground<=>Background, Custom 2 Colors, Presets) check
+    {
+        std::cout << "[TEST] 8. Checking GradientMapDialog modes and 2-color selection buttons..." << std::endl;
+        Document doc(100, 100);
+        doc.addRasterLayer("RasterLayer");
+        CanvasWidget canvas;
+        canvas.setDocument(&doc);
+        canvas.setCurrentColor(QColor(255, 0, 0));       // 描画色: 赤
+        canvas.setSecondaryColor(QColor(0, 0, 255));     // 背景色: 青
+
+        GradientMapDialog dlg(&doc, &canvas);
+
+        auto combo = dlg.findChild<QComboBox*>("comboMode");
+        assert(combo != nullptr);
+        assert(combo->count() >= 9);
+
+        auto colorSelectWidget = dlg.findChild<QWidget*>("colorSelectWidget");
+        assert(colorSelectWidget != nullptr);
+        auto btn1 = dlg.findChild<QPushButton*>("btnColor1");
+        auto btn2 = dlg.findChild<QPushButton*>("btnColor2");
+        assert(btn1 != nullptr && btn2 != nullptr);
+
+        // Default mode is 0: 描画色⇔背景色
+        assert(dlg.modeIndex() == 0);
+        assert(dlg.mode() == GradientMapDialog::GradientMode::ForegroundBackground);
+        // Buttons should NOT be visible when mode is NOT 選択2色
+        assert(colorSelectWidget->isVisible() == false);
+
+        // Switch to mode 1: 選択2色
+        dlg.setModeIndex(1);
+        assert(dlg.modeIndex() == 1);
+        assert(dlg.mode() == GradientMapDialog::GradientMode::CustomTwoColors);
+        // Buttons SHOULD be visible when mode IS 選択2色
+        assert(colorSelectWidget->isVisible() == true);
+
+        // Set custom colors
+        dlg.setColor1(QColor(10, 20, 30));
+        dlg.setColor2(QColor(200, 210, 220));
+        assert(dlg.color1() == QColor(10, 20, 30));
+        assert(dlg.color2() == QColor(200, 210, 220));
+
+        // Switch to mode 2: プリセット (白黒)
+        dlg.setModeIndex(2);
+        assert(dlg.modeIndex() == 2);
+        assert(dlg.mode() == GradientMapDialog::GradientMode::Preset);
+        // Buttons should be hidden again
+        assert(colorSelectWidget->isVisible() == false);
 
         std::cout << "  -> PASSED!" << std::endl;
     }

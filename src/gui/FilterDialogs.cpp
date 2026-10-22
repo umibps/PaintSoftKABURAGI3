@@ -572,7 +572,15 @@ void MotionBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Gradient Map"), parent)
 {
-    // プリセット定義
+    // 初期色: キャンバスがあれば描画色と背景色、なければ黒と白
+    if (m_canvas) {
+        m_color1 = m_canvas->currentColor();
+        m_color2 = m_canvas->secondaryColor();
+    }
+    if (!m_color1.isValid()) m_color1 = QColor(0, 0, 0);
+    if (!m_color2.isValid()) m_color2 = QColor(255, 255, 255);
+
+    // プリセット定義 (インデックス 2 以降に対応)
     m_presets = {
         // 0: 白黒
         { {0.0f, QColor(0, 0, 0)}, {1.0f, QColor(255, 255, 255)} },
@@ -593,8 +601,11 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
-    // プリセット
+    // モード
     m_comboPreset = new QComboBox(controls);
+    m_comboPreset->setObjectName("comboMode");
+    m_comboPreset->addItem(tr("描画色⇔背景色"));
+    m_comboPreset->addItem(tr("選択2色"));
     m_comboPreset->addItem(tr("Grayscale (Monochrome)"));
     m_comboPreset->addItem(tr("Sepia"));
     m_comboPreset->addItem(tr("Sunset"));
@@ -602,7 +613,39 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
     m_comboPreset->addItem(tr("Thermal"));
     m_comboPreset->addItem(tr("Forest"));
     m_comboPreset->addItem(tr("Pastel"));
-    form->addRow(tr("Gradient:"), m_comboPreset);
+    form->addRow(tr("モード:"), m_comboPreset);
+
+    // 選択2色時の色選択ボタン
+    m_colorSelectWidget = new QWidget(controls);
+    m_colorSelectWidget->setObjectName("colorSelectWidget");
+    auto layColors = new QHBoxLayout(m_colorSelectWidget);
+    layColors->setContentsMargins(0, 0, 0, 0);
+    layColors->setSpacing(8);
+
+    m_btnColor1 = new QPushButton(m_colorSelectWidget);
+    m_btnColor1->setObjectName("btnColor1");
+    m_btnColor1->setMinimumWidth(80);
+    m_btnColor1->setMinimumHeight(26);
+    m_btnColor1->setToolTip(tr("色1 (暗部) を選択"));
+
+    m_btnColor2 = new QPushButton(m_colorSelectWidget);
+    m_btnColor2->setObjectName("btnColor2");
+    m_btnColor2->setMinimumWidth(80);
+    m_btnColor2->setMinimumHeight(26);
+    m_btnColor2->setToolTip(tr("色2 (明部) を選択"));
+
+    layColors->addWidget(new QLabel(tr("色 1:"), m_colorSelectWidget));
+    layColors->addWidget(m_btnColor1);
+    layColors->addWidget(new QLabel(tr("色 2:"), m_colorSelectWidget));
+    layColors->addWidget(m_btnColor2);
+    layColors->addStretch();
+
+    m_lblColorSelect = new QLabel(tr("選択色:"), controls);
+    form->addRow(m_lblColorSelect, m_colorSelectWidget);
+
+    connect(m_btnColor1, &QPushButton::clicked, this, &GradientMapDialog::onColor1Clicked);
+    connect(m_btnColor2, &QPushButton::clicked, this, &GradientMapDialog::onColor2Clicked);
+    updateColorButtonStyles();
 
     // 反転
     m_chkReverse = new QCheckBox(tr("Reverse Gradient"), controls);
@@ -626,21 +669,121 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
     connect(m_spinOpacity, QOverload<int>::of(&QSpinBox::valueChanged), m_sliderOpacity, &QSlider::setValue);
 
     auto triggerPreview = [this]() { updatePreview(); };
-    connect(m_comboPreset, QOverload<int>::of(&QComboBox::currentIndexChanged), this, triggerPreview);
+    connect(m_comboPreset, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, triggerPreview]() {
+        updateModeVisibility();
+        triggerPreview();
+    });
     connect(m_chkReverse, &QCheckBox::toggled, this, triggerPreview);
     connect(m_sliderOpacity, &QSlider::valueChanged, this, triggerPreview);
 
-    setupBaseUi(controls);
-    resize(380, 160);
+    updateModeVisibility();
 
+    setupBaseUi(controls);
+    resize(400, 180);
 
     updatePreview();
 }
 
+GradientMapDialog::GradientMode GradientMapDialog::mode() const {
+    int idx = m_comboPreset ? m_comboPreset->currentIndex() : 0;
+    if (idx == 0) return GradientMode::ForegroundBackground;
+    if (idx == 1) return GradientMode::CustomTwoColors;
+    return GradientMode::Preset;
+}
+
+void GradientMapDialog::setMode(GradientMode mode) {
+    if (!m_comboPreset) return;
+    if (mode == GradientMode::ForegroundBackground) {
+        m_comboPreset->setCurrentIndex(0);
+    } else if (mode == GradientMode::CustomTwoColors) {
+        m_comboPreset->setCurrentIndex(1);
+    }
+}
+
+int GradientMapDialog::modeIndex() const {
+    return m_comboPreset ? m_comboPreset->currentIndex() : 0;
+}
+
+void GradientMapDialog::setModeIndex(int idx) {
+    if (m_comboPreset && idx >= 0 && idx < m_comboPreset->count()) {
+        m_comboPreset->setCurrentIndex(idx);
+    }
+}
+
+void GradientMapDialog::setColor1(const QColor& c) {
+    if (c.isValid() && m_color1 != c) {
+        m_color1 = c;
+        updateColorButtonStyles();
+        updatePreview();
+    }
+}
+
+void GradientMapDialog::setColor2(const QColor& c) {
+    if (c.isValid() && m_color2 != c) {
+        m_color2 = c;
+        updateColorButtonStyles();
+        updatePreview();
+    }
+}
+
+void GradientMapDialog::onColor1Clicked() {
+    QColor c = QColorDialog::getColor(m_color1, this, tr("色 1 を選択"), QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog);
+    if (c.isValid()) {
+        setColor1(c);
+    }
+}
+
+void GradientMapDialog::onColor2Clicked() {
+    QColor c = QColorDialog::getColor(m_color2, this, tr("色 2 を選択"), QColorDialog::ShowAlphaChannel | QColorDialog::DontUseNativeDialog);
+    if (c.isValid()) {
+        setColor2(c);
+    }
+}
+
+void GradientMapDialog::updateColorButtonStyles() {
+    auto applyStyle = [](QPushButton* btn, const QColor& color) {
+        if (!btn) return;
+        QString hex = color.name(QColor::HexRgb).toUpper();
+        int brightness = static_cast<int>(0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue());
+        QString textColor = (brightness > 128) ? "#000000" : "#ffffff";
+        btn->setText(hex);
+        btn->setStyleSheet(QString(
+            "QPushButton { background-color: %1; color: %2; font-weight: bold; border: 1px solid #777; border-radius: 4px; padding: 4px 8px; }"
+            "QPushButton:hover { border: 2px solid #333; }"
+        ).arg(hex, textColor));
+    };
+
+    applyStyle(m_btnColor1, m_color1);
+    applyStyle(m_btnColor2, m_color2);
+}
+
+void GradientMapDialog::updateModeVisibility() {
+    bool isCustom = (m_comboPreset && m_comboPreset->currentIndex() == 1);
+    if (m_colorSelectWidget) m_colorSelectWidget->setVisible(isCustom);
+    if (m_lblColorSelect) m_lblColorSelect->setVisible(isCustom);
+}
+
 void GradientMapDialog::applyFilterToImage(const QImage& src, QImage& out) {
     int idx = m_comboPreset ? m_comboPreset->currentIndex() : 0;
-    if (idx < 0 || idx >= static_cast<int>(m_presets.size())) idx = 0;
-    const auto& stops = m_presets[idx];
+    std::vector<QPair<float, QColor>> stops;
+
+    if (idx == 0) {
+        // 描画色⇔背景色
+        QColor fg = m_canvas ? m_canvas->currentColor() : Qt::black;
+        QColor bg = m_canvas ? m_canvas->secondaryColor() : Qt::white;
+        stops = { {0.0f, fg}, {1.0f, bg} };
+    } else if (idx == 1) {
+        // 選択2色
+        stops = { {0.0f, m_color1}, {1.0f, m_color2} };
+    } else {
+        // プリセット (インデックス 2 以降)
+        int presetIdx = idx - 2;
+        if (presetIdx >= 0 && presetIdx < static_cast<int>(m_presets.size())) {
+            stops = m_presets[presetIdx];
+        } else {
+            stops = { {0.0f, QColor(0, 0, 0)}, {1.0f, QColor(255, 255, 255)} };
+        }
+    }
 
     bool rev = m_chkReverse && m_chkReverse->isChecked();
     float op = m_sliderOpacity ? (m_sliderOpacity->value() / 100.0f) : 1.0f;

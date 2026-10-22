@@ -179,17 +179,50 @@ private:
 class GradientMapDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
+    enum class GradientMode {
+        ForegroundBackground = 0, // 描画色⇔背景色
+        CustomTwoColors = 1,      // 選択2色
+        Preset = 2                // プリセット
+    };
+
     GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+
+    GradientMode mode() const;
+    void setMode(GradientMode mode);
+
+    int modeIndex() const;
+    void setModeIndex(int idx);
+
+    QColor color1() const { return m_color1; }
+    void setColor1(const QColor& c);
+
+    QColor color2() const { return m_color2; }
+    void setColor2(const QColor& c);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
     QString filterName() const override { return "グラデーションマップ"; }
 
+private slots:
+    void onColor1Clicked();
+    void onColor2Clicked();
+
 private:
+    void updateColorButtonStyles();
+    void updateModeVisibility();
+
     QComboBox* m_comboPreset = nullptr;
+    QLabel* m_lblColorSelect = nullptr;
+    QWidget* m_colorSelectWidget = nullptr;
+    QPushButton* m_btnColor1 = nullptr;
+    QPushButton* m_btnColor2 = nullptr;
+
     QCheckBox* m_chkReverse = nullptr;
     QSlider* m_sliderOpacity = nullptr;
     QSpinBox* m_spinOpacity = nullptr;
+
+    QColor m_color1 = QColor(0, 0, 0);
+    QColor m_color2 = QColor(255, 255, 255);
 
     std::vector<std::vector<QPair<float, QColor>>> m_presets;
 };
