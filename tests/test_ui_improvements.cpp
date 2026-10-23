@@ -811,6 +811,61 @@ int main(int argc, char* argv[]) {
         std::cout << "  -> PASSED!" << std::endl;
     }
 
+    // 14. Verify all tool types displayed for Raster and Vector layers on default startup (no config)
+    {
+        std::cout << "Running Test 14: Default tool display for Raster and Vector layers..." << std::endl;
+        ToolBoxWidget toolBox;
+
+        // Verify Raster layer defaults
+        assert(toolBox.currentLayerType() == LayerType::Raster);
+        std::vector<ToolType> expectedRasterTools = {
+            ToolType::Pen, ToolType::Airbrush, ToolType::Watercolor, ToolType::Marker,
+            ToolType::Eraser, ToolType::Bucket, ToolType::Blur, ToolType::Blend,
+            ToolType::Gradient, ToolType::CompositeBrush, ToolType::PatternFill, ToolType::Text,
+            ToolType::PanelFrame, ToolType::PanelSplit, ToolType::ThreeD, ToolType::TextBalloon
+        };
+
+        for (int i = 0; i < 16; ++i) {
+            const auto& item = toolBox.slotItem(i);
+            assert(!item.isEmpty);
+            assert(item.toolType == expectedRasterTools[i]);
+            assert(!item.name.isEmpty());
+        }
+
+        // Slot 15 is TextBalloon ("吹き出し")
+        assert(toolBox.slotItem(15).toolType == ToolType::TextBalloon);
+        assert(toolBox.slotItem(15).name == QString::fromUtf8("吹き出し"));
+
+        // Remaining slots 16..63 are empty
+        for (int i = 16; i < ToolBoxWidget::TOTAL_SLOTS; ++i) {
+            assert(toolBox.slotItem(i).isEmpty);
+        }
+
+        // Switch to Vector layer
+        toolBox.setLayerType(LayerType::Vector);
+        assert(toolBox.currentLayerType() == LayerType::Vector);
+
+        auto bg = toolBox.findChild<QButtonGroup*>();
+        assert(bg != nullptr);
+
+        std::vector<ToolType> expectedVectorTools = {
+            ToolType::Pen, ToolType::Eraser,
+            ToolType::VectorControlPoint, ToolType::VectorPressure,
+            ToolType::VectorLineEdit, ToolType::VectorPolyline,
+            ToolType::VectorCurve, ToolType::VectorColorChange,
+            ToolType::VectorEllipse, ToolType::VectorCircle,
+            ToolType::VectorPolygon
+        };
+
+        for (ToolType vt : expectedVectorTools) {
+            auto btn = bg->button(static_cast<int>(vt));
+            assert(btn != nullptr);
+            assert(btn->isVisible());
+        }
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
     std::cout << "[ALL UI IMPROVEMENTS TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }

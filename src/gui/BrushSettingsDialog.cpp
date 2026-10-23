@@ -23,6 +23,7 @@ static const struct {
     { ToolType::Gradient, "グラデーション" },
     { ToolType::CompositeBrush, "合成ブラシ" },
     { ToolType::Text, "テキスト" },
+    { ToolType::TextBalloon, "吹き出し" },
     { ToolType::PanelFrame, "コマ枠" },
     { ToolType::PanelSplit, "コマ分割" },
     { ToolType::ThreeD, "3D操作" }

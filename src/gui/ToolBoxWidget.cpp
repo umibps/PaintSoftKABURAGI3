@@ -780,6 +780,7 @@ static QString defaultToolName(ToolType type, int slotIndex = -1) {
     if (slotIndex == 12) return QString::fromUtf8("コマ枠");
     if (slotIndex == 13) return QString::fromUtf8("コマ分割");
     if (slotIndex == 14) return QString::fromUtf8("3D操作");
+    if (slotIndex == 15) return QString::fromUtf8("吹き出し");
 
     switch (type) {
     case ToolType::Pen: return QString::fromUtf8("鉛筆");
@@ -794,6 +795,7 @@ static QString defaultToolName(ToolType type, int slotIndex = -1) {
     case ToolType::Gradient: return QString::fromUtf8("グラデーション");
     case ToolType::CompositeBrush: return QString::fromUtf8("合成ブラシ");
     case ToolType::Text: return QString::fromUtf8("テキスト");
+    case ToolType::TextBalloon: return QString::fromUtf8("吹き出し");
     case ToolType::PanelFrame: return QString::fromUtf8("コマ枠");
     case ToolType::PanelSplit: return QString::fromUtf8("コマ分割");
     case ToolType::ThreeD: return QString::fromUtf8("3D操作");
@@ -857,8 +859,9 @@ void ToolBoxWidget::initDefaultSlots() {
     setSlot(12, ToolType::PanelFrame, QString::fromUtf8("コマ枠"));
     setSlot(13, ToolType::PanelSplit, QString::fromUtf8("コマ分割"));
     setSlot(14, ToolType::ThreeD, QString::fromUtf8("3D操作"));
+    setSlot(15, ToolType::TextBalloon, QString::fromUtf8("吹き出し"));
 
-    for (int i = 15; i < TOTAL_SLOTS; ++i) {
+    for (int i = 16; i < TOTAL_SLOTS; ++i) {
         m_rasterSlots[i].isEmpty = true;
         m_rasterSlots[i].name = QString();
         m_rasterSlots[i].toolType = ToolType::Pen;
