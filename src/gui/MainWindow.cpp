@@ -224,9 +224,9 @@ void MainWindow::createMenuBar() {
 
     auto fileMenu = menu->addMenu(tr("&File"));
     fileMenu->addAction(tr("&New Canvas..."), QKeySequence::New, this, &MainWindow::onNewCanvas);
-    fileMenu->addAction(tr("New &Multi-Page Project..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, &MainWindow::onNewProject);
+    fileMenu->addAction(tr("複数ページ作品の新規作成(&P)..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, &MainWindow::onNewProject);
     fileMenu->addAction(tr("&Open..."), QKeySequence::Open, this, &MainWindow::onOpenCanvas);
-    fileMenu->addAction(tr("Open &Project (.kap)..."), this, &MainWindow::onOpenProject);
+    fileMenu->addAction(tr("作品を開く (.kap)(&K)..."), this, &MainWindow::onOpenProject);
     m_recentFilesMenu = fileMenu->addMenu(tr("&Recent Files"));
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, &MainWindow::onSaveCanvas);
@@ -381,47 +381,47 @@ void MainWindow::createMenuBar() {
     connect(canvasMenu, &QMenu::aboutToShow, this, &MainWindow::updateCanvasMenuActions);
     updateCanvasMenuActions();
 
-    auto pageMenu = menu->addMenu(tr("&Page"));
-    pageMenu->addAction(tr("Show &Page Manager Window"), this, [this]() {
+    auto pageMenu = menu->addMenu(tr("ページ管理(&P)"));
+    pageMenu->addAction(tr("ページ管理ウィンドウを表示(&W)"), this, [this]() {
         if (m_pageManagerDock) {
             m_pageManagerDock->show();
             m_pageManagerDock->raise();
         }
     });
     pageMenu->addSeparator();
-    pageMenu->addAction(tr("&New Multi-Page Project..."), this, &MainWindow::onNewProject);
-    pageMenu->addAction(tr("&Open Project (.kap)..."), this, &MainWindow::onOpenProject);
-    pageMenu->addAction(tr("&Save Project"), this, &MainWindow::onSaveProject);
-    pageMenu->addAction(tr("&Close Project"), this, &MainWindow::onCloseProject);
+    pageMenu->addAction(tr("複数ページ作品の新規作成(&N)..."), this, &MainWindow::onNewProject);
+    pageMenu->addAction(tr("作品を開く (.kap)(&O)..."), this, &MainWindow::onOpenProject);
+    pageMenu->addAction(tr("作品を上書き保存(&S)"), this, &MainWindow::onSaveProject);
+    pageMenu->addAction(tr("作品を閉じる(&C)"), this, &MainWindow::onCloseProject);
     pageMenu->addSeparator();
-    pageMenu->addAction(tr("&Add Page"), this, [this]() {
+    pageMenu->addAction(tr("ページを追加(&A)"), this, [this]() {
         if (m_pageManager) m_pageManager->onAddPage();
     });
-    pageMenu->addAction(tr("&Insert Page"), this, [this]() {
+    pageMenu->addAction(tr("ページを挿入(&I)"), this, [this]() {
         if (m_pageManager) m_pageManager->onInsertPage();
     });
-    pageMenu->addAction(tr("&Duplicate Page"), this, [this]() {
+    pageMenu->addAction(tr("ページを複製(&D)"), this, [this]() {
         if (m_pageManager) m_pageManager->onDuplicatePage();
     });
-    pageMenu->addAction(tr("&Delete Page"), this, [this]() {
+    pageMenu->addAction(tr("ページを削除(&R)"), this, [this]() {
         if (m_pageManager) m_pageManager->onDeletePage();
     });
     pageMenu->addSeparator();
-    pageMenu->addAction(tr("Combine to &Spread (Two-Page)"), this, [this]() {
+    pageMenu->addAction(tr("見開きに変更(&M)"), this, [this]() {
         if (m_pageManager) m_pageManager->onCombineToSpread();
     });
-    pageMenu->addAction(tr("Split &Spread into Single Pages"), this, [this]() {
+    pageMenu->addAction(tr("単ページに分割(&T)"), this, [this]() {
         if (m_pageManager) m_pageManager->onSplitSpread();
     });
     pageMenu->addSeparator();
-    pageMenu->addAction(tr("Import/Replace Page from &File..."), this, [this]() {
+    pageMenu->addAction(tr("外部ファイルをこのページに読み込み/差し替え(&F)..."), this, [this]() {
         if (m_pageManager) m_pageManager->onImportPageFile();
     });
-    pageMenu->addAction(tr("&Realign Page File Names"), this, [this]() {
+    pageMenu->addAction(tr("ページファイル名の整列(&L)"), this, [this]() {
         if (m_pageManager) m_pageManager->onRealignFileNames();
     });
     pageMenu->addSeparator();
-    pageMenu->addAction(tr("&Batch Export..."), this, &MainWindow::onBatchExport);
+    pageMenu->addAction(tr("一括書き出し(&E)..."), this, &MainWindow::onBatchExport);
 
     auto layerMenu = menu->addMenu(tr("&Layer"));
     m_newRasterLayerAction = layerMenu->addAction(tr("New &Raster Layer"), this, &MainWindow::onNewRasterLayer);
@@ -650,22 +650,22 @@ void MainWindow::createMenuBar() {
         saveSettings();
     });
 
-    auto pageMgrMenu = windowMenu->addMenu(tr("Page &Manager"));
+    auto pageMgrMenu = windowMenu->addMenu(tr("ページ管理(&P)"));
     pageMgrMenu->addAction(m_pageManagerDock->toggleViewAction());
     pageMgrMenu->addSeparator();
-    pageMgrMenu->addAction(tr("Dock to &Left"), this, [this]() {
+    pageMgrMenu->addAction(tr("左側にドッキング(&L)"), this, [this]() {
         m_pageManagerDock->setFloating(false);
         addDockWidget(Qt::LeftDockWidgetArea, m_pageManagerDock);
         m_pageManagerDock->show();
         saveSettings();
     });
-    pageMgrMenu->addAction(tr("Dock to &Right"), this, [this]() {
+    pageMgrMenu->addAction(tr("右側にドッキング(&R)"), this, [this]() {
         m_pageManagerDock->setFloating(false);
         addDockWidget(Qt::RightDockWidgetArea, m_pageManagerDock);
         m_pageManagerDock->show();
         saveSettings();
     });
-    pageMgrMenu->addAction(tr("Float"), this, [this]() {
+    pageMgrMenu->addAction(tr("フロート表示(&F)"), this, [this]() {
         m_pageManagerDock->setFloating(true);
         m_pageManagerDock->show();
         saveSettings();
