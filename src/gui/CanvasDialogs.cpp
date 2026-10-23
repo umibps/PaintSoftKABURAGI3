@@ -36,11 +36,15 @@ ChangeCanvasSizeDialog::ChangeCanvasSizeDialog(int currentWidth, int currentHeig
     m_widthSpin->setRange(1, 32000);
     m_widthSpin->setValue(m_currentWidth);
     m_widthSpin->setSuffix(" px");
+    m_widthSpin->setMinimumWidth(95);
+    m_widthSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     m_heightSpin = new QSpinBox(newGroup);
     m_heightSpin->setRange(1, 32000);
     m_heightSpin->setValue(m_currentHeight);
     m_heightSpin->setSuffix(" px");
+    m_heightSpin->setMinimumWidth(95);
+    m_heightSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     formLayout->addRow(tr("Width:"), m_widthSpin);
     formLayout->addRow(tr("Height:"), m_heightSpin);
@@ -138,7 +142,7 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     : QDialog(parent), m_currentWidth(currentWidth), m_currentHeight(currentHeight) {
     setWindowTitle(tr("Scale/Resize Canvas"));
     setModal(true);
-    resize(380, 320);
+    resize(440, 320);
 
     auto mainLayout = new QVBoxLayout(this);
 
@@ -153,6 +157,13 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     // 2. 拡大縮小サイズ設定
     auto scaleGroup = new QGroupBox(tr("New Resolution / Dimensions"), this);
     auto grid = new QGridLayout(scaleGroup);
+    grid->setHorizontalSpacing(10);
+    grid->setVerticalSpacing(8);
+    grid->setColumnStretch(0, 0);
+    grid->setColumnStretch(1, 0);
+    grid->setColumnStretch(2, 1);
+    grid->setColumnStretch(3, 0);
+    grid->setColumnStretch(4, 1);
 
     grid->addWidget(new QLabel(tr("Pixels:"), scaleGroup), 0, 0);
     grid->addWidget(new QLabel(tr("Width:"), scaleGroup), 0, 1);
@@ -160,6 +171,8 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     m_widthSpin->setRange(1, 32000);
     m_widthSpin->setValue(m_currentWidth);
     m_widthSpin->setSuffix(" px");
+    m_widthSpin->setMinimumWidth(95);
+    m_widthSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     grid->addWidget(m_widthSpin, 0, 2);
 
     grid->addWidget(new QLabel(tr("Height:"), scaleGroup), 0, 3);
@@ -167,6 +180,8 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     m_heightSpin->setRange(1, 32000);
     m_heightSpin->setValue(m_currentHeight);
     m_heightSpin->setSuffix(" px");
+    m_heightSpin->setMinimumWidth(95);
+    m_heightSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     grid->addWidget(m_heightSpin, 0, 4);
 
     grid->addWidget(new QLabel(tr("Percent:"), scaleGroup), 1, 0);
@@ -177,6 +192,8 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     m_percentWSpin->setSingleStep(5.0);
     m_percentWSpin->setDecimals(1);
     m_percentWSpin->setSuffix(" %");
+    m_percentWSpin->setMinimumWidth(95);
+    m_percentWSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     grid->addWidget(m_percentWSpin, 1, 2);
 
     grid->addWidget(new QLabel(tr("Height:"), scaleGroup), 1, 3);
@@ -186,6 +203,8 @@ ScaleCanvasDialog::ScaleCanvasDialog(int currentWidth, int currentHeight, QWidge
     m_percentHSpin->setSingleStep(5.0);
     m_percentHSpin->setDecimals(1);
     m_percentHSpin->setSuffix(" %");
+    m_percentHSpin->setMinimumWidth(95);
+    m_percentHSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     grid->addWidget(m_percentHSpin, 1, 4);
 
     m_keepAspectCheck = new QCheckBox(tr("Constrain Proportions (Keep Aspect Ratio)"), scaleGroup);

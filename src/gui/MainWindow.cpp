@@ -40,6 +40,7 @@
 #include "PreviewWindow.hpp"
 #include "ReferenceImageWindow.hpp"
 #include "CanvasDialogs.hpp"
+#include "SelectionDialogs.hpp"
 #include "MergePanelDialog.hpp"
 #include "SplitPanelDialog.hpp"
 
@@ -425,6 +426,9 @@ void MainWindow::createMenuBar() {
         if (m_canvasWidget) m_canvasWidget->invertSelection();
     });
     actInvertSel->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I));
+
+    selectMenu->addSeparator();
+    m_modifySelectionAction = selectMenu->addAction(tr("選択範囲の拡大/縮小..."), this, &MainWindow::onModifySelection);
 
     auto filterMenu = menu->addMenu(tr("Fil&ter"));
     filterMenu->addAction(tr("&Focus Blur..."), this, &MainWindow::onFilterFocusBlur);
@@ -3042,6 +3046,12 @@ void MainWindow::onScaleCanvas() {
     }
 }
 
+void MainWindow::onModifySelection() {
+    if (!m_document || !m_document->hasSelection()) return;
+    ModifySelectionDialog dlg(m_document, m_canvasWidget, this);
+    dlg.exec();
+}
+
 void MainWindow::updateCanvasMenuActions() {
     bool hasDoc = (m_document != nullptr);
     if (m_changeCanvasSizeAction) m_changeCanvasSizeAction->setEnabled(hasDoc);
@@ -3527,6 +3537,9 @@ void MainWindow::updateEditActions() {
     }
     if (m_cutAction) {
         m_cutAction->setEnabled(hasSelection && hasActiveLayer && isLayerUnlocked);
+    }
+    if (m_modifySelectionAction) {
+        m_modifySelectionAction->setEnabled(hasSelection);
     }
     if (m_pasteAction) {
         bool hasClipImage = false;

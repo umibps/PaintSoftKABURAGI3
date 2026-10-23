@@ -70,6 +70,7 @@ public:
     QString currentFilePath() const { return m_currentFilePath; }
     QString importedImagePath() const { return m_importedImagePath; }
     QString defaultSaveAsPath() const;
+    QAction* modifySelectionAction() const { return m_modifySelectionAction; }
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -103,6 +104,7 @@ public slots:
     void onCopy();
     void onCopyVisible();
     void onPaste();
+    void onModifySelection();
     void updateEditActions();
 
     void onNewRasterLayer();
@@ -258,6 +260,7 @@ private:
     // キャンバス変形アクション
     QAction* m_changeCanvasSizeAction = nullptr;
     QAction* m_scaleCanvasAction = nullptr;
+    QAction* m_modifySelectionAction = nullptr;
     QMenu* m_rotateCanvasMenu = nullptr;
     QAction* m_rotate90CWAction = nullptr;
     QAction* m_rotate90CCWAction = nullptr;

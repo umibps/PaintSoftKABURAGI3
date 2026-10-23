@@ -97,6 +97,8 @@ set(GUI_SOURCES
     src/gui/FilterDialogs.cpp
     src/gui/CanvasDialogs.hpp
     src/gui/CanvasDialogs.cpp
+    src/gui/SelectionDialogs.hpp
+    src/gui/SelectionDialogs.cpp
     src/gui/CanvasWidget.hpp
     src/gui/CanvasWidget.cpp
     src/gui/CanvasContainer.hpp

@@ -15,8 +15,11 @@
 #include "FilterDialogs.hpp"
 #include "DocumentSerializer.hpp"
 #include "MainWindow.hpp"
+#include "CanvasDialogs.hpp"
+#include "SelectionDialogs.hpp"
 #include <QTranslator>
 #include <QTemporaryDir>
+#include <QGridLayout>
 
 using namespace Kaburagi;
 
@@ -552,6 +555,132 @@ int main(int argc, char* argv[]) {
         assert(win.currentFilePath() == "move.kab");
         assert(win.importedImagePath().isEmpty());
         assert(win.defaultSaveAsPath() == "move.kab");
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 12. ScaleCanvasDialog layout and stretch priority check
+    {
+        std::cout << "[TEST] 12. Checking ScaleCanvasDialog column stretch & UI size..." << std::endl;
+        ScaleCanvasDialog dlg(1920, 1080);
+
+        // Check spin boxes minimum width
+        auto spins = dlg.findChildren<QSpinBox*>();
+        auto doubleSpins = dlg.findChildren<QDoubleSpinBox*>();
+        assert(spins.size() >= 2);
+        assert(doubleSpins.size() >= 2);
+
+        for (auto s : spins) {
+            assert(s->minimumWidth() >= 90);
+            assert(s->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding);
+        }
+        for (auto s : doubleSpins) {
+            assert(s->minimumWidth() >= 90);
+            assert(s->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding);
+        }
+
+        // Find QGridLayout inside ScaleCanvasDialog
+        auto grid = dlg.findChild<QGridLayout*>();
+        assert(grid != nullptr);
+        assert(grid->columnStretch(0) == 0);
+        assert(grid->columnStretch(1) == 0);
+        assert(grid->columnStretch(2) == 1); // Width spin stretch priority!
+        assert(grid->columnStretch(3) == 0);
+        assert(grid->columnStretch(4) == 1); // Height spin stretch priority!
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 13. ModifySelectionDialog & Selection menu check
+    {
+        std::cout << "[TEST] 13. Checking ModifySelectionDialog & Selection menu..." << std::endl;
+        MainWindow win;
+
+        // Selection action should be present and disabled when no selection exists
+        assert(win.modifySelectionAction() != nullptr);
+        assert(win.modifySelectionAction()->text().contains("選択範囲の拡大/縮小"));
+        assert(win.modifySelectionAction()->isEnabled() == false);
+
+        // Create document with rectangle selection (50, 50, 100, 100)
+        auto doc = new Document(400, 400);
+        QPainterPath initialRect;
+        initialRect.addRect(50, 50, 100, 100);
+        doc->setSelection(initialRect);
+
+        win.setDocumentForTest(doc);
+        assert(win.modifySelectionAction()->isEnabled() == true);
+
+        CanvasWidget canvas;
+        canvas.setDocument(doc);
+
+        ModifySelectionDialog dlg(doc, &canvas);
+
+        // Check default mode is Expand & Pixel
+        assert(dlg.actionType() == ModifySelectionDialog::ActionType::Expand);
+        assert(dlg.methodType() == ModifySelectionDialog::MethodType::Pixel);
+        assert(dlg.cornerType() == ModifySelectionDialog::CornerType::Round);
+
+        // Test 1: Pixel Expand with Square corner
+        dlg.setActionType(ModifySelectionDialog::ActionType::Expand);
+        dlg.setMethodType(ModifySelectionDialog::MethodType::Pixel);
+        dlg.setCornerType(ModifySelectionDialog::CornerType::Square);
+        dlg.setPixelAmount(10);
+        QPainterPath expandedSquare = dlg.calculateModifiedPath();
+        QRectF expRect = expandedSquare.boundingRect();
+        assert(qFuzzyCompare(expRect.left(), 40.0));
+        assert(qFuzzyCompare(expRect.top(), 40.0));
+        assert(qFuzzyCompare(expRect.width(), 120.0));
+        assert(qFuzzyCompare(expRect.height(), 120.0));
+
+        // Test 2: Pixel Contract with Square corner
+        dlg.setActionType(ModifySelectionDialog::ActionType::Contract);
+        dlg.setPixelAmount(10);
+        QPainterPath contractedSquare = dlg.calculateModifiedPath();
+        QRectF conRect = contractedSquare.boundingRect();
+        assert(qFuzzyCompare(conRect.left(), 60.0));
+        assert(qFuzzyCompare(conRect.top(), 60.0));
+        assert(qFuzzyCompare(conRect.width(), 80.0));
+        assert(qFuzzyCompare(conRect.height(), 80.0));
+
+        // Test 3: Ratio (%) Expand
+        dlg.setMethodType(ModifySelectionDialog::MethodType::Ratio);
+        dlg.setRatioPercent(150.0);
+        QPainterPath ratioExp = dlg.calculateModifiedPath();
+        QRectF reRect = ratioExp.boundingRect();
+        // Center is (100, 100), 150% of 100 is 150 -> left=25, top=25, w=150, h=150
+        assert(qFuzzyCompare(reRect.left(), 25.0));
+        assert(qFuzzyCompare(reRect.top(), 25.0));
+        assert(qFuzzyCompare(reRect.width(), 150.0));
+        assert(qFuzzyCompare(reRect.height(), 150.0));
+
+        // Test 4: Ratio (%) Contract
+        dlg.setRatioPercent(50.0);
+        QPainterPath ratioCon = dlg.calculateModifiedPath();
+        QRectF rcRect = ratioCon.boundingRect();
+        assert(qFuzzyCompare(rcRect.left(), 75.0));
+        assert(qFuzzyCompare(rcRect.top(), 75.0));
+        assert(qFuzzyCompare(rcRect.width(), 50.0));
+        assert(qFuzzyCompare(rcRect.height(), 50.0));
+
+        // Test 5: Pixel Expand with Round corner (Euclidean distance transform)
+        dlg.setMethodType(ModifySelectionDialog::MethodType::Pixel);
+        dlg.setActionType(ModifySelectionDialog::ActionType::Expand);
+        dlg.setCornerType(ModifySelectionDialog::CornerType::Round);
+        dlg.setPixelAmount(10);
+        QPainterPath roundExp = dlg.calculateModifiedPath();
+        assert(!roundExp.isEmpty());
+        QRectF rExpRect = roundExp.boundingRect();
+        // Round corner bounds will also span from approx 40 to 160
+        assert(std::abs(rExpRect.left() - 40.0) <= 1.0);
+        assert(std::abs(rExpRect.top() - 40.0) <= 1.0);
+
+        // Test 6: Accept applies to UndoStack & Undo restores original selection
+        dlg.accept();
+        assert(doc->undoStack()->canUndo() == true);
+        doc->undoStack()->undo();
+        assert(doc->selection().boundingRect() == initialRect.boundingRect());
+        doc->undoStack()->redo();
+        assert(std::abs(doc->selection().boundingRect().left() - 40.0) <= 1.0);
 
         std::cout << "  -> PASSED!" << std::endl;
     }

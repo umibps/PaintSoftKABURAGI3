@@ -1242,6 +1242,24 @@ void Document::updateSelectionPathFromMask() {
         return;
     }
 
+    QPainterPath fullPath = maskToPath(mask.data(), bw, bh, bx0, by0);
+    if (fullPath.isEmpty()) {
+        clearSelection();
+        return;
+    }
+
+    m_selectionPath = fullPath;
+    m_selectionBounds = fullPath.boundingRect();
+    m_hasSelection = !fullPath.isEmpty();
+    m_selectionIsRect = false;
+
+    emit selectionChanged();
+    emit documentUpdated(QRect());
+}
+
+QPainterPath Document::maskToPath(const uint8_t* mask, int bw, int bh, int offsetX, int offsetY) {
+    if (!mask || bw <= 0 || bh <= 0) return QPainterPath();
+
     auto packPt = [](int x, int y) -> uint64_t {
         return (static_cast<uint64_t>(static_cast<uint32_t>(y)) << 32) | static_cast<uint32_t>(x);
     };
@@ -1269,11 +1287,11 @@ void Document::updateSelectionPathFromMask() {
     }
 
     if (adj.empty()) {
-        clearSelection();
-        return;
+        return QPainterPath();
     }
 
     QPainterPath fullPath;
+    fullPath.setFillRule(Qt::OddEvenFill);
 
     while (!adj.empty()) {
         auto it = adj.begin();
@@ -1289,13 +1307,13 @@ void Document::updateSelectionPathFromMask() {
         }
 
         QPolygon poly;
-        poly << QPoint(bx0 + startPt.x(), by0 + startPt.y());
+        poly << QPoint(offsetX + startPt.x(), offsetY + startPt.y());
 
         int loopGuard = 0;
         const int maxLoop = bw * bh * 4 + 1000;
 
         while (cur != startPt && loopGuard++ < maxLoop) {
-            poly << QPoint(bx0 + cur.x(), by0 + cur.y());
+            poly << QPoint(offsetX + cur.x(), offsetY + cur.y());
             uint64_t key = packPt(cur.x(), cur.y());
             auto fit = adj.find(key);
             if (fit == adj.end() || fit->second.empty()) {
@@ -1314,13 +1332,7 @@ void Document::updateSelectionPathFromMask() {
         }
     }
 
-    m_selectionPath = fullPath;
-    m_selectionBounds = fullPath.boundingRect();
-    m_hasSelection = !fullPath.isEmpty();
-    m_selectionIsRect = false;
-
-    emit selectionChanged();
-    emit documentUpdated(QRect());
+    return fullPath;
 }
 
 std::vector<std::shared_ptr<GroupLayer>> Document::addPanelFolders(const std::vector<PanelCreationSpec>& specs) {

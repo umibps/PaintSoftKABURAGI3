@@ -123,6 +123,7 @@ public:
     LayerPtr selectionMaskLayer() const { return m_selectionMaskLayer; }
     void updateSelectionPathFromMask();
     void updateSelectionMaskFromPath();
+    static QPainterPath maskToPath(const uint8_t* mask, int bw, int bh, int offsetX = 0, int offsetY = 0);
 
     // カラーモード管理 (RGB, CMYKプルーフ, CMYKネイティブ)
     CanvasColorMode colorMode() const { return m_colorMode; }
