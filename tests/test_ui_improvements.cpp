@@ -14,7 +14,9 @@
 #include "NewCanvasDialog.hpp"
 #include "FilterDialogs.hpp"
 #include "DocumentSerializer.hpp"
+#include "MainWindow.hpp"
 #include <QTranslator>
+#include <QTemporaryDir>
 
 using namespace Kaburagi;
 
@@ -501,6 +503,55 @@ int main(int argc, char* argv[]) {
         layer4->setClippingMask(!layer4->isClippingMask());
         doc->composite();
         assert(layer1->tileManager().getPixel(sampleX, sampleY) == filteredColor);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
+    // 11. Initial folder/path for Save As after opening non-.kab image
+    {
+        std::cout << "[TEST] 11. Checking default Save As directory when opening non-.kab image..." << std::endl;
+        MainWindow win;
+
+        // Default initially without any file opened
+        assert(win.currentFilePath().isEmpty());
+        assert(win.importedImagePath().isEmpty());
+        assert(win.defaultSaveAsPath() == "無題.kab");
+
+        // Create a temporary folder with a non-.kab image (e.g. sample.png)
+        QTemporaryDir tempDir;
+        assert(tempDir.isValid());
+        QString tempImagePath = tempDir.filePath("custom_photo.png");
+        {
+            QImage sampleImg(64, 64, QImage::Format_ARGB32);
+            sampleImg.fill(Qt::yellow);
+            bool saved = sampleImg.save(tempImagePath);
+            assert(saved);
+        }
+
+        // Open the non-.kab image
+        win.openFile(tempImagePath);
+
+        // Current .kab project file path should still be empty
+        assert(win.currentFilePath().isEmpty());
+        // Imported image path should match the loaded image
+        assert(win.importedImagePath() == tempImagePath);
+
+        // The default Save As path must be in the folder where the image was saved
+        QString saveAsPath = win.defaultSaveAsPath();
+        std::cout << "  [INFO] saveAsPath: " << saveAsPath.toStdString() << std::endl;
+        QFileInfo saveAsFi(saveAsPath);
+        QFileInfo originalFi(tempImagePath);
+
+        // Directory of saveAsPath must equal directory of original image
+        assert(saveAsFi.absolutePath() == originalFi.absolutePath());
+        // File name should propose the completeBaseName + .kab
+        assert(saveAsFi.fileName() == "custom_photo.kab");
+
+        // Now test opening a .kab file
+        win.openFile("move.kab");
+        assert(win.currentFilePath() == "move.kab");
+        assert(win.importedImagePath().isEmpty());
+        assert(win.defaultSaveAsPath() == "move.kab");
 
         std::cout << "  -> PASSED!" << std::endl;
     }

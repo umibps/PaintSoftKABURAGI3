@@ -67,6 +67,10 @@ public:
     QSplitter* toolSplitter() const { return m_toolSplitter; }
     QSplitter* navSplitter() const { return m_navSplitter; }
 
+    QString currentFilePath() const { return m_currentFilePath; }
+    QString importedImagePath() const { return m_importedImagePath; }
+    QString defaultSaveAsPath() const;
+
 protected:
     void closeEvent(QCloseEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -163,6 +167,7 @@ private:
 
     Document* m_document = nullptr;
     QString m_currentFilePath;
+    QString m_importedImagePath;
 
     CanvasWidget* m_canvasWidget = nullptr;
     CanvasContainer* m_canvasContainer = nullptr;

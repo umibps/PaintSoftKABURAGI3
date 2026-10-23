@@ -2978,7 +2978,14 @@ void MainWindow::setupDocument(Document* doc) {
 
     // 中央タブのタイトル更新
     if (m_tabWidget) {
-        QString docName = m_currentFilePath.isEmpty() ? tr("New Canvas.kab") : QFileInfo(m_currentFilePath).fileName();
+        QString docName;
+        if (!m_currentFilePath.isEmpty()) {
+            docName = QFileInfo(m_currentFilePath).fileName();
+        } else if (!m_importedImagePath.isEmpty()) {
+            docName = QFileInfo(m_importedImagePath).fileName();
+        } else {
+            docName = tr("New Canvas.kab");
+        }
         QString modeStr;
         switch (m_document->colorMode()) {
             case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
@@ -3091,7 +3098,15 @@ void MainWindow::updateWindowTitle() {
         setWindowModified(false);
         return;
     }
-    QString docName = m_currentFilePath.isEmpty() ? tr("Untitled") : QFileInfo(m_currentFilePath).fileName();
+    QString docName;
+    if (!m_currentFilePath.isEmpty()) {
+        docName = QFileInfo(m_currentFilePath).fileName();
+    } else if (!m_importedImagePath.isEmpty()) {
+        docName = QFileInfo(m_importedImagePath).fileName();
+    } else {
+        docName = tr("Untitled");
+    }
+
     QString modeStr;
     switch (m_document->colorMode()) {
         case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
@@ -3100,7 +3115,14 @@ void MainWindow::updateWindowTitle() {
     }
     setWindowTitle(QString("%1 %2[*] - PaintSoft KABURAGI 3.0").arg(docName).arg(modeStr));
     if (m_tabWidget && m_tabWidget->count() > 0) {
-        QString tabDocName = m_currentFilePath.isEmpty() ? tr("New Canvas.kab") : QFileInfo(m_currentFilePath).fileName();
+        QString tabDocName;
+        if (!m_currentFilePath.isEmpty()) {
+            tabDocName = QFileInfo(m_currentFilePath).fileName();
+        } else if (!m_importedImagePath.isEmpty()) {
+            tabDocName = QFileInfo(m_importedImagePath).fileName();
+        } else {
+            tabDocName = tr("New Canvas.kab");
+        }
         m_tabWidget->setTabText(0, QString("%1 (%2x%3) %4").arg(tabDocName).arg(m_document->width()).arg(m_document->height()).arg(modeStr));
     }
     if (m_document && m_document->undoStack()) {
@@ -3206,6 +3228,7 @@ void MainWindow::onNewCanvas() {
     }
 
     m_currentFilePath.clear();
+    m_importedImagePath.clear();
     auto doc = new Document(dlg.canvasWidth(), dlg.canvasHeight(), dlg.canvasDpi(), true, dlg.backgroundColor(), this);
     doc->setSecondaryBackgroundColor(dlg.secondaryBackgroundColor());
     doc->setClipToHiddenBaseLayer(dlg.isClipToHiddenBase());
@@ -3221,8 +3244,21 @@ void MainWindow::onCloseCanvas() {
     if (!maybeSave()) return;
 
     m_currentFilePath.clear();
+    m_importedImagePath.clear();
     setupDocument(nullptr);
     statusBar()->showMessage(tr("Canvas closed."), 3000);
+}
+
+QString MainWindow::defaultSaveAsPath() const {
+    if (!m_currentFilePath.isEmpty()) {
+        return m_currentFilePath;
+    }
+    if (!m_importedImagePath.isEmpty()) {
+        QFileInfo fi(m_importedImagePath);
+        QString baseName = fi.completeBaseName().isEmpty() ? "無題" : fi.completeBaseName();
+        return fi.absoluteDir().filePath(baseName + ".kab");
+    }
+    return "無題.kab";
 }
 
 bool MainWindow::onSaveCanvas() {
@@ -3251,7 +3287,7 @@ bool MainWindow::onSaveCanvas() {
 bool MainWindow::onSaveAsCanvas() {
     if (!m_document) return false;
 
-    QString defaultPath = m_currentFilePath.isEmpty() ? "無題.kab" : m_currentFilePath;
+    QString defaultPath = defaultSaveAsPath();
     QString filter = "PaintSoft KABURAGI キャンバス (*.kab);;"
                      "PNG 画像 (*.png);;"
                      "JPEG 画像 (*.jpg *.jpeg);;"
@@ -3294,11 +3330,13 @@ bool MainWindow::onSaveAsCanvas() {
 
     if (ext == "kab") {
         m_currentFilePath = filePath;
+        m_importedImagePath.clear();
         return onSaveCanvas();
     } else {
         // 画像エクスポート (PNG/JPEG/BMP/TIFF/WebP/PSD)
         QString errorMsg;
         if (DocumentSerializer::exportImage(m_document, filePath, &errorMsg)) {
+            m_importedImagePath = filePath;
             addRecentFile(filePath);
             statusBar()->showMessage(QString("画像をエクスポートしました: %1").arg(filePath), 4000);
             return true;
@@ -3333,6 +3371,7 @@ void MainWindow::openFile(const QString& filePath) {
         }
 
         m_currentFilePath = filePath;
+        m_importedImagePath.clear();
         setupDocument(doc);
         if (m_document->undoStack()) {
             m_document->undoStack()->setClean();
@@ -3355,6 +3394,7 @@ void MainWindow::openFile(const QString& filePath) {
         }
 
         m_currentFilePath.clear();
+        m_importedImagePath = filePath;
         setupDocument(doc);
         if (m_document->undoStack()) {
             m_document->undoStack()->setClean();
@@ -3441,6 +3481,7 @@ void MainWindow::onPaste() {
         Document* doc = Document::fromQImage(clipImg, 350.0, this);
         if (!doc) return;
         m_currentFilePath.clear();
+        m_importedImagePath.clear();
         setupDocument(doc);
         if (m_document->undoStack()) {
             m_document->undoStack()->setClean();
