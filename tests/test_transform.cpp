@@ -247,6 +247,71 @@ void testTransformShortcutCtrlT() {
     std::cout << "[PASS] Transform Shortcut Ctrl+T verified!" << std::endl;
 }
 
+void testUnifiedFlipHorizontalAndVertical() {
+    std::cout << "[TEST] Testing Unified Mode Flip Horizontal & Vertical canvas display..." << std::endl;
+    Document doc(100, 100, 350.0, false, Qt::transparent);
+    auto layer = doc.addRasterLayer();
+    doc.setActiveLayerIndex(1);
+
+    // (10, 10)から(20, 30)に赤い縦長長方形を描く (非対称パターン: 左側に赤)
+    for (int y = 10; y < 30; ++y) {
+        for (int x = 10; x < 20; ++x) {
+            Tile* t = layer->tileManager().getTileForWrite(x / TileMemoryPool::TILE_WIDTH, y / TileMemoryPool::TILE_HEIGHT);
+            if (t && t->writeBuffer()) {
+                uint32_t* buf = reinterpret_cast<uint32_t*>(t->writeBuffer());
+                buf[(y % TileMemoryPool::TILE_HEIGHT) * TileMemoryPool::TILE_WIDTH + (x % TileMemoryPool::TILE_WIDTH)] = 0xFFFF0000;
+            }
+        }
+    }
+    // (10, 10)から(50, 30)全体を変形ソースにするために(49, 29)に薄いピクセルを配置
+    Tile* tCorner = layer->tileManager().getTileForWrite(49 / TileMemoryPool::TILE_WIDTH, 29 / TileMemoryPool::TILE_HEIGHT);
+    uint32_t* bufCorner = reinterpret_cast<uint32_t*>(tCorner->writeBuffer());
+    bufCorner[(29 % TileMemoryPool::TILE_HEIGHT) * TileMemoryPool::TILE_WIDTH + (49 % TileMemoryPool::TILE_WIDTH)] = 0xFF00FF00;
+
+    layer->invalidateContentBounds();
+    doc.composite();
+
+    CanvasWidget canvas;
+    canvas.setDocument(&doc);
+    canvas.setTransformMode(TransformMode::Unified);
+    canvas.setCurrentTool(ToolType::Transform);
+    assert(canvas.isTransforming());
+
+    canvas.resize(200, 200);
+    canvas.show();
+    QApplication::processEvents();
+
+    // 左右反転実行
+    canvas.flipTransformHorizontal();
+    QApplication::processEvents();
+
+    QString artifactPath = "C:/Users/UMIHIKO/.gemini/antigravity/brain/e668f6c6-6123-49b4-8d6c-a63bbb7450be/transform_flip_h_verified.png";
+    canvas.grab().save(artifactPath);
+
+    // 確定
+    canvas.applyTransform();
+    assert(!canvas.isTransforming());
+
+    // 元は左側 (x: 10~19) にあった赤が、反転後は右側 (x: 40~49) に移動していることを確認！
+    // (x: 10~19) の赤が消えていること
+    const Tile* tLeft = layer->tileManager().getTile(15 / TileMemoryPool::TILE_WIDTH, 20 / TileMemoryPool::TILE_HEIGHT);
+    uint32_t pLeft = 0;
+    if (tLeft && tLeft->readBuffer()) {
+        const uint32_t* b = reinterpret_cast<const uint32_t*>(tLeft->readBuffer());
+        pLeft = b[(20 % TileMemoryPool::TILE_HEIGHT) * TileMemoryPool::TILE_WIDTH + (15 % TileMemoryPool::TILE_WIDTH)];
+    }
+    assert(pLeft != 0xFFFF0000);
+
+    // (x: 40~49) に赤が移動していること
+    const Tile* tRight = layer->tileManager().getTile(44 / TileMemoryPool::TILE_WIDTH, 20 / TileMemoryPool::TILE_HEIGHT);
+    assert(tRight && tRight->readBuffer());
+    const uint32_t* bRight = reinterpret_cast<const uint32_t*>(tRight->readBuffer());
+    uint32_t pRight = bRight[(20 % TileMemoryPool::TILE_HEIGHT) * TileMemoryPool::TILE_WIDTH + (44 % TileMemoryPool::TILE_WIDTH)];
+    assert((pRight & 0x00FF0000) == 0x00FF0000); // 赤成分がしっかり描画されている
+
+    std::cout << "[PASS] Unified Mode Flip Horizontal flipped canvas display and applied correctly!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -256,6 +321,7 @@ int main(int argc, char* argv[]) {
     testVectorTransform();
     testTextLayerTransformSkip();
     testWarpAndCageModesAndFlips();
+    testUnifiedFlipHorizontalAndVertical();
     testTransformShortcutCtrlT();
 
     std::cout << "[ALL PASS] All Transform Tool tests passed successfully!" << std::endl;

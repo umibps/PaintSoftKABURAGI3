@@ -9104,28 +9104,51 @@ void CanvasWidget::updateTransformCursor(TransformHandle handle, Qt::KeyboardMod
         break;
     case TransformHandle::TopLeft:
     case TransformHandle::BottomRight:
-        if (mods & Qt::ControlModifier) {
-            setCursor(Qt::CrossCursor);
-        } else {
-            setCursor(Qt::SizeFDiagCursor);
-        }
-        break;
     case TransformHandle::TopRight:
     case TransformHandle::BottomLeft:
         if (mods & Qt::ControlModifier) {
             setCursor(Qt::CrossCursor);
         } else {
-            setCursor(Qt::SizeBDiagCursor);
+            if (m_transformCurrentQuad.size() == 4) {
+                QPointF handlePt;
+                if (handle == TransformHandle::TopLeft) handlePt = m_transformCurrentQuad[0];
+                else if (handle == TransformHandle::TopRight) handlePt = m_transformCurrentQuad[1];
+                else if (handle == TransformHandle::BottomRight) handlePt = m_transformCurrentQuad[2];
+                else handlePt = m_transformCurrentQuad[3];
+
+                QPointF d = docToView(handlePt) - docToView(m_transformPivot);
+                if (d.x() * d.y() >= 0) {
+                    setCursor(Qt::SizeFDiagCursor); // \ diagonal
+                } else {
+                    setCursor(Qt::SizeBDiagCursor); // / diagonal
+                }
+            } else {
+                setCursor(Qt::SizeFDiagCursor);
+            }
         }
         break;
     case TransformHandle::TopEdge:
     case TransformHandle::BottomEdge:
-        setCursor(Qt::SizeVerCursor);
-        break;
     case TransformHandle::LeftEdge:
-    case TransformHandle::RightEdge:
-        setCursor(Qt::SizeHorCursor);
+    case TransformHandle::RightEdge: {
+        if (m_transformCurrentQuad.size() == 4) {
+            QPointF midPt;
+            if (handle == TransformHandle::TopEdge) midPt = (m_transformCurrentQuad[0] + m_transformCurrentQuad[1]) * 0.5;
+            else if (handle == TransformHandle::RightEdge) midPt = (m_transformCurrentQuad[1] + m_transformCurrentQuad[2]) * 0.5;
+            else if (handle == TransformHandle::BottomEdge) midPt = (m_transformCurrentQuad[2] + m_transformCurrentQuad[3]) * 0.5;
+            else midPt = (m_transformCurrentQuad[3] + m_transformCurrentQuad[0]) * 0.5;
+
+            QPointF d = docToView(midPt) - docToView(m_transformPivot);
+            if (std::abs(d.x()) > std::abs(d.y())) {
+                setCursor(Qt::SizeHorCursor);
+            } else {
+                setCursor(Qt::SizeVerCursor);
+            }
+        } else {
+            setCursor(Qt::SizeVerCursor);
+        }
         break;
+    }
     case TransformHandle::None:
     default:
         setCursor(Qt::ArrowCursor);
@@ -9211,24 +9234,11 @@ void CanvasWidget::flipTransformHorizontal() {
         qreal x = m_transformCurrentQuad[i].x();
         m_transformCurrentQuad[i].setX(2.0 * cx - x);
     }
-    if (m_transformCurrentQuad.size() == 4) {
-        std::swap(m_transformCurrentQuad[0], m_transformCurrentQuad[1]);
-        std::swap(m_transformCurrentQuad[3], m_transformCurrentQuad[2]);
-    }
 
     // 2. Mesh Warp
     if (!m_meshCurrentPoints.empty()) {
-        int N = m_warpMeshDivisions;
-        int pts = N + 1;
         for (auto& pt : m_meshCurrentPoints) {
             pt.setX(2.0 * cx - pt.x());
-        }
-        for (int row = 0; row < pts; ++row) {
-            for (int col = 0; col < pts / 2; ++col) {
-                int leftIdx = row * pts + col;
-                int rightIdx = row * pts + (pts - 1 - col);
-                std::swap(m_meshCurrentPoints[leftIdx], m_meshCurrentPoints[rightIdx]);
-            }
         }
     }
 
@@ -9252,6 +9262,11 @@ void CanvasWidget::flipTransformHorizontal() {
                 }
             }
             m_transformSourceImage = m_transformSourceImage.mirrored(true, false);
+            for (auto& tl : m_transformTargetLayers) {
+                if (tl.isRaster && !tl.sourceImage.isNull()) {
+                    tl.sourceImage = tl.sourceImage.mirrored(true, false);
+                }
+            }
         }
     }
 
@@ -9272,24 +9287,11 @@ void CanvasWidget::flipTransformVertical() {
         qreal y = m_transformCurrentQuad[i].y();
         m_transformCurrentQuad[i].setY(2.0 * cy - y);
     }
-    if (m_transformCurrentQuad.size() == 4) {
-        std::swap(m_transformCurrentQuad[0], m_transformCurrentQuad[3]);
-        std::swap(m_transformCurrentQuad[1], m_transformCurrentQuad[2]);
-    }
 
     // 2. Mesh Warp
     if (!m_meshCurrentPoints.empty()) {
-        int N = m_warpMeshDivisions;
-        int pts = N + 1;
         for (auto& pt : m_meshCurrentPoints) {
             pt.setY(2.0 * cy - pt.y());
-        }
-        for (int row = 0; row < pts / 2; ++row) {
-            for (int col = 0; col < pts; ++col) {
-                int topIdx = row * pts + col;
-                int btmIdx = (pts - 1 - row) * pts + col;
-                std::swap(m_meshCurrentPoints[topIdx], m_meshCurrentPoints[btmIdx]);
-            }
         }
     }
 
@@ -9313,6 +9315,11 @@ void CanvasWidget::flipTransformVertical() {
                 }
             }
             m_transformSourceImage = m_transformSourceImage.mirrored(false, true);
+            for (auto& tl : m_transformTargetLayers) {
+                if (tl.isRaster && !tl.sourceImage.isNull()) {
+                    tl.sourceImage = tl.sourceImage.mirrored(false, true);
+                }
+            }
         }
     }
 
