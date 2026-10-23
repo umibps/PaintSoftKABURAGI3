@@ -682,6 +682,25 @@ int main(int argc, char* argv[]) {
         doc->undoStack()->redo();
         assert(std::abs(doc->selection().boundingRect().left() - 40.0) <= 1.0);
 
+        // Test 7: Verify previous settings persistence in QSettings
+        {
+            ModifySelectionDialog dlg2(doc, &canvas);
+            assert(dlg2.actionType() == ModifySelectionDialog::ActionType::Expand);
+            assert(dlg2.methodType() == ModifySelectionDialog::MethodType::Pixel);
+            assert(dlg2.cornerType() == ModifySelectionDialog::CornerType::Round);
+            assert(dlg2.pixelAmount() == 10);
+
+            dlg2.setActionType(ModifySelectionDialog::ActionType::Contract);
+            dlg2.setMethodType(ModifySelectionDialog::MethodType::Ratio);
+            dlg2.setRatioPercent(85.0);
+            dlg2.accept();
+
+            ModifySelectionDialog dlg3(doc, &canvas);
+            assert(dlg3.actionType() == ModifySelectionDialog::ActionType::Contract);
+            assert(dlg3.methodType() == ModifySelectionDialog::MethodType::Ratio);
+            assert(qFuzzyCompare(dlg3.ratioPercent(), 85.0));
+        }
+
         std::cout << "  -> PASSED!" << std::endl;
     }
 

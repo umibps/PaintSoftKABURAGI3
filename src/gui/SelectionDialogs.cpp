@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QPainter>
 #include <QTransform>
+#include <QSettings>
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -122,6 +123,16 @@ void ModifySelectionDialog::setupUi() {
     setModal(true);
     resize(360, 310);
 
+    QSettings settings;
+    settings.beginGroup("Selection/ModifySelection");
+    int initAction = settings.value("actionType", static_cast<int>(ActionType::Expand)).toInt();
+    int initMethod = settings.value("methodType", static_cast<int>(MethodType::Pixel)).toInt();
+    int initPixel = settings.value("pixelAmount", 5).toInt();
+    int initCorner = settings.value("cornerType", static_cast<int>(CornerType::Round)).toInt();
+    double initRatio = settings.value("ratioPercent", 110.0).toDouble();
+    bool initPreview = settings.value("preview", true).toBool();
+    settings.endGroup();
+
     auto mainLayout = new QVBoxLayout(this);
 
     // 1. 動作モード (拡大 / 縮小)
@@ -129,7 +140,11 @@ void ModifySelectionDialog::setupUi() {
     auto actionLayout = new QHBoxLayout(actionGroup);
     m_radioExpand = new QRadioButton(tr("拡大"), actionGroup);
     m_radioContract = new QRadioButton(tr("縮小"), actionGroup);
-    m_radioExpand->setChecked(true);
+    if (initAction == static_cast<int>(ActionType::Contract)) {
+        m_radioContract->setChecked(true);
+    } else {
+        m_radioExpand->setChecked(true);
+    }
     actionLayout->addWidget(m_radioExpand);
     actionLayout->addWidget(m_radioContract);
     mainLayout->addWidget(actionGroup);
@@ -141,7 +156,11 @@ void ModifySelectionDialog::setupUi() {
     auto radioRow = new QHBoxLayout();
     m_radioPixel = new QRadioButton(tr("ピクセル数で指定"), methodGroup);
     m_radioRatio = new QRadioButton(tr("比率(%)で指定"), methodGroup);
-    m_radioPixel->setChecked(true);
+    if (initMethod == static_cast<int>(MethodType::Ratio)) {
+        m_radioRatio->setChecked(true);
+    } else {
+        m_radioPixel->setChecked(true);
+    }
     radioRow->addWidget(m_radioPixel);
     radioRow->addWidget(m_radioRatio);
     methodLayout->addLayout(radioRow);
@@ -155,7 +174,7 @@ void ModifySelectionDialog::setupUi() {
     spinRow->addWidget(new QLabel(tr("拡大量 / 縮小量:"), m_pixelWidget));
     m_pixelSpin = new QSpinBox(m_pixelWidget);
     m_pixelSpin->setRange(1, 1000);
-    m_pixelSpin->setValue(5);
+    m_pixelSpin->setValue(initPixel);
     m_pixelSpin->setSuffix(" px");
     m_pixelSpin->setMinimumWidth(90);
     spinRow->addWidget(m_pixelSpin);
@@ -165,7 +184,11 @@ void ModifySelectionDialog::setupUi() {
     cornerRow->addWidget(new QLabel(tr("角の形状:"), m_pixelWidget));
     m_radioRound = new QRadioButton(tr("円形 (丸くする)"), m_pixelWidget);
     m_radioSquare = new QRadioButton(tr("矩形 (直角)"), m_pixelWidget);
-    m_radioRound->setChecked(true);
+    if (initCorner == static_cast<int>(CornerType::Square)) {
+        m_radioSquare->setChecked(true);
+    } else {
+        m_radioRound->setChecked(true);
+    }
     cornerRow->addWidget(m_radioRound);
     cornerRow->addWidget(m_radioSquare);
     pixelLayout->addLayout(cornerRow);
@@ -179,21 +202,24 @@ void ModifySelectionDialog::setupUi() {
     ratioLayout->addWidget(new QLabel(tr("拡大率 / 縮小率:"), m_ratioWidget));
     m_ratioSpin = new QDoubleSpinBox(m_ratioWidget);
     m_ratioSpin->setRange(1.0, 1000.0);
-    m_ratioSpin->setValue(110.0);
+    m_ratioSpin->setValue(initRatio);
     m_ratioSpin->setSingleStep(5.0);
     m_ratioSpin->setDecimals(1);
     m_ratioSpin->setSuffix(" %");
     m_ratioSpin->setMinimumWidth(90);
     ratioLayout->addWidget(m_ratioSpin);
     methodLayout->addWidget(m_ratioWidget);
-    m_ratioWidget->setVisible(false);
+
+    bool isPixel = (initMethod != static_cast<int>(MethodType::Ratio));
+    m_pixelWidget->setVisible(isPixel);
+    m_ratioWidget->setVisible(!isPixel);
 
     mainLayout->addWidget(methodGroup);
 
     // 3. プレビュー
     auto previewRow = new QHBoxLayout();
     m_previewCheck = new QCheckBox(tr("プレビュー"), this);
-    m_previewCheck->setChecked(true);
+    m_previewCheck->setChecked(initPreview);
     previewRow->addWidget(m_previewCheck);
     mainLayout->addLayout(previewRow);
 
@@ -444,6 +470,16 @@ void ModifySelectionDialog::updatePreview() {
 }
 
 void ModifySelectionDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Selection/ModifySelection");
+    settings.setValue("actionType", static_cast<int>(actionType()));
+    settings.setValue("methodType", static_cast<int>(methodType()));
+    settings.setValue("pixelAmount", pixelAmount());
+    settings.setValue("cornerType", static_cast<int>(cornerType()));
+    settings.setValue("ratioPercent", ratioPercent());
+    settings.setValue("preview", isPreviewEnabled());
+    settings.endGroup();
+
     if (m_document) {
         m_document->setSelection(m_originalPath);
         QPainterPath finalPath = calculateModifiedPath();
