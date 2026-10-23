@@ -685,6 +685,88 @@ int main(int argc, char* argv[]) {
         std::cout << "  -> PASSED!" << std::endl;
     }
 
+    // 14. Multi-document canvas tabs check
+    {
+        std::cout << "[TEST] 14. Checking multi-document canvas tabs..." << std::endl;
+        MainWindow mw;
+        assert(mw.tabCount() == 0);
+        assert(mw.document() == nullptr);
+
+        // Open initial canvas tab
+        auto doc1 = new Document(400, 300, 350.0, true, Qt::white);
+        mw.addNewTab(doc1, "canvas1.kab");
+        assert(mw.tabCount() == 1);
+        assert(mw.currentTabIndex() == 0);
+        assert(mw.document() == doc1);
+        assert(mw.tabFilePath(0) == "canvas1.kab");
+        assert(mw.tabWidget()->count() == 1);
+
+        // Create temporary PNG images
+        QTemporaryDir tempDir;
+        QString imgPath1 = tempDir.filePath("test_image1.png");
+        QImage img1(200, 150, QImage::Format_ARGB32);
+        img1.fill(Qt::red);
+        img1.save(imgPath1);
+
+        // Open image while canvas1 already exists -> should add a new tab!
+        mw.openFile(imgPath1);
+        assert(mw.tabCount() == 2);
+        assert(mw.currentTabIndex() == 1);
+        assert(mw.document() != doc1);
+        assert(mw.document()->width() == 200);
+        assert(mw.document()->height() == 150);
+        assert(mw.tabWidget()->count() == 2);
+        assert(mw.tabImportedImagePath(1) == imgPath1);
+        assert(mw.document()->layers().size() >= 2);
+        assert(mw.document()->layers().front()->name() == "背景");
+
+        // Switch to tab 0
+        mw.tabWidget()->setCurrentIndex(0);
+        assert(mw.currentTabIndex() == 0);
+        assert(mw.document() == doc1);
+        assert(mw.document()->width() == 400);
+        assert(mw.document()->height() == 300);
+
+        // Switch back to tab 1
+        mw.tabWidget()->setCurrentIndex(1);
+        assert(mw.currentTabIndex() == 1);
+        assert(mw.document() != doc1);
+        assert(mw.document()->width() == 200);
+
+        // Open another image -> should add a third tab
+        QString imgPath2 = tempDir.filePath("test_image2.png");
+        QImage img2(320, 240, QImage::Format_ARGB32);
+        img2.fill(Qt::blue);
+        img2.save(imgPath2);
+
+        mw.openFile(imgPath2);
+        assert(mw.tabCount() == 3);
+        assert(mw.currentTabIndex() == 2);
+        assert(mw.document()->width() == 320);
+        assert(mw.document()->height() == 240);
+
+        // Close tab 1
+        bool closed = mw.closeTab(1);
+        assert(closed == true);
+        assert(mw.tabCount() == 2);
+        assert(mw.currentTabIndex() == 1); // active tab index adjusted
+        assert(mw.document()->width() == 320); // still on imgPath2
+
+        // Close remaining tabs
+        mw.closeTab(1);
+        assert(mw.tabCount() == 1);
+        assert(mw.currentTabIndex() == 0);
+        assert(mw.document() == doc1);
+
+        mw.closeTab(0);
+        assert(mw.tabCount() == 0);
+        assert(mw.currentTabIndex() == -1);
+        assert(mw.document() == nullptr);
+        assert(mw.tabWidget()->count() == 0);
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
     std::cout << "[ALL UI IMPROVEMENTS TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }

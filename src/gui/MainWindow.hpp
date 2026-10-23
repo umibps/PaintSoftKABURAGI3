@@ -147,6 +147,42 @@ public slots:
     void onToggleSelectionEdit(bool checked);
     void setDrawingColor(const QColor& color);
 
+public:
+    struct CanvasTabInfo {
+        Document* document = nullptr;
+        QWidget* pageWidget = nullptr;
+        QString currentFilePath;
+        QString importedImagePath;
+        double zoom = 1.0;
+        QPointF panOffset;
+        double rotationAngle = 0.0;
+        bool flipH = false;
+        bool hasSavedView = false;
+        QMetaObject::Connection cleanConn;
+        QMetaObject::Connection resizedConn;
+        QMetaObject::Connection colorModeConn;
+    };
+
+    int tabCount() const { return m_tabs.size(); }
+    int currentTabIndex() const { return m_currentTabIndex; }
+    Document* documentAt(int index) const {
+        if (index >= 0 && index < m_tabs.size()) return m_tabs[index].document;
+        return nullptr;
+    }
+    QString tabFilePath(int index) const {
+        if (index >= 0 && index < m_tabs.size()) return m_tabs[index].currentFilePath;
+        return QString();
+    }
+    QString tabImportedImagePath(int index) const {
+        if (index >= 0 && index < m_tabs.size()) return m_tabs[index].importedImagePath;
+        return QString();
+    }
+    void addNewTab(Document* doc, const QString& filePath = QString(), const QString& importedImagePath = QString());
+    bool closeTab(int index);
+    void onTabChanged(int index);
+    void updateTabTitle(int index);
+    bool maybeSaveTab(int index);
+
 private:
     bool maybeSave();
     void setupDocument(Document* doc);
@@ -170,6 +206,9 @@ private:
     Document* m_document = nullptr;
     QString m_currentFilePath;
     QString m_importedImagePath;
+    QList<CanvasTabInfo> m_tabs;
+    int m_currentTabIndex = -1;
+    std::vector<QMetaObject::Connection> m_docConnections;
 
     CanvasWidget* m_canvasWidget = nullptr;
     CanvasContainer* m_canvasContainer = nullptr;

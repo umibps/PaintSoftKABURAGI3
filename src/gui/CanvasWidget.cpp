@@ -500,6 +500,20 @@ void CanvasWidget::toggleFlipHorizontally() {
     notifyTransformChanged();
 }
 
+void CanvasWidget::setFlipHorizontally(bool flip) {
+    if (m_flippedHorizontally != flip) {
+        m_flippedHorizontally = flip;
+        update();
+        notifyTransformChanged();
+    }
+}
+
+void CanvasWidget::setPanOffset(const QPointF& offset) {
+    m_panOffset = offset;
+    update();
+    notifyTransformChanged();
+}
+
 void CanvasWidget::fitToView() {
     if (!m_document) return;
     int docW = m_document->width();

@@ -205,6 +205,14 @@ MainWindow::~MainWindow() {
     if (qApp) {
         qApp->removeEventFilter(this);
     }
+    for (auto& conn : m_docConnections) {
+        QObject::disconnect(conn);
+    }
+    m_docConnections.clear();
+    while (!m_tabs.isEmpty()) {
+        auto tab = m_tabs.takeLast();
+        delete tab.document;
+    }
 }
 
 void MainWindow::createMenuBar() {
@@ -972,6 +980,7 @@ void MainWindow::setupLayout() {
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setTabPosition(QTabWidget::South); // キャンバスのタブは下側に配置
     m_tabWidget->setTabsClosable(true);             // 各タブの右側に閉じるボタンを追加
+    m_tabWidget->setMovable(true);
     m_tabWidget->setStyleSheet(
         "QTabBar::tab { font-size: 11px; height: 22px; padding: 0 8px; }"
         "QTabBar::close-button { subcontrol-position: right; margin-left: 4px; }"
@@ -988,9 +997,16 @@ void MainWindow::setupLayout() {
     m_tabWidget->setCornerWidget(m_tabCloseBtn, Qt::BottomRightCorner);
 
     connect(m_tabCloseBtn, &QToolButton::clicked, this, &MainWindow::onCloseCanvas);
-    connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int /*index*/) {
-        onCloseCanvas();
-    });
+    connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
+    if (m_tabWidget->tabBar()) {
+        connect(m_tabWidget->tabBar(), &QTabBar::tabMoved, this, [this](int from, int to) {
+            if (from >= 0 && from < m_tabs.size() && to >= 0 && to < m_tabs.size()) {
+                m_tabs.move(from, to);
+                m_currentTabIndex = m_tabWidget->currentIndex();
+            }
+        });
+    }
 
     m_canvasWidget = new CanvasWidget(this);
     m_canvasWidget->setRightClickEyedropperEnabled(PreferencesDialog::isRightClickEyedropperEnabled());
@@ -1008,6 +1024,7 @@ void MainWindow::setupLayout() {
     });
 
     m_canvasContainer = new CanvasContainer(m_canvasWidget, this);
+    m_canvasContainer->hide();
     // 起動時はキャンバスを開かないため、タブは追加しない
 
     setCentralWidget(m_tabWidget);
@@ -2813,12 +2830,15 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     if (m_saveSettingsTimer.isActive()) {
         m_saveSettingsTimer.stop();
     }
-    if (maybeSave()) {
-        saveSettings();
-        QMainWindow::closeEvent(event);
-    } else {
-        event->ignore();
+    while (!m_tabs.isEmpty()) {
+        int idx = m_tabs.size() - 1;
+        if (!closeTab(idx)) {
+            event->ignore();
+            return;
+        }
     }
+    saveSettings();
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
@@ -2829,12 +2849,14 @@ void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
 
 void MainWindow::dropEvent(QDropEvent* event) {
     const auto urls = event->mimeData()->urls();
-    if (!urls.isEmpty()) {
-        QString localPath = urls.first().toLocalFile();
+    for (const auto& url : urls) {
+        QString localPath = url.toLocalFile();
         if (!localPath.isEmpty()) {
             openFile(localPath);
-            event->acceptProposedAction();
         }
+    }
+    if (!urls.isEmpty()) {
+        event->acceptProposedAction();
     }
 }
 
@@ -2865,8 +2887,17 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 bool MainWindow::maybeSave() {
-    if (!m_document || !m_document->undoStack() || m_document->undoStack()->isClean()) {
+    return maybeSaveTab(m_currentTabIndex);
+}
+
+bool MainWindow::maybeSaveTab(int index) {
+    if (index < 0 || index >= m_tabs.size()) return true;
+    auto doc = m_tabs[index].document;
+    if (!doc || !doc->undoStack() || doc->undoStack()->isClean()) {
         return true;
+    }
+    if (m_currentTabIndex != index) {
+        m_tabWidget->setCurrentIndex(index);
     }
     const auto ret = QMessageBox::warning(
         this, "PaintSoft KABURAGI",
@@ -2883,10 +2914,30 @@ bool MainWindow::maybeSave() {
 
 void MainWindow::setupDocument(Document* doc) {
     if (!doc) {
-        if (m_document) {
-            delete m_document;
-            m_document = nullptr;
+        if (m_canvasContainer) {
+            m_canvasContainer->setParent(this);
+            m_canvasContainer->hide();
         }
+
+        for (auto& conn : m_docConnections) {
+            QObject::disconnect(conn);
+        }
+        m_docConnections.clear();
+
+        while (!m_tabs.isEmpty()) {
+            auto tab = m_tabs.takeLast();
+            QObject::disconnect(tab.cleanConn);
+            QObject::disconnect(tab.resizedConn);
+            QObject::disconnect(tab.colorModeConn);
+            delete tab.document;
+            delete tab.pageWidget;
+        }
+
+        m_currentTabIndex = -1;
+        m_document = nullptr;
+        m_currentFilePath.clear();
+        m_importedImagePath.clear();
+
         if (m_canvasWidget) m_canvasWidget->setDocument(nullptr);
         if (m_layerPanel) m_layerPanel->setDocument(nullptr);
         if (m_navigator) m_navigator->setDocument(nullptr);
@@ -2899,7 +2950,9 @@ void MainWindow::setupDocument(Document* doc) {
             m_btnToggleSelectionEdit->blockSignals(false);
         }
         if (m_tabWidget) {
+            m_tabWidget->blockSignals(true);
             m_tabWidget->clear();
+            m_tabWidget->blockSignals(false);
         }
         if (m_tabCloseBtn) {
             m_tabCloseBtn->setEnabled(false);
@@ -2913,15 +2966,200 @@ void MainWindow::setupDocument(Document* doc) {
         return;
     }
 
-    if (m_document && m_document != doc) {
+    if (m_tabs.isEmpty()) {
+        addNewTab(doc, m_currentFilePath, m_importedImagePath);
+    } else {
+        if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+            if (m_tabs[m_currentTabIndex].document != doc) {
+                delete m_tabs[m_currentTabIndex].document;
+                m_tabs[m_currentTabIndex].document = doc;
+            }
+            onTabChanged(m_currentTabIndex);
+        }
+    }
+}
+
+void MainWindow::addNewTab(Document* doc, const QString& filePath, const QString& importedImagePath) {
+    if (!doc) return;
+
+    if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size() && m_canvasWidget) {
+        m_tabs[m_currentTabIndex].zoom = m_canvasWidget->zoom();
+        m_tabs[m_currentTabIndex].panOffset = m_canvasWidget->panOffset();
+        m_tabs[m_currentTabIndex].rotationAngle = m_canvasWidget->rotationAngle();
+        m_tabs[m_currentTabIndex].flipH = m_canvasWidget->isFlippedHorizontally();
+        m_tabs[m_currentTabIndex].hasSavedView = true;
+    }
+
+    QWidget* pageWidget = new QWidget(m_tabWidget);
+    QVBoxLayout* layout = new QVBoxLayout(pageWidget);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    CanvasTabInfo tabInfo;
+    tabInfo.document = doc;
+    tabInfo.pageWidget = pageWidget;
+    tabInfo.currentFilePath = filePath;
+    tabInfo.importedImagePath = importedImagePath;
+    tabInfo.zoom = 1.0;
+    tabInfo.rotationAngle = 0.0;
+    tabInfo.flipH = false;
+    tabInfo.hasSavedView = false;
+
+    if (doc->undoStack()) {
+        tabInfo.cleanConn = connect(doc->undoStack(), &QUndoStack::cleanChanged, this, [this, doc]() {
+            for (int i = 0; i < m_tabs.size(); ++i) {
+                if (m_tabs[i].document == doc) {
+                    updateTabTitle(i);
+                    if (i == m_currentTabIndex) {
+                        updateWindowTitle();
+                    }
+                    break;
+                }
+            }
+        });
+    }
+
+    tabInfo.resizedConn = connect(doc, &Document::canvasResized, this, [this, doc](int, int) {
+        for (int i = 0; i < m_tabs.size(); ++i) {
+            if (m_tabs[i].document == doc) {
+                updateTabTitle(i);
+                break;
+            }
+        }
+    });
+
+    tabInfo.colorModeConn = connect(doc, &Document::colorModeChanged, this, [this, doc](CanvasColorMode) {
+        for (int i = 0; i < m_tabs.size(); ++i) {
+            if (m_tabs[i].document == doc) {
+                updateTabTitle(i);
+                break;
+            }
+        }
+    });
+
+    int newIndex = m_tabs.size();
+    m_tabs.append(tabInfo);
+
+    m_tabWidget->blockSignals(true);
+    m_tabWidget->addTab(pageWidget, "");
+    m_tabWidget->setCurrentIndex(newIndex);
+    m_tabWidget->blockSignals(false);
+
+    onTabChanged(newIndex);
+    updateTabTitle(newIndex);
+    if (m_tabCloseBtn) {
+        m_tabCloseBtn->setEnabled(true);
+    }
+}
+
+bool MainWindow::closeTab(int index) {
+    if (index < 0 || index >= m_tabs.size()) return false;
+    if (!maybeSaveTab(index)) {
+        return false;
+    }
+
+    if (m_canvasContainer && m_canvasContainer->parent() == m_tabs[index].pageWidget) {
+        m_canvasContainer->setParent(this);
+        m_canvasContainer->hide();
+    }
+
+    QObject::disconnect(m_tabs[index].cleanConn);
+    QObject::disconnect(m_tabs[index].resizedConn);
+    QObject::disconnect(m_tabs[index].colorModeConn);
+
+    bool isClosingCurrent = (index == m_currentTabIndex);
+
+    if (isClosingCurrent) {
+        for (auto& conn : m_docConnections) {
+            QObject::disconnect(conn);
+        }
+        m_docConnections.clear();
+        m_document = nullptr;
+    }
+
+    auto tab = m_tabs.takeAt(index);
+    delete tab.document;
+
+    m_tabWidget->blockSignals(true);
+    m_tabWidget->removeTab(index);
+    delete tab.pageWidget;
+    m_tabWidget->blockSignals(false);
+
+    if (m_tabs.isEmpty()) {
+        m_currentTabIndex = -1;
+        m_document = nullptr;
+        m_currentFilePath.clear();
+        m_importedImagePath.clear();
+
         if (m_canvasWidget) m_canvasWidget->setDocument(nullptr);
         if (m_layerPanel) m_layerPanel->setDocument(nullptr);
         if (m_navigator) m_navigator->setDocument(nullptr);
         if (m_aiAssistantDock) m_aiAssistantDock->setDocument(nullptr);
+        if (m_threeDSettings) m_threeDSettings->setDocument(nullptr);
         if (m_previewWindow) m_previewWindow->setDocument(nullptr);
-        delete m_document;
+
+        if (m_btnToggleSelectionEdit) {
+            m_btnToggleSelectionEdit->blockSignals(true);
+            m_btnToggleSelectionEdit->setChecked(false);
+            m_btnToggleSelectionEdit->blockSignals(false);
+        }
+        if (m_tabCloseBtn) {
+            m_tabCloseBtn->setEnabled(false);
+        }
+        updateEditActions();
+        updateLayerMenuActions();
+        updateUndoRedoActions();
+        updateColorModeActions();
+        updateCanvasMenuActions();
+        updateWindowTitle();
+        statusBar()->showMessage(tr("Canvas closed."), 3000);
+    } else {
+        if (isClosingCurrent) {
+            int newIndex = std::min(index, static_cast<int>(m_tabs.size() - 1));
+            m_currentTabIndex = -1;
+            m_tabWidget->setCurrentIndex(newIndex);
+            onTabChanged(newIndex);
+        } else {
+            if (index < m_currentTabIndex) {
+                m_currentTabIndex--;
+            }
+            m_tabWidget->setCurrentIndex(m_currentTabIndex);
+        }
     }
-    m_document = doc;
+    return true;
+}
+
+void MainWindow::onTabChanged(int index) {
+    if (index < 0 || index >= m_tabs.size()) return;
+    if (index == m_currentTabIndex && m_document == m_tabs[index].document) {
+        return;
+    }
+
+    if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size() && m_canvasWidget) {
+        m_tabs[m_currentTabIndex].zoom = m_canvasWidget->zoom();
+        m_tabs[m_currentTabIndex].panOffset = m_canvasWidget->panOffset();
+        m_tabs[m_currentTabIndex].rotationAngle = m_canvasWidget->rotationAngle();
+        m_tabs[m_currentTabIndex].flipH = m_canvasWidget->isFlippedHorizontally();
+        m_tabs[m_currentTabIndex].hasSavedView = true;
+    }
+
+    m_currentTabIndex = index;
+    auto& tab = m_tabs[index];
+
+    if (m_canvasContainer) {
+        tab.pageWidget->layout()->addWidget(m_canvasContainer);
+        m_canvasContainer->show();
+    }
+
+    for (auto& conn : m_docConnections) {
+        QObject::disconnect(conn);
+    }
+    m_docConnections.clear();
+
+    m_document = tab.document;
+    m_currentFilePath = tab.currentFilePath;
+    m_importedImagePath = tab.importedImagePath;
+
     if (m_canvasWidget) m_canvasWidget->setDocument(m_document);
     if (m_layerPanel) m_layerPanel->setDocument(m_document);
     if (m_navigator) m_navigator->setDocument(m_document);
@@ -2929,101 +3167,118 @@ void MainWindow::setupDocument(Document* doc) {
     if (m_threeDSettings) m_threeDSettings->setDocument(m_document);
     if (m_previewWindow) m_previewWindow->setDocument(m_document);
 
-    if (m_document->undoStack()) {
-        connect(m_document->undoStack(), &QUndoStack::canUndoChanged, this, &MainWindow::updateUndoRedoActions);
-        connect(m_document->undoStack(), &QUndoStack::canRedoChanged, this, &MainWindow::updateUndoRedoActions);
-        connect(m_document->undoStack(), &QUndoStack::undoTextChanged, this, &MainWindow::updateUndoRedoActions);
-        connect(m_document->undoStack(), &QUndoStack::redoTextChanged, this, &MainWindow::updateUndoRedoActions);
-        connect(m_document->undoStack(), &QUndoStack::cleanChanged, this, &MainWindow::updateWindowTitle);
+    if (m_document && m_document->undoStack()) {
+        m_docConnections.push_back(connect(m_document->undoStack(), &QUndoStack::canUndoChanged, this, &MainWindow::updateUndoRedoActions));
+        m_docConnections.push_back(connect(m_document->undoStack(), &QUndoStack::canRedoChanged, this, &MainWindow::updateUndoRedoActions));
+        m_docConnections.push_back(connect(m_document->undoStack(), &QUndoStack::undoTextChanged, this, &MainWindow::updateUndoRedoActions));
+        m_docConnections.push_back(connect(m_document->undoStack(), &QUndoStack::redoTextChanged, this, &MainWindow::updateUndoRedoActions));
+        m_docConnections.push_back(connect(m_document->undoStack(), &QUndoStack::cleanChanged, this, &MainWindow::updateWindowTitle));
     }
 
-    connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateLayerTools);
-    connect(m_document, &Document::layerListChanged, this, &MainWindow::updateLayerTools);
-    if (m_btnToggleSelectionEdit) {
-        m_btnToggleSelectionEdit->blockSignals(true);
-        m_btnToggleSelectionEdit->setChecked(m_document->isSelectionEditMode());
-        m_btnToggleSelectionEdit->blockSignals(false);
-    }
-    connect(m_document, &Document::selectionEditModeChanged, this, [this](bool enabled) {
-        if (m_btnToggleSelectionEdit && m_btnToggleSelectionEdit->isChecked() != enabled) {
+    if (m_document) {
+        m_docConnections.push_back(connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateLayerTools));
+        m_docConnections.push_back(connect(m_document, &Document::layerListChanged, this, &MainWindow::updateLayerTools));
+
+        if (m_btnToggleSelectionEdit) {
             m_btnToggleSelectionEdit->blockSignals(true);
-            m_btnToggleSelectionEdit->setChecked(enabled);
+            m_btnToggleSelectionEdit->setChecked(m_document->isSelectionEditMode());
             m_btnToggleSelectionEdit->blockSignals(false);
         }
+        m_docConnections.push_back(connect(m_document, &Document::selectionEditModeChanged, this, [this](bool enabled) {
+            if (m_btnToggleSelectionEdit && m_btnToggleSelectionEdit->isChecked() != enabled) {
+                m_btnToggleSelectionEdit->blockSignals(true);
+                m_btnToggleSelectionEdit->setChecked(enabled);
+                m_btnToggleSelectionEdit->blockSignals(false);
+            }
+            updateLayerTools();
+            if (m_canvasWidget) m_canvasWidget->update();
+        }));
         updateLayerTools();
-        if (m_canvasWidget) m_canvasWidget->update();
-    });
-    updateLayerTools();
 
-    connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateEditActions);
-    connect(m_document, &Document::layerListChanged, this, &MainWindow::updateEditActions);
-    connect(m_document, &Document::selectionChanged, this, &MainWindow::updateEditActions);
-    updateEditActions();
+        m_docConnections.push_back(connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateEditActions));
+        m_docConnections.push_back(connect(m_document, &Document::layerListChanged, this, &MainWindow::updateEditActions));
+        m_docConnections.push_back(connect(m_document, &Document::selectionChanged, this, &MainWindow::updateEditActions));
+        updateEditActions();
 
-    connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateLayerMenuActions);
-    connect(m_document, &Document::layerListChanged, this, &MainWindow::updateLayerMenuActions);
-    connect(m_document, &Document::selectionChanged, this, &MainWindow::updateLayerMenuActions);
-    updateLayerMenuActions();
+        m_docConnections.push_back(connect(m_document, &Document::activeLayerChanged, this, &MainWindow::updateLayerMenuActions));
+        m_docConnections.push_back(connect(m_document, &Document::layerListChanged, this, &MainWindow::updateLayerMenuActions));
+        m_docConnections.push_back(connect(m_document, &Document::selectionChanged, this, &MainWindow::updateLayerMenuActions));
+        updateLayerMenuActions();
+
+        auto updateBgColorTip = [this]() {
+            if (!m_btnSwitchBgColor || !m_document) return;
+            QString activeName = m_document->isSecondaryBgColorActive() ? "第2背景色" : "第1背景色";
+            QColor c1 = m_document->primaryBackgroundColor();
+            QColor c2 = m_document->secondaryBackgroundColor();
+            m_btnSwitchBgColor->setToolTip(QString("第1背景色⇔第2背景色 切り替え\n適用中: %1\n第1: %2, 第2: %3")
+                .arg(activeName).arg(c1.name()).arg(c2.name()));
+        };
+        m_docConnections.push_back(connect(m_document, &Document::backgroundColorChanged, this, updateBgColorTip));
+        updateBgColorTip();
+
+        m_docConnections.push_back(connect(m_document, &Document::colorModeChanged, this, [this](CanvasColorMode) {
+            updateColorModeActions();
+            updateWindowTitle();
+        }));
+        updateColorModeActions();
+
+        m_docConnections.push_back(connect(m_document, &Document::canvasResized, this, [this](int, int) {
+            updateWindowTitle();
+            if (m_canvasWidget) m_canvasWidget->update();
+            if (m_navigator) m_navigator->setDocument(m_document);
+            if (m_previewWindow) m_previewWindow->setDocument(m_document);
+        }));
+
+        m_docConnections.push_back(connect(m_document, &Document::clipToHiddenBaseLayerChanged, this, [this](bool) {
+            updateCanvasMenuActions();
+        }));
+        updateCanvasMenuActions();
+    }
 
     updateUndoRedoActions();
     updateWindowTitle();
+    updateTabTitle(index);
 
-    // 背景色切り替えボタンのツールチップ同期
-    auto updateBgColorTip = [this]() {
-        if (!m_btnSwitchBgColor || !m_document) return;
-        QString activeName = m_document->isSecondaryBgColorActive() ? "第2背景色" : "第1背景色";
-        QColor c1 = m_document->primaryBackgroundColor();
-        QColor c2 = m_document->secondaryBackgroundColor();
-        m_btnSwitchBgColor->setToolTip(QString("第1背景色⇔第2背景色 切り替え\n適用中: %1\n第1: %2, 第2: %3")
-            .arg(activeName).arg(c1.name()).arg(c2.name()));
-    };
-    connect(m_document, &Document::backgroundColorChanged, this, updateBgColorTip);
-    updateBgColorTip();
-
-    // 中央タブのタイトル更新
-    if (m_tabWidget) {
-        QString docName;
-        if (!m_currentFilePath.isEmpty()) {
-            docName = QFileInfo(m_currentFilePath).fileName();
-        } else if (!m_importedImagePath.isEmpty()) {
-            docName = QFileInfo(m_importedImagePath).fileName();
+    if (m_canvasWidget) {
+        if (tab.hasSavedView) {
+            m_canvasWidget->setZoom(tab.zoom);
+            m_canvasWidget->setPanOffset(tab.panOffset);
+            m_canvasWidget->setRotationAngle(tab.rotationAngle);
+            m_canvasWidget->setFlipHorizontally(tab.flipH);
         } else {
-            docName = tr("New Canvas.kab");
+            m_canvasWidget->resetTransform();
+            m_canvasWidget->fitToView();
         }
-        QString modeStr;
-        switch (m_document->colorMode()) {
-            case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
-            case CanvasColorMode::CMYKProof: modeStr = "[CMYK Proof]"; break;
-            case CanvasColorMode::CMYKNative: modeStr = "[CMYK Native]"; break;
-        }
-        QString tabTitle = QString("%1 (%2x%3) %4").arg(docName).arg(m_document->width()).arg(m_document->height()).arg(modeStr);
-        if (m_tabWidget->count() == 0 && m_canvasContainer) {
-            m_tabWidget->addTab(m_canvasContainer, tabTitle);
-        } else {
-            m_tabWidget->setTabText(0, tabTitle);
-        }
+        m_canvasWidget->update();
     }
-    if (m_tabCloseBtn) {
-        m_tabCloseBtn->setEnabled(true);
+}
+
+void MainWindow::updateTabTitle(int index) {
+    if (!m_tabWidget || index < 0 || index >= m_tabs.size()) return;
+    const auto& tab = m_tabs[index];
+    if (!tab.document) return;
+
+    QString tabDocName;
+    if (!tab.currentFilePath.isEmpty()) {
+        tabDocName = QFileInfo(tab.currentFilePath).fileName();
+    } else if (!tab.importedImagePath.isEmpty()) {
+        tabDocName = QFileInfo(tab.importedImagePath).fileName();
+    } else {
+        tabDocName = tr("New Canvas.kab");
     }
 
-    connect(m_document, &Document::colorModeChanged, this, [this](CanvasColorMode) {
-        updateColorModeActions();
-        updateWindowTitle();
-    });
-    updateColorModeActions();
+    QString modeStr;
+    switch (tab.document->colorMode()) {
+        case CanvasColorMode::RGB: modeStr = "[RGB]"; break;
+        case CanvasColorMode::CMYKProof: modeStr = "[CMYK Proof]"; break;
+        case CanvasColorMode::CMYKNative: modeStr = "[CMYK Native]"; break;
+    }
 
-    connect(m_document, &Document::canvasResized, this, [this](int, int) {
-        updateWindowTitle();
-        if (m_canvasWidget) m_canvasWidget->update();
-        if (m_navigator) m_navigator->setDocument(m_document);
-        if (m_previewWindow) m_previewWindow->setDocument(m_document);
-    });
-
-    connect(m_document, &Document::clipToHiddenBaseLayerChanged, this, [this](bool) {
-        updateCanvasMenuActions();
-    });
-    updateCanvasMenuActions();
+    QString modifiedMarker = (tab.document->undoStack() && !tab.document->undoStack()->isClean()) ? "*" : "";
+    QString title = QString("%1%2 (%3x%4) %5").arg(tabDocName).arg(modifiedMarker).arg(tab.document->width()).arg(tab.document->height()).arg(modeStr);
+    m_tabWidget->setTabText(index, title);
+    QString toolTip = tab.currentFilePath.isEmpty() ? (tab.importedImagePath.isEmpty() ? tabDocName : tab.importedImagePath) : tab.currentFilePath;
+    m_tabWidget->setTabToolTip(index, toolTip);
 }
 
 void MainWindow::onChangeCanvasSize() {
@@ -3124,16 +3379,8 @@ void MainWindow::updateWindowTitle() {
         case CanvasColorMode::CMYKNative: modeStr = "[CMYK Native]"; break;
     }
     setWindowTitle(QString("%1 %2[*] - PaintSoft KABURAGI 3.0").arg(docName).arg(modeStr));
-    if (m_tabWidget && m_tabWidget->count() > 0) {
-        QString tabDocName;
-        if (!m_currentFilePath.isEmpty()) {
-            tabDocName = QFileInfo(m_currentFilePath).fileName();
-        } else if (!m_importedImagePath.isEmpty()) {
-            tabDocName = QFileInfo(m_importedImagePath).fileName();
-        } else {
-            tabDocName = tr("New Canvas.kab");
-        }
-        m_tabWidget->setTabText(0, QString("%1 (%2x%3) %4").arg(tabDocName).arg(m_document->width()).arg(m_document->height()).arg(modeStr));
+    if (m_tabWidget && m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+        updateTabTitle(m_currentTabIndex);
     }
     if (m_document && m_document->undoStack()) {
         setWindowModified(!m_document->undoStack()->isClean());
@@ -3209,54 +3456,51 @@ void MainWindow::restartAutoBackupTimer() {
 }
 
 void MainWindow::onAutoBackupTimer() {
-    if (!m_document || !m_document->undoStack() || m_document->undoStack()->isClean()) {
-        return;
-    }
+    int backupCount = 0;
+    for (int i = 0; i < m_tabs.size(); ++i) {
+        auto doc = m_tabs[i].document;
+        if (!doc || !doc->undoStack() || doc->undoStack()->isClean()) continue;
 
-    QString backupPath;
-    if (!m_currentFilePath.isEmpty()) {
-        QFileInfo fi(m_currentFilePath);
-        backupPath = fi.absolutePath() + "/." + fi.completeBaseName() + "_backup.kab";
-    } else {
-        QString backupDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/backups";
-        QDir().mkpath(backupDir);
-        backupPath = backupDir + "/untitled_backup.kab";
-    }
+        QString backupPath;
+        if (!m_tabs[i].currentFilePath.isEmpty()) {
+            QFileInfo fi(m_tabs[i].currentFilePath);
+            backupPath = fi.absolutePath() + "/." + fi.completeBaseName() + "_backup.kab";
+        } else {
+            QString backupDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/backups";
+            QDir().mkpath(backupDir);
+            backupPath = backupDir + QString("/untitled_tab%1_backup.kab").arg(i + 1);
+        }
 
-    QString errorMsg;
-    if (DocumentSerializer::saveToFile(m_document, backupPath, &errorMsg)) {
+        QString errorMsg;
+        if (DocumentSerializer::saveToFile(doc, backupPath, &errorMsg)) {
+            backupCount++;
+        }
+    }
+    if (backupCount > 0) {
         statusBar()->showMessage("自動バックアップを保存しました", 3000);
     }
 }
 
 void MainWindow::onNewCanvas() {
-    if (!maybeSave()) return;
-
     NewCanvasDialog dlg(this);
     if (dlg.exec() != QDialog::Accepted) {
         return;
     }
 
-    m_currentFilePath.clear();
-    m_importedImagePath.clear();
     auto doc = new Document(dlg.canvasWidth(), dlg.canvasHeight(), dlg.canvasDpi(), true, dlg.backgroundColor(), this);
     doc->setSecondaryBackgroundColor(dlg.secondaryBackgroundColor());
     doc->setClipToHiddenBaseLayer(dlg.isClipToHiddenBase());
-    setupDocument(doc);
-    if (m_document->undoStack()) {
-        m_document->undoStack()->setClean();
+    addNewTab(doc);
+    if (doc->undoStack()) {
+        doc->undoStack()->setClean();
     }
     updateWindowTitle();
 }
 
 void MainWindow::onCloseCanvas() {
-    if (!m_document) return;
-    if (!maybeSave()) return;
-
-    m_currentFilePath.clear();
-    m_importedImagePath.clear();
-    setupDocument(nullptr);
-    statusBar()->showMessage(tr("Canvas closed."), 3000);
+    if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+        closeTab(m_currentTabIndex);
+    }
 }
 
 QString MainWindow::defaultSaveAsPath() const {
@@ -3281,11 +3525,13 @@ bool MainWindow::onSaveCanvas() {
         if (m_document->undoStack()) {
             m_document->undoStack()->setClean();
         }
+        if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+            m_tabs[m_currentTabIndex].currentFilePath = m_currentFilePath;
+            m_tabs[m_currentTabIndex].importedImagePath.clear();
+            updateTabTitle(m_currentTabIndex);
+        }
         addRecentFile(m_currentFilePath);
         updateWindowTitle();
-        if (m_tabWidget && m_tabWidget->count() > 0) {
-            m_tabWidget->setTabText(0, QString("%1 (%2x%3)").arg(QFileInfo(m_currentFilePath).fileName()).arg(m_document->width()).arg(m_document->height()));
-        }
         statusBar()->showMessage(QString("キャンバスを保存しました: %1").arg(m_currentFilePath), 4000);
         return true;
     } else {
@@ -3341,12 +3587,20 @@ bool MainWindow::onSaveAsCanvas() {
     if (ext == "kab") {
         m_currentFilePath = filePath;
         m_importedImagePath.clear();
+        if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+            m_tabs[m_currentTabIndex].currentFilePath = filePath;
+            m_tabs[m_currentTabIndex].importedImagePath.clear();
+        }
         return onSaveCanvas();
     } else {
         // 画像エクスポート (PNG/JPEG/BMP/TIFF/WebP/PSD)
         QString errorMsg;
         if (DocumentSerializer::exportImage(m_document, filePath, &errorMsg)) {
             m_importedImagePath = filePath;
+            if (m_currentTabIndex >= 0 && m_currentTabIndex < m_tabs.size()) {
+                m_tabs[m_currentTabIndex].importedImagePath = filePath;
+                updateTabTitle(m_currentTabIndex);
+            }
             addRecentFile(filePath);
             statusBar()->showMessage(QString("画像をエクスポートしました: %1").arg(filePath), 4000);
             return true;
@@ -3370,7 +3624,6 @@ void MainWindow::onOpenCanvas() {
 
 void MainWindow::openFile(const QString& filePath) {
     if (filePath.isEmpty()) return;
-    if (!maybeSave()) return;
 
     if (filePath.endsWith(".kab", Qt::CaseInsensitive)) {
         QString errorMsg;
@@ -3380,11 +3633,9 @@ void MainWindow::openFile(const QString& filePath) {
             return;
         }
 
-        m_currentFilePath = filePath;
-        m_importedImagePath.clear();
-        setupDocument(doc);
-        if (m_document->undoStack()) {
-            m_document->undoStack()->setClean();
+        addNewTab(doc, filePath, QString());
+        if (doc->undoStack()) {
+            doc->undoStack()->setClean();
         }
         addRecentFile(filePath);
         updateWindowTitle();
@@ -3403,18 +3654,12 @@ void MainWindow::openFile(const QString& filePath) {
             return;
         }
 
-        m_currentFilePath.clear();
-        m_importedImagePath = filePath;
-        setupDocument(doc);
-        if (m_document->undoStack()) {
-            m_document->undoStack()->setClean();
+        addNewTab(doc, QString(), filePath);
+        if (doc->undoStack()) {
+            doc->undoStack()->setClean();
         }
         addRecentFile(filePath);
         updateWindowTitle();
-
-        if (m_tabWidget && m_tabWidget->count() > 0) {
-            m_tabWidget->setTabText(0, QString("%1 (%2x%3)").arg(QFileInfo(filePath).fileName()).arg(doc->width()).arg(doc->height()));
-        }
         statusBar()->showMessage(QString("画像を開きました: %1").arg(filePath), 4000);
     }
 }
@@ -3490,16 +3735,11 @@ void MainWindow::onPaste() {
         // キャンバスがない場合：貼り付けた画像サイズのキャンバスを作成する
         Document* doc = Document::fromQImage(clipImg, 350.0, this);
         if (!doc) return;
-        m_currentFilePath.clear();
-        m_importedImagePath.clear();
-        setupDocument(doc);
-        if (m_document->undoStack()) {
-            m_document->undoStack()->setClean();
+        addNewTab(doc);
+        if (doc->undoStack()) {
+            doc->undoStack()->setClean();
         }
         updateWindowTitle();
-        if (m_tabWidget && m_tabWidget->count() > 0) {
-            m_tabWidget->setTabText(0, QString("新規キャンバス (%1x%2)").arg(doc->width()).arg(doc->height()));
-        }
         statusBar()->showMessage("クリップボードから新規キャンバスを作成しました", 3000);
     } else {
         // キャンバスがある場合：新規通常レイヤーに貼り付ける

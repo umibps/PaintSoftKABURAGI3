@@ -51,11 +51,14 @@ public:
     double rotationAngle() const { return m_rotationAngle; }
     void setRotationAngle(double angleDeg);
     void toggleFlipHorizontally();
+    bool isFlippedHorizontally() const { return m_flippedHorizontally; }
+    void setFlipHorizontally(bool flip);
     void resetTransform();
     void fitToView();
     void setViewCenter(const QPointF& docCenter);
     void panByScreenDelta(double dx, double dy);
     QPointF panOffset() const { return m_panOffset; }
+    void setPanOffset(const QPointF& offset);
 
     QPointF viewToDoc(const QPointF& viewPos) const;
     QPointF docToView(const QPointF& docPos) const;

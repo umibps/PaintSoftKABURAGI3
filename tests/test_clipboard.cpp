@@ -18,6 +18,12 @@ int main(int argc, char** argv) {
     MainWindow window;
     window.show();
 
+    if (!window.document()) {
+        auto initDoc = new Document(400, 300, 350.0, true, Qt::white);
+        initDoc->addRasterLayer("レイヤー 1");
+        window.addNewTab(initDoc);
+    }
+
     Document* doc = window.document();
     assert(doc != nullptr);
 
@@ -182,6 +188,7 @@ int main(int argc, char** argv) {
     assert(newDoc->height() == 60);
 
     // 新規キャンバスの画像が青色であること
+    newDoc->composite();
     QColor sampled = newDoc->samplePixel(40, 30);
     assert(sampled.blue() > 200);
     std::cout << "[PASS] Paste when no canvas creates document with image size verified!" << std::endl;
