@@ -84,6 +84,13 @@ public:
     void setReverse(bool reverse);
     void setDither(bool dither);
 
+    QSize sizeHint() const override {
+        return QSize(160, 260);
+    }
+    QSize minimumSizeHint() const override {
+        return QSize(120, 220);
+    }
+
 signals:
     void blendModeChanged(BlendMode mode);
     void shapeChanged(GradientShape shape);

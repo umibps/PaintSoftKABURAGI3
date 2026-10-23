@@ -30,7 +30,7 @@ static const struct {
 
 BrushSettingsDialog::BrushSettingsDialog(const ToolSlotItem& item, QWidget* parent)
     : QDialog(parent), m_item(item) {
-    setWindowTitle("ブラシの設定");
+    setWindowTitle("ツールの設定");
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
     setFixedSize(320, 220);
 
@@ -46,12 +46,12 @@ void BrushSettingsDialog::setupUI() {
     formLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     formLayout->setSpacing(8);
 
-    // 1. ブラシの名前
+    // 1. ツールの名前
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setText(m_item.name);
-    formLayout->addRow("ブラシの名前:", m_nameEdit);
+    formLayout->addRow("ツールの名前:", m_nameEdit);
 
-    // 2. ブラシのタイプ
+    // 2. ツールのタイプ
     m_typeCombo = new QComboBox(this);
     for (const auto& entry : AVAILABLE_BRUSH_TYPES) {
         m_typeCombo->addItem(entry.label, static_cast<int>(entry.type));
@@ -60,9 +60,9 @@ void BrushSettingsDialog::setupUI() {
     if (typeIdx >= 0) {
         m_typeCombo->setCurrentIndex(typeIdx);
     }
-    formLayout->addRow("ブラシのタイプ:", m_typeCombo);
+    formLayout->addRow("ツールのタイプ:", m_typeCombo);
 
-    // 3. ブラシのショートカットキー
+    // 3. ツールのショートカットキー
     auto shortcutContainer = new QWidget(this);
     auto shortcutLayout = new QHBoxLayout(shortcutContainer);
     shortcutLayout->setContentsMargins(0, 0, 0, 0);

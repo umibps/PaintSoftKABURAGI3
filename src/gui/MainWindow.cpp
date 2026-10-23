@@ -2144,6 +2144,7 @@ void MainWindow::loadSettings() {
     if (m_canvasWidget) {
         m_canvasWidget->setCurrentTool(m_currentTool);
     }
+    onToolChanged(m_currentTool);
 
     if (settings.contains("currentColor") && m_colorWheel) {
         QColor col(settings.value("currentColor").toString());
@@ -3982,49 +3983,6 @@ void MainWindow::updateLayerTools() {
                         m_toolBox->setCurrentTool(targetTool);
                     }
                     m_toolSettingsStack->setCurrentWidget(m_adjustmentSettings);
-                } else if (m_currentTool == ToolType::Eraser) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorEraserSettings);
-                    } else {
-                        m_toolSettingsStack->setCurrentWidget(m_brushSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorControlPoint) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorControlPointSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorPolyline || m_currentTool == ToolType::VectorCurve) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorLineSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorLineEdit) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorChangeLineSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorColorChange) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorColorChangeSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorEllipse) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorEllipseSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorCircle) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorCircleSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorPolygon) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorPolygonSettings);
-                    }
-                } else if (m_currentTool == ToolType::VectorPressure) {
-                    if (activeL->type() == LayerType::Vector) {
-                        m_toolSettingsStack->setCurrentWidget(m_vectorPressureSettings);
-                    }
-                } else if (m_currentTool == ToolType::Text || m_currentTool == ToolType::TextBalloon) {
-                    if (m_textSettings) {
-                        m_textSettings->setToolType(m_currentTool);
-                    }
-                    m_toolSettingsStack->setCurrentWidget(m_textSettings);
                 } else if (activeL->type() == LayerType::ThreeD) {
                     auto threeD = dynamic_cast<ThreeDLayer*>(activeL.get());
                     if (threeD && m_threeDSettings) {
@@ -4034,6 +3992,8 @@ void MainWindow::updateLayerTools() {
                         m_toolBox->setCurrentTool(ToolType::ThreeD);
                     }
                     m_toolSettingsStack->setCurrentWidget(m_threeDSettings);
+                } else {
+                    onToolChanged(m_currentTool);
                 }
             }
         }
@@ -4230,6 +4190,12 @@ void MainWindow::onToolChanged(ToolType tool) {
         m_canvasWidget->setImageBrushRandomSizeScaleUp(m_imageBrushSettings->isRandomSizeScaleUp());
     } else if (tool == ToolType::Gradient && m_gradientSettings && m_canvasWidget) {
         m_canvasWidget->setGradientBlendMode(m_gradientSettings->blendMode());
+        m_canvasWidget->setGradientShape(m_gradientSettings->shape());
+        m_canvasWidget->setGradientColorMode(m_gradientSettings->colorMode());
+        m_canvasWidget->setGradientRepeatMode(m_gradientSettings->repeatMode());
+        m_canvasWidget->setGradientOpacity(m_gradientSettings->opacity());
+        m_canvasWidget->setGradientReverse(m_gradientSettings->isReverse());
+        m_canvasWidget->setGradientDither(m_gradientSettings->isDither());
     }
 
     // 4. 設定の保存

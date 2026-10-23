@@ -767,6 +767,50 @@ int main(int argc, char* argv[]) {
         std::cout << "  -> PASSED!" << std::endl;
     }
 
+    // 15. Check Gradient Tool settings display
+    {
+        std::cout << "[TEST] 15. Checking Gradient tool settings display..." << std::endl;
+        MainWindow mw;
+        mw.show();
+
+        // Check initial tool
+        std::cout << "Initial tool: " << static_cast<int>(mw.currentTool()) << std::endl;
+        std::cout << "Current stack widget: " << mw.toolSettingsStack()->currentWidget() << std::endl;
+        std::cout << "Gradient settings widget: " << mw.gradientSettings() << std::endl;
+
+        // Change tool to Gradient
+        mw.onToolChangedForTest(ToolType::Gradient);
+        std::cout << "After onToolChanged(Gradient):" << std::endl;
+        std::cout << "Current stack widget: " << mw.toolSettingsStack()->currentWidget() << std::endl;
+        assert(mw.toolSettingsStack()->currentWidget() == mw.gradientSettings());
+
+        // Now test via ToolBoxWidget slot settings
+        ToolBoxWidget* tb = mw.toolBox();
+        assert(tb != nullptr);
+
+        // Slot 0 (default Pen) -> change to Gradient
+        ToolSlotItem item;
+        item.isEmpty = false;
+        item.name = "テストグラデーション";
+        item.toolType = ToolType::Gradient;
+        item.iconType = ToolType::Gradient;
+        tb->setSlotItem(0, item);
+        tb->setCurrentSlot(0);
+
+        std::cout << "After setCurrentSlot(0) [Gradient]:" << std::endl;
+        std::cout << "Current stack widget: " << mw.toolSettingsStack()->currentWidget() << std::endl;
+        std::cout << "Gradient settings isVisible: " << mw.gradientSettings()->isVisible() << std::endl;
+        std::cout << "Gradient settings sizeHint: " << mw.gradientSettings()->sizeHint().width() << "x" << mw.gradientSettings()->sizeHint().height() << std::endl;
+        std::cout << "Gradient settings geometry: " << mw.gradientSettings()->geometry().width() << "x" << mw.gradientSettings()->geometry().height() << std::endl;
+        std::cout << "mw.currentTool(): " << static_cast<int>(mw.currentTool()) << std::endl;
+
+        assert(mw.currentTool() == ToolType::Gradient);
+        assert(mw.toolSettingsStack()->currentWidget() == mw.gradientSettings());
+        assert(mw.gradientSettings()->isVisible());
+
+        std::cout << "  -> PASSED!" << std::endl;
+    }
+
     std::cout << "[ALL UI IMPROVEMENTS TESTS PASSED SUCCESSFULLY!]" << std::endl;
     return 0;
 }

@@ -374,6 +374,11 @@ public:
     QPushButton* btnTogglePalette() const { return m_btnTogglePalette; }
     QToolButton* toggleSelectionEditButton() const { return m_btnToggleSelectionEdit; }
     AiAssistantDockWidget* aiAssistantDock() const { return m_aiAssistantDock; }
+    ToolBoxWidget* toolBox() const { return m_toolBox; }
+    QStackedWidget* toolSettingsStack() const { return m_toolSettingsStack; }
+    GradientSettingsWidget* gradientSettings() const { return m_gradientSettings; }
+    ToolType currentTool() const { return m_currentTool; }
+    void onToolChangedForTest(ToolType tool) { onToolChanged(tool); }
     void setDocumentForTest(Document* doc) { setupDocument(doc); }
     void clearDocumentForTest() { setupDocument(nullptr); }
 

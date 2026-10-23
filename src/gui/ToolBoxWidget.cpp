@@ -72,7 +72,7 @@ void SaiToolButton::contextMenuEvent(QContextMenuEvent* event) {
     if (m_item.isEmpty) {
         QMenu menu(this);
         menu.setStyleSheet("QMenu { font-size: 11px; }");
-        auto actNew = menu.addAction("ブラシの新規作成...");
+        auto actNew = menu.addAction("ツールの新規作成...");
         menu.addSeparator();
         auto actReset = menu.addAction("ツールスロットを初期状態に戻す");
         QAction* selected = menu.exec(event->globalPos());
@@ -87,9 +87,9 @@ void SaiToolButton::contextMenuEvent(QContextMenuEvent* event) {
 
     QMenu menu(this);
     menu.setStyleSheet("QMenu { font-size: 11px; }");
-    auto actSettings = menu.addAction("ブラシの設定");
-    auto actDuplicate = menu.addAction("ブラシを複製");
-    auto actDelete = menu.addAction("ブラシを削除");
+    auto actSettings = menu.addAction("ツールの設定");
+    auto actDuplicate = menu.addAction("ツールを複製");
+    auto actDelete = menu.addAction("ツールを削除");
     menu.addSeparator();
     auto actReset = menu.addAction("ツールスロットを初期状態に戻す");
 
@@ -1074,6 +1074,7 @@ void ToolBoxWidget::setCurrentTool(ToolType tool) {
             if (m_currentSlotIndex < static_cast<int>(m_slotButtons.size())) {
                 m_slotButtons[m_currentSlotIndex]->setChecked(true);
             }
+            emit toolChanged(m_currentTool);
             return;
         }
         // 該当ツールを持つ最初のスロットを選択
@@ -1083,6 +1084,7 @@ void ToolBoxWidget::setCurrentTool(ToolType tool) {
                 if (i < m_slotButtons.size()) {
                     m_slotButtons[i]->setChecked(true);
                 }
+                emit toolChanged(m_currentTool);
                 return;
             }
         }
@@ -1093,6 +1095,7 @@ void ToolBoxWidget::setCurrentTool(ToolType tool) {
     if (btn) {
         btn->setChecked(true);
     }
+    emit toolChanged(m_currentTool);
 }
 
 void ToolBoxWidget::setCurrentSlot(int slotIndex) {
