@@ -62,6 +62,10 @@ class GaussianBlurDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     GaussianBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int radius() const;
+    void setRadius(int r);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -79,6 +83,14 @@ class FocusBlurDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int blurRadius() const;
+    void setBlurRadius(int r);
+    int focusRange() const;
+    void setFocusRange(int r);
+    int feather() const;
+    void setFeather(int f);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -103,6 +115,12 @@ class BrightnessContrastDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     BrightnessContrastDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int brightness() const;
+    void setBrightness(int b);
+    int contrast() const;
+    void setContrast(int c);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -122,6 +140,14 @@ class HueSaturationDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     HueSaturationDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int hue() const;
+    void setHue(int h);
+    int saturation() const;
+    void setSaturation(int s);
+    int lightness() const;
+    void setLightness(int l);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -143,6 +169,10 @@ class ToneCurveDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int channelIndex() const;
+    void setChannelIndex(int idx);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -161,6 +191,12 @@ class MotionBlurDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
+
+    int distance() const;
+    void setDistance(int d);
+    int angle() const;
+    void setAngle(int a);
 
 protected:
     void applyFilterToImage(const QImage& src, QImage& out) override;
@@ -186,6 +222,7 @@ public:
     };
 
     GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
 
     GradientMode mode() const;
     void setMode(GradientMode mode);
@@ -234,6 +271,7 @@ class ColorToAlphaDialog : public FilterBaseDialog {
     Q_OBJECT
 public:
     ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWidget* parent = nullptr);
+    void accept() override;
 
     QColor targetColor() const { return m_targetColor; }
     void setTargetColor(const QColor& color);

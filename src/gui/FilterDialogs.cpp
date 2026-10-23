@@ -6,6 +6,8 @@
 #include <QPushButton>
 #include <QMessageBox>
 #include <QColorDialog>
+#include <QSettings>
+#include <QDataStream>
 
 namespace Kaburagi {
 
@@ -194,17 +196,22 @@ void FilterBaseDialog::reject() {
 GaussianBlurDialog::GaussianBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Gaussian Blur"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/GaussianBlur");
+    int initRadius = settings.value("radius", 10).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
     auto layRadius = new QHBoxLayout();
     m_sliderRadius = new QSlider(Qt::Horizontal, controls);
     m_sliderRadius->setRange(1, 100);
-    m_sliderRadius->setValue(10);
+    m_sliderRadius->setValue(initRadius);
 
     m_spinRadius = new QSpinBox(controls);
     m_spinRadius->setRange(1, 100);
-    m_spinRadius->setValue(10);
+    m_spinRadius->setValue(initRadius);
     m_spinRadius->setSuffix(" px");
 
     layRadius->addWidget(m_sliderRadius);
@@ -223,6 +230,23 @@ GaussianBlurDialog::GaussianBlurDialog(Document* doc, CanvasWidget* canvas, QWid
     updatePreview();
 }
 
+void GaussianBlurDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/GaussianBlur");
+    settings.setValue("radius", m_sliderRadius ? m_sliderRadius->value() : 10);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int GaussianBlurDialog::radius() const {
+    return m_sliderRadius ? m_sliderRadius->value() : 10;
+}
+
+void GaussianBlurDialog::setRadius(int r) {
+    if (m_sliderRadius) m_sliderRadius->setValue(r);
+}
+
 void GaussianBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
     int r = m_sliderRadius ? m_sliderRadius->value() : 10;
     out = FilterProcessor::applyGaussianBlur(src, r);
@@ -234,6 +258,16 @@ void GaussianBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Focus Blur"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/FocusBlur");
+    int initBlur = settings.value("blurRadius", 15).toInt();
+    int initFocus = settings.value("focusRange", 30).toInt();
+    int initFeather = settings.value("feather", 25).toInt();
+    int initShape = settings.value("shape", 0).toInt();
+    int initCenterX = settings.value("centerX", 50).toInt();
+    int initCenterY = settings.value("centerY", 50).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
@@ -241,10 +275,10 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     auto layBlur = new QHBoxLayout();
     m_sliderBlurRadius = new QSlider(Qt::Horizontal, controls);
     m_sliderBlurRadius->setRange(1, 50);
-    m_sliderBlurRadius->setValue(15);
+    m_sliderBlurRadius->setValue(initBlur);
     m_spinBlurRadius = new QSpinBox(controls);
     m_spinBlurRadius->setRange(1, 50);
-    m_spinBlurRadius->setValue(15);
+    m_spinBlurRadius->setValue(initBlur);
     m_spinBlurRadius->setSuffix(" px");
     layBlur->addWidget(m_sliderBlurRadius);
     layBlur->addWidget(m_spinBlurRadius);
@@ -254,10 +288,10 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     auto layFocus = new QHBoxLayout();
     m_sliderFocusRange = new QSlider(Qt::Horizontal, controls);
     m_sliderFocusRange->setRange(5, 95);
-    m_sliderFocusRange->setValue(30);
+    m_sliderFocusRange->setValue(initFocus);
     m_spinFocusRange = new QSpinBox(controls);
     m_spinFocusRange->setRange(5, 95);
-    m_spinFocusRange->setValue(30);
+    m_spinFocusRange->setValue(initFocus);
     m_spinFocusRange->setSuffix(" %");
     layFocus->addWidget(m_sliderFocusRange);
     layFocus->addWidget(m_spinFocusRange);
@@ -267,10 +301,10 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     auto layFeather = new QHBoxLayout();
     m_sliderFeather = new QSlider(Qt::Horizontal, controls);
     m_sliderFeather->setRange(5, 80);
-    m_sliderFeather->setValue(25);
+    m_sliderFeather->setValue(initFeather);
     m_spinFeather = new QSpinBox(controls);
     m_spinFeather->setRange(5, 80);
-    m_spinFeather->setValue(25);
+    m_spinFeather->setValue(initFeather);
     m_spinFeather->setSuffix(" %");
     layFeather->addWidget(m_sliderFeather);
     layFeather->addWidget(m_spinFeather);
@@ -280,17 +314,20 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     m_comboType = new QComboBox(controls);
     m_comboType->addItem(tr("Radial (Circular Focus)"), 0);
     m_comboType->addItem(tr("Linear (Tilt-Shift / Band)"), 1);
+    if (initShape >= 0 && initShape < m_comboType->count()) {
+        m_comboType->setCurrentIndex(initShape);
+    }
     form->addRow(tr("Focus Shape:"), m_comboType);
 
     // フォーカス中心 (X, Y)
     m_sliderCenterX = new QSlider(Qt::Horizontal, controls);
     m_sliderCenterX->setRange(0, 100);
-    m_sliderCenterX->setValue(50);
+    m_sliderCenterX->setValue(initCenterX);
     form->addRow(tr("Center X (%):"), m_sliderCenterX);
 
     m_sliderCenterY = new QSlider(Qt::Horizontal, controls);
     m_sliderCenterY->setRange(0, 100);
-    m_sliderCenterY->setValue(50);
+    m_sliderCenterY->setValue(initCenterY);
     form->addRow(tr("Center Y (%):"), m_sliderCenterY);
 
     connect(m_sliderBlurRadius, &QSlider::valueChanged, m_spinBlurRadius, &QSpinBox::setValue);
@@ -316,6 +353,44 @@ FocusBlurDialog::FocusBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     updatePreview();
 }
 
+void FocusBlurDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/FocusBlur");
+    settings.setValue("blurRadius", m_sliderBlurRadius ? m_sliderBlurRadius->value() : 15);
+    settings.setValue("focusRange", m_sliderFocusRange ? m_sliderFocusRange->value() : 30);
+    settings.setValue("feather", m_sliderFeather ? m_sliderFeather->value() : 25);
+    settings.setValue("shape", m_comboType ? m_comboType->currentIndex() : 0);
+    settings.setValue("centerX", m_sliderCenterX ? m_sliderCenterX->value() : 50);
+    settings.setValue("centerY", m_sliderCenterY ? m_sliderCenterY->value() : 50);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int FocusBlurDialog::blurRadius() const {
+    return m_sliderBlurRadius ? m_sliderBlurRadius->value() : 15;
+}
+
+void FocusBlurDialog::setBlurRadius(int r) {
+    if (m_sliderBlurRadius) m_sliderBlurRadius->setValue(r);
+}
+
+int FocusBlurDialog::focusRange() const {
+    return m_sliderFocusRange ? m_sliderFocusRange->value() : 30;
+}
+
+void FocusBlurDialog::setFocusRange(int r) {
+    if (m_sliderFocusRange) m_sliderFocusRange->setValue(r);
+}
+
+int FocusBlurDialog::feather() const {
+    return m_sliderFeather ? m_sliderFeather->value() : 25;
+}
+
+void FocusBlurDialog::setFeather(int f) {
+    if (m_sliderFeather) m_sliderFeather->setValue(f);
+}
+
 void FocusBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
     int blurR = m_sliderBlurRadius ? m_sliderBlurRadius->value() : 15;
     float focusR = (m_sliderFocusRange ? m_sliderFocusRange->value() : 30) / 100.0f;
@@ -335,6 +410,12 @@ void FocusBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
 BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Brightness / Contrast"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/BrightnessContrast");
+    int initB = settings.value("brightness", 0).toInt();
+    int initC = settings.value("contrast", 0).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
@@ -342,10 +423,10 @@ BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* 
     auto layB = new QHBoxLayout();
     m_sliderBrightness = new QSlider(Qt::Horizontal, controls);
     m_sliderBrightness->setRange(-100, 100);
-    m_sliderBrightness->setValue(0);
+    m_sliderBrightness->setValue(initB);
     m_spinBrightness = new QSpinBox(controls);
     m_spinBrightness->setRange(-100, 100);
-    m_spinBrightness->setValue(0);
+    m_spinBrightness->setValue(initB);
     layB->addWidget(m_sliderBrightness);
     layB->addWidget(m_spinBrightness);
     form->addRow(tr("Brightness:"), layB);
@@ -354,10 +435,10 @@ BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* 
     auto layC = new QHBoxLayout();
     m_sliderContrast = new QSlider(Qt::Horizontal, controls);
     m_sliderContrast->setRange(-100, 100);
-    m_sliderContrast->setValue(0);
+    m_sliderContrast->setValue(initC);
     m_spinContrast = new QSpinBox(controls);
     m_spinContrast->setRange(-100, 100);
-    m_spinContrast->setValue(0);
+    m_spinContrast->setValue(initC);
     layC->addWidget(m_sliderContrast);
     layC->addWidget(m_spinContrast);
     form->addRow(tr("Contrast:"), layC);
@@ -378,6 +459,32 @@ BrightnessContrastDialog::BrightnessContrastDialog(Document* doc, CanvasWidget* 
     updatePreview();
 }
 
+void BrightnessContrastDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/BrightnessContrast");
+    settings.setValue("brightness", m_sliderBrightness ? m_sliderBrightness->value() : 0);
+    settings.setValue("contrast", m_sliderContrast ? m_sliderContrast->value() : 0);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int BrightnessContrastDialog::brightness() const {
+    return m_sliderBrightness ? m_sliderBrightness->value() : 0;
+}
+
+void BrightnessContrastDialog::setBrightness(int b) {
+    if (m_sliderBrightness) m_sliderBrightness->setValue(b);
+}
+
+int BrightnessContrastDialog::contrast() const {
+    return m_sliderContrast ? m_sliderContrast->value() : 0;
+}
+
+void BrightnessContrastDialog::setContrast(int c) {
+    if (m_sliderContrast) m_sliderContrast->setValue(c);
+}
+
 void BrightnessContrastDialog::applyFilterToImage(const QImage& src, QImage& out) {
     float b = m_sliderBrightness ? static_cast<float>(m_sliderBrightness->value()) : 0.0f;
     float c = m_sliderContrast ? static_cast<float>(m_sliderContrast->value()) : 0.0f;
@@ -390,6 +497,13 @@ void BrightnessContrastDialog::applyFilterToImage(const QImage& src, QImage& out
 HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Hue / Saturation / Value"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/HueSaturation");
+    int initH = settings.value("hue", 0).toInt();
+    int initS = settings.value("saturation", 0).toInt();
+    int initL = settings.value("lightness", 0).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
@@ -397,10 +511,10 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     auto layH = new QHBoxLayout();
     m_sliderHue = new QSlider(Qt::Horizontal, controls);
     m_sliderHue->setRange(-180, 180);
-    m_sliderHue->setValue(0);
+    m_sliderHue->setValue(initH);
     m_spinHue = new QSpinBox(controls);
     m_spinHue->setRange(-180, 180);
-    m_spinHue->setValue(0);
+    m_spinHue->setValue(initH);
     m_spinHue->setSuffix("°");
     layH->addWidget(m_sliderHue);
     layH->addWidget(m_spinHue);
@@ -410,10 +524,10 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     auto layS = new QHBoxLayout();
     m_sliderSat = new QSlider(Qt::Horizontal, controls);
     m_sliderSat->setRange(-100, 100);
-    m_sliderSat->setValue(0);
+    m_sliderSat->setValue(initS);
     m_spinSat = new QSpinBox(controls);
     m_spinSat->setRange(-100, 100);
-    m_spinSat->setValue(0);
+    m_spinSat->setValue(initS);
     layS->addWidget(m_sliderSat);
     layS->addWidget(m_spinSat);
     form->addRow(tr("Saturation:"), layS);
@@ -422,10 +536,10 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     auto layL = new QHBoxLayout();
     m_sliderLight = new QSlider(Qt::Horizontal, controls);
     m_sliderLight->setRange(-100, 100);
-    m_sliderLight->setValue(0);
+    m_sliderLight->setValue(initL);
     m_spinLight = new QSpinBox(controls);
     m_spinLight->setRange(-100, 100);
-    m_spinLight->setValue(0);
+    m_spinLight->setValue(initL);
     layL->addWidget(m_sliderLight);
     layL->addWidget(m_spinLight);
     form->addRow(tr("Value:"), layL);
@@ -450,6 +564,41 @@ HueSaturationDialog::HueSaturationDialog(Document* doc, CanvasWidget* canvas, QW
     updatePreview();
 }
 
+void HueSaturationDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/HueSaturation");
+    settings.setValue("hue", m_sliderHue ? m_sliderHue->value() : 0);
+    settings.setValue("saturation", m_sliderSat ? m_sliderSat->value() : 0);
+    settings.setValue("lightness", m_sliderLight ? m_sliderLight->value() : 0);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int HueSaturationDialog::hue() const {
+    return m_sliderHue ? m_sliderHue->value() : 0;
+}
+
+void HueSaturationDialog::setHue(int h) {
+    if (m_sliderHue) m_sliderHue->setValue(h);
+}
+
+int HueSaturationDialog::saturation() const {
+    return m_sliderSat ? m_sliderSat->value() : 0;
+}
+
+void HueSaturationDialog::setSaturation(int s) {
+    if (m_sliderSat) m_sliderSat->setValue(s);
+}
+
+int HueSaturationDialog::lightness() const {
+    return m_sliderLight ? m_sliderLight->value() : 0;
+}
+
+void HueSaturationDialog::setLightness(int l) {
+    if (m_sliderLight) m_sliderLight->setValue(l);
+}
+
 void HueSaturationDialog::applyFilterToImage(const QImage& src, QImage& out) {
     float h = m_sliderHue ? static_cast<float>(m_sliderHue->value()) : 0.0f;
     float s = m_sliderSat ? static_cast<float>(m_sliderSat->value()) : 0.0f;
@@ -468,6 +617,28 @@ ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* p
         m_curves[i] = { QPointF(0.0, 0.0), QPointF(255.0, 255.0) };
     }
 
+    QSettings settings;
+    settings.beginGroup("Filters/ToneCurve");
+    QByteArray data = settings.value("curves").toByteArray();
+    if (!data.isEmpty()) {
+        QDataStream in(&data, QIODevice::ReadOnly);
+        for (int i = 0; i < 4 && !in.atEnd(); ++i) {
+            qint32 count = 0;
+            in >> count;
+            if (count >= 2 && count <= 50) {
+                std::vector<QPointF> pts;
+                for (int j = 0; j < count; ++j) {
+                    double x = 0.0, y = 0.0;
+                    in >> x >> y;
+                    pts.emplace_back(x, y);
+                }
+                m_curves[i] = pts;
+            }
+        }
+    }
+    int savedChannel = settings.value("channel", 0).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto vbox = new QVBoxLayout(controls);
     vbox->setContentsMargins(0, 0, 0, 0);
@@ -481,6 +652,9 @@ ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     m_channelCombo->addItem(tr("Red (R)"), static_cast<int>(AdjustmentChannel::Red));
     m_channelCombo->addItem(tr("Green (G)"), static_cast<int>(AdjustmentChannel::Green));
     m_channelCombo->addItem(tr("Blue (B)"), static_cast<int>(AdjustmentChannel::Blue));
+    if (savedChannel >= 0 && savedChannel < m_channelCombo->count()) {
+        m_channelCombo->setCurrentIndex(savedChannel);
+    }
     topBar->addWidget(m_channelCombo);
 
     auto btnReset = new QPushButton(tr("Reset"), controls);
@@ -490,6 +664,12 @@ ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* p
 
     m_curveWidget = new ToneCurveWidget(controls);
     m_curveWidget->setMinimumSize(256, 256);
+    for (int i = 0; i < 4; ++i) {
+        m_curveWidget->setCurvePoints(static_cast<AdjustmentChannel>(i), m_curves[i]);
+    }
+    if (savedChannel >= 0 && savedChannel < 4) {
+        m_curveWidget->setCurrentChannel(static_cast<AdjustmentChannel>(savedChannel));
+    }
     vbox->addWidget(m_curveWidget);
 
     connect(m_channelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx) {
@@ -515,6 +695,34 @@ ToneCurveDialog::ToneCurveDialog(Document* doc, CanvasWidget* canvas, QWidget* p
     updatePreview();
 }
 
+void ToneCurveDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/ToneCurve");
+    QByteArray data;
+    QDataStream out(&data, QIODevice::WriteOnly);
+    for (int i = 0; i < 4; ++i) {
+        out << static_cast<qint32>(m_curves[i].size());
+        for (const auto& pt : m_curves[i]) {
+            out << pt.x() << pt.y();
+        }
+    }
+    settings.setValue("curves", data);
+    settings.setValue("channel", m_channelCombo ? m_channelCombo->currentIndex() : 0);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int ToneCurveDialog::channelIndex() const {
+    return m_channelCombo ? m_channelCombo->currentIndex() : 0;
+}
+
+void ToneCurveDialog::setChannelIndex(int idx) {
+    if (m_channelCombo && idx >= 0 && idx < m_channelCombo->count()) {
+        m_channelCombo->setCurrentIndex(idx);
+    }
+}
+
 void ToneCurveDialog::applyFilterToImage(const QImage& src, QImage& out) {
     out = FilterProcessor::applyToneCurve(src, m_curves, CurveInterpolationMode::Spline);
 }
@@ -525,6 +733,12 @@ void ToneCurveDialog::applyFilterToImage(const QImage& src, QImage& out) {
 MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Motion Blur"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/MotionBlur");
+    int savedDist = settings.value("distance", 10).toInt();
+    int savedAngle = settings.value("angle", 0).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
@@ -532,10 +746,10 @@ MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget*
     auto layDist = new QHBoxLayout();
     m_sliderDistance = new QSlider(Qt::Horizontal, controls);
     m_sliderDistance->setRange(1, 100);
-    m_sliderDistance->setValue(10);
+    m_sliderDistance->setValue(savedDist);
     m_spinDistance = new QSpinBox(controls);
     m_spinDistance->setRange(1, 100);
-    m_spinDistance->setValue(10);
+    m_spinDistance->setValue(savedDist);
     m_spinDistance->setMinimumWidth(75);
     layDist->addWidget(m_sliderDistance);
     layDist->addWidget(m_spinDistance);
@@ -545,10 +759,10 @@ MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget*
     auto layAng = new QHBoxLayout();
     m_sliderAngle = new QSlider(Qt::Horizontal, controls);
     m_sliderAngle->setRange(-180, 180);
-    m_sliderAngle->setValue(0);
+    m_sliderAngle->setValue(savedAngle);
     m_spinAngle = new QSpinBox(controls);
     m_spinAngle->setRange(-180, 180);
-    m_spinAngle->setValue(0);
+    m_spinAngle->setValue(savedAngle);
     m_spinAngle->setMinimumWidth(75);
     layAng->addWidget(m_sliderAngle);
     layAng->addWidget(m_spinAngle);
@@ -568,6 +782,32 @@ MotionBlurDialog::MotionBlurDialog(Document* doc, CanvasWidget* canvas, QWidget*
     resize(380, 140);
 
     updatePreview();
+}
+
+void MotionBlurDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/MotionBlur");
+    settings.setValue("distance", m_sliderDistance ? m_sliderDistance->value() : 10);
+    settings.setValue("angle", m_sliderAngle ? m_sliderAngle->value() : 0);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
+int MotionBlurDialog::distance() const {
+    return m_sliderDistance ? m_sliderDistance->value() : 10;
+}
+
+void MotionBlurDialog::setDistance(int d) {
+    if (m_sliderDistance) m_sliderDistance->setValue(d);
+}
+
+int MotionBlurDialog::angle() const {
+    return m_sliderAngle ? m_sliderAngle->value() : 0;
+}
+
+void MotionBlurDialog::setAngle(int a) {
+    if (m_sliderAngle) m_sliderAngle->setValue(a);
 }
 
 void MotionBlurDialog::applyFilterToImage(const QImage& src, QImage& out) {
@@ -608,6 +848,23 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
         { {0.0f, QColor(90, 110, 160)}, {0.5f, QColor(210, 140, 180)}, {1.0f, QColor(255, 240, 220)} }
     };
 
+    QSettings settings;
+    settings.beginGroup("Filters/GradientMap");
+    int savedMode = settings.value("modeIndex", 0).toInt();
+    QString col1Hex = settings.value("color1").toString();
+    QString col2Hex = settings.value("color2").toString();
+    if (!col1Hex.isEmpty()) {
+        QColor c(col1Hex);
+        if (c.isValid()) m_color1 = c;
+    }
+    if (!col2Hex.isEmpty()) {
+        QColor c(col2Hex);
+        if (c.isValid()) m_color2 = c;
+    }
+    bool savedReverse = settings.value("reverse", false).toBool();
+    int savedOpacity = settings.value("opacity", 100).toInt();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
 
@@ -623,6 +880,9 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
     m_comboPreset->addItem(tr("Thermal"));
     m_comboPreset->addItem(tr("Forest"));
     m_comboPreset->addItem(tr("Pastel"));
+    if (savedMode >= 0 && savedMode < m_comboPreset->count()) {
+        m_comboPreset->setCurrentIndex(savedMode);
+    }
     form->addRow(tr("モード:"), m_comboPreset);
 
     // 選択2色時の色選択ボタン
@@ -659,16 +919,17 @@ GradientMapDialog::GradientMapDialog(Document* doc, CanvasWidget* canvas, QWidge
 
     // 反転
     m_chkReverse = new QCheckBox(tr("Reverse Gradient"), controls);
+    m_chkReverse->setChecked(savedReverse);
     form->addRow(QString(), m_chkReverse);
 
     // 不透明度
     auto layOp = new QHBoxLayout();
     m_sliderOpacity = new QSlider(Qt::Horizontal, controls);
     m_sliderOpacity->setRange(0, 100);
-    m_sliderOpacity->setValue(100);
+    m_sliderOpacity->setValue(savedOpacity);
     m_spinOpacity = new QSpinBox(controls);
     m_spinOpacity->setRange(0, 100);
-    m_spinOpacity->setValue(100);
+    m_spinOpacity->setValue(savedOpacity);
     m_spinOpacity->setSuffix("%");
     m_spinOpacity->setMinimumWidth(75);
     layOp->addWidget(m_sliderOpacity);
@@ -801,12 +1062,36 @@ void GradientMapDialog::applyFilterToImage(const QImage& src, QImage& out) {
     out = FilterProcessor::applyGradientMap(src, stops, rev, op);
 }
 
+void GradientMapDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/GradientMap");
+    settings.setValue("modeIndex", m_comboPreset ? m_comboPreset->currentIndex() : 0);
+    settings.setValue("color1", m_color1.name(QColor::HexArgb));
+    settings.setValue("color2", m_color2.name(QColor::HexArgb));
+    settings.setValue("reverse", m_chkReverse ? m_chkReverse->isChecked() : false);
+    settings.setValue("opacity", m_sliderOpacity ? m_sliderOpacity->value() : 100);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
+}
+
 // ----------------------------------------------------------------------------
 // 8. ColorToAlphaDialog (色を透明度に - GIMP互換)
 // ----------------------------------------------------------------------------
 ColorToAlphaDialog::ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWidget* parent)
     : FilterBaseDialog(doc, canvas, tr("Color to Alpha"), parent)
 {
+    QSettings settings;
+    settings.beginGroup("Filters/ColorToAlpha");
+    QString savedColorHex = settings.value("targetColor").toString();
+    if (!savedColorHex.isEmpty()) {
+        QColor c(savedColorHex);
+        if (c.isValid()) m_targetColor = c;
+    }
+    double savedTrans = settings.value("transThreshold", 0.0).toDouble();
+    double savedOp = settings.value("opacityThreshold", 1.0).toDouble();
+    settings.endGroup();
+
     auto controls = new QWidget(this);
     auto form = new QFormLayout(controls);
     form->setContentsMargins(0, 0, 0, 0);
@@ -831,13 +1116,13 @@ ColorToAlphaDialog::ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWid
     auto layTrans = new QHBoxLayout();
     m_sliderTransThreshold = new QSlider(Qt::Horizontal, controls);
     m_sliderTransThreshold->setRange(0, 1000);
-    m_sliderTransThreshold->setValue(0);
+    m_sliderTransThreshold->setValue(static_cast<int>(savedTrans * 1000.0 + 0.5));
 
     m_spinTransThreshold = new QDoubleSpinBox(controls);
     m_spinTransThreshold->setRange(0.0, 1.0);
     m_spinTransThreshold->setSingleStep(0.01);
     m_spinTransThreshold->setDecimals(3);
-    m_spinTransThreshold->setValue(0.0);
+    m_spinTransThreshold->setValue(savedTrans);
 
     layTrans->addWidget(m_sliderTransThreshold);
     layTrans->addWidget(m_spinTransThreshold);
@@ -847,13 +1132,13 @@ ColorToAlphaDialog::ColorToAlphaDialog(Document* doc, CanvasWidget* canvas, QWid
     auto layOp = new QHBoxLayout();
     m_sliderOpacityThreshold = new QSlider(Qt::Horizontal, controls);
     m_sliderOpacityThreshold->setRange(0, 1000);
-    m_sliderOpacityThreshold->setValue(1000);
+    m_sliderOpacityThreshold->setValue(static_cast<int>(savedOp * 1000.0 + 0.5));
 
     m_spinOpacityThreshold = new QDoubleSpinBox(controls);
     m_spinOpacityThreshold->setRange(0.0, 1.0);
     m_spinOpacityThreshold->setSingleStep(0.01);
     m_spinOpacityThreshold->setDecimals(3);
-    m_spinOpacityThreshold->setValue(1.0);
+    m_spinOpacityThreshold->setValue(savedOp);
 
     layOp->addWidget(m_sliderOpacityThreshold);
     layOp->addWidget(m_spinOpacityThreshold);
@@ -940,6 +1225,17 @@ void ColorToAlphaDialog::applyFilterToImage(const QImage& src, QImage& out) {
     float tLow = transparencyThreshold();
     float tHigh = opacityThreshold();
     out = FilterProcessor::colorToAlpha(src, m_targetColor, tLow, tHigh);
+}
+
+void ColorToAlphaDialog::accept() {
+    QSettings settings;
+    settings.beginGroup("Filters/ColorToAlpha");
+    settings.setValue("targetColor", m_targetColor.name(QColor::HexArgb));
+    settings.setValue("transThreshold", m_spinTransThreshold ? m_spinTransThreshold->value() : 0.0);
+    settings.setValue("opacityThreshold", m_spinOpacityThreshold ? m_spinOpacityThreshold->value() : 1.0);
+    settings.endGroup();
+
+    FilterBaseDialog::accept();
 }
 
 } // namespace Kaburagi

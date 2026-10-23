@@ -2,12 +2,15 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QMenu>
+#include <QMimeData>
+#include <QDropEvent>
 #include <cassert>
 #include <iostream>
 #include "Document.hpp"
 #include "LayerPanelWidget.hpp"
 #include "CanvasWidget.hpp"
 #include "SpinScaleWidget.hpp"
+#include "FilterDialogs.hpp"
 
 using namespace Kaburagi;
 
@@ -587,6 +590,171 @@ int main(int argc, char** argv) {
         assert(updatedLines[1].contains("不透明度: 42%"));
 
         std::cout << "[PASS] Layer item displays opacity on second row and updates in real-time!" << std::endl;
+    }
+
+    {
+        std::cout << "[TEST] Testing dropping layer immediately below GroupLayer onto group without order change..." << std::endl;
+        Document testDoc(200, 200);
+        // Default doc has 背景 (0), レイヤー 1 (1)
+        // Add a group layer:
+        auto grp = testDoc.addGroupLayer(); // doc index 2
+        // Add a raster layer above group:
+        auto topLayer = testDoc.addRasterLayer(); // doc index 3
+        // So in Document: 0: 背景, 1: レイヤー 1, 2: グループ 1, 3: レイヤー 2
+        // In LayerListWidget (reversed):
+        // row 0: レイヤー 2 (doc 3)
+        // row 1: グループ 1 (doc 2)
+        // row 2: レイヤー 1 (doc 1) - immediately below グループ 1
+        // row 3: 背景 (doc 0)
+
+        LayerPanelWidget panel;
+        panel.setDocument(&testDoc);
+        panel.resize(300, 400);
+        panel.show();
+        app.processEvents();
+
+        auto listWidget = panel.findChild<LayerListWidget*>();
+        assert(listWidget != nullptr);
+        assert(listWidget->count() == 4);
+
+        assert(testDoc.getLayer(1)->parentGroup() == nullptr);
+
+        // row 2 is "レイヤー 1", row 1 is "グループ 1"
+        auto itemGroup = listWidget->item(1);
+        auto itemLayer1 = listWidget->item(2);
+        QRect rectGroup = listWidget->visualItemRect(itemGroup);
+        // Point in the bottom half of itemGroup (e.g., bottom - 2):
+        QPoint dropPos(rectGroup.center().x(), rectGroup.bottom() - 2);
+
+        // Simulate drop event on listWidget:
+        listWidget->setDragStartRow(2); // fromRow = 2 ("レイヤー 1")
+        listWidget->setDropSlot(2);     // slot = 2 -> newRow = 2 (order doesn't change)
+        QMimeData mime;
+        mime.setData("application/x-kaburagi-layer", "2");
+        QDropEvent dropEv(dropPos, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        listWidget->executeDrop(&dropEv);
+        app.processEvents();
+
+        // Verify that layer 1 is now a child of グループ 1!
+        assert(testDoc.getLayer(1)->parentGroup() == grp);
+        assert(grp->isExpanded() == true);
+        std::cout << "[PASS] Layer immediately below GroupLayer dropped onto group was added to the group!" << std::endl;
+
+        // Test Undo
+        assert(testDoc.undoStack() != nullptr);
+        testDoc.undoStack()->undo();
+        app.processEvents();
+        assert(testDoc.getLayer(1)->parentGroup() == nullptr);
+        std::cout << "[PASS] Undo reverted group membership!" << std::endl;
+
+        // Test Redo
+        testDoc.undoStack()->redo();
+        app.processEvents();
+        assert(testDoc.getLayer(1)->parentGroup() == grp);
+        std::cout << "[PASS] Redo restored group membership!" << std::endl;
+    }
+
+    {
+        std::cout << "[TEST] Testing Filter Dialogs settings persistence..." << std::endl;
+        Document testDoc(200, 200);
+
+        // 1. GaussianBlurDialog
+        {
+            GaussianBlurDialog dlg(&testDoc, nullptr);
+            dlg.setRadius(28);
+            dlg.accept();
+        }
+        {
+            GaussianBlurDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.radius() == 28);
+            std::cout << "[PASS] Gaussian Blur remembered radius 28!" << std::endl;
+        }
+
+        // 2. FocusBlurDialog
+        {
+            FocusBlurDialog dlg(&testDoc, nullptr);
+            dlg.setBlurRadius(35);
+            dlg.setFocusRange(45);
+            dlg.accept();
+        }
+        {
+            FocusBlurDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.blurRadius() == 35);
+            assert(dlg2.focusRange() == 45);
+            std::cout << "[PASS] Focus Blur remembered radius and focus range!" << std::endl;
+        }
+
+        // 3. BrightnessContrastDialog
+        {
+            BrightnessContrastDialog dlg(&testDoc, nullptr);
+            dlg.setBrightness(42);
+            dlg.setContrast(-15);
+            dlg.accept();
+        }
+        {
+            BrightnessContrastDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.brightness() == 42);
+            assert(dlg2.contrast() == -15);
+            std::cout << "[PASS] Brightness/Contrast remembered settings!" << std::endl;
+        }
+
+        // 4. HueSaturationDialog
+        {
+            HueSaturationDialog dlg(&testDoc, nullptr);
+            dlg.setHue(30);
+            dlg.setSaturation(-25);
+            dlg.setLightness(12);
+            dlg.accept();
+        }
+        {
+            HueSaturationDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.hue() == 30);
+            assert(dlg2.saturation() == -25);
+            assert(dlg2.lightness() == 12);
+            std::cout << "[PASS] Hue/Saturation/Lightness remembered settings!" << std::endl;
+        }
+
+        // 5. MotionBlurDialog
+        {
+            MotionBlurDialog dlg(&testDoc, nullptr);
+            dlg.setDistance(55);
+            dlg.setAngle(45);
+            dlg.accept();
+        }
+        {
+            MotionBlurDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.distance() == 55);
+            assert(dlg2.angle() == 45);
+            std::cout << "[PASS] Motion Blur remembered distance and angle!" << std::endl;
+        }
+
+        // 6. GradientMapDialog
+        {
+            GradientMapDialog dlg(&testDoc, nullptr);
+            dlg.setModeIndex(1); // 選択2色
+            dlg.setColor1(QColor(255, 0, 0));
+            dlg.setColor2(QColor(0, 0, 255));
+            dlg.accept();
+        }
+        {
+            GradientMapDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.modeIndex() == 1);
+            assert(dlg2.color1() == QColor(255, 0, 0));
+            assert(dlg2.color2() == QColor(0, 0, 255));
+            std::cout << "[PASS] Gradient Map remembered mode and colors!" << std::endl;
+        }
+
+        // 7. ColorToAlphaDialog
+        {
+            ColorToAlphaDialog dlg(&testDoc, nullptr);
+            dlg.setTargetColor(QColor(0, 255, 0));
+            dlg.accept();
+        }
+        {
+            ColorToAlphaDialog dlg2(&testDoc, nullptr);
+            assert(dlg2.targetColor() == QColor(0, 255, 0));
+            std::cout << "[PASS] Color to Alpha remembered target color!" << std::endl;
+        }
     }
 
     std::cout << "[ALL LAYER PANEL TESTS PASSED SUCCESSFULLY!]" << std::endl;

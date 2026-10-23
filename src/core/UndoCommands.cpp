@@ -306,6 +306,53 @@ void MoveLayerCommand::redo() {
     m_doc->setUndoRedoInProgress(false);
 }
 
+ChangeLayerParentGroupCommand::ChangeLayerParentGroupCommand(Document* doc, LayerPtr layer, std::shared_ptr<GroupLayer> oldParent, std::shared_ptr<GroupLayer> newParent, QUndoCommand* parent)
+    : QUndoCommand("グループ変更", parent)
+    , m_doc(doc)
+    , m_layer(layer)
+    , m_oldParent(oldParent)
+    , m_newParent(newParent)
+{
+}
+
+void ChangeLayerParentGroupCommand::undo() {
+    if (!m_doc || !m_layer) return;
+    const auto& layers = m_doc->layers();
+    int idx = -1;
+    for (size_t i = 0; i < layers.size(); ++i) {
+        if (layers[i] == m_layer) {
+            idx = static_cast<int>(i);
+            break;
+        }
+    }
+    if (idx != -1) {
+        m_doc->setUndoRedoInProgress(true);
+        m_doc->setLayerParentGroup(idx, m_oldParent);
+        m_doc->setUndoRedoInProgress(false);
+    }
+}
+
+void ChangeLayerParentGroupCommand::redo() {
+    if (m_firstRun) {
+        m_firstRun = false;
+        return;
+    }
+    if (!m_doc || !m_layer) return;
+    const auto& layers = m_doc->layers();
+    int idx = -1;
+    for (size_t i = 0; i < layers.size(); ++i) {
+        if (layers[i] == m_layer) {
+            idx = static_cast<int>(i);
+            break;
+        }
+    }
+    if (idx != -1) {
+        m_doc->setUndoRedoInProgress(true);
+        m_doc->setLayerParentGroup(idx, m_newParent);
+        m_doc->setUndoRedoInProgress(false);
+    }
+}
+
 AddTextBalloonCommand::AddTextBalloonCommand(Document* doc, int layerIndex, const TextBalloonItem& item, QUndoCommand* parent)
     : QUndoCommand("吹き出し追加", parent)
     , m_doc(doc)

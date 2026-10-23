@@ -179,6 +179,24 @@ private:
 };
 
 /**
+ * @brief レイヤーの親グループ変更コマンド
+ */
+class ChangeLayerParentGroupCommand : public QUndoCommand {
+public:
+    ChangeLayerParentGroupCommand(Document* doc, LayerPtr layer, std::shared_ptr<GroupLayer> oldParent, std::shared_ptr<GroupLayer> newParent, QUndoCommand* parent = nullptr);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Document* m_doc;
+    LayerPtr m_layer;
+    std::shared_ptr<GroupLayer> m_oldParent;
+    std::shared_ptr<GroupLayer> m_newParent;
+    bool m_firstRun = true;
+};
+
+/**
  * @brief 吹き出し・テキスト追加コマンド
  */
 class AddTextBalloonCommand : public QUndoCommand {

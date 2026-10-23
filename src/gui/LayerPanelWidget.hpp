@@ -42,6 +42,7 @@ public:
     int dragStartRow() const { return m_dragStartRow; }
     void setMockCursorPos(const std::optional<QPoint>& pt) { m_mockCursorPos = pt; }
     int getBackgroundRow() const;
+    void executeDrop(QDropEvent* event) { dropEvent(event); }
 
 signals:
     void layerReordered(int fromRow, int toRow);

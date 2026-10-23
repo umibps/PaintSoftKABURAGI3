@@ -643,22 +643,32 @@ void LayerListWidget::dropEvent(QDropEvent* event) {
     m_dropSlot = -1;
     viewport()->update();
 
+    QPoint dropPos = event->position().toPoint();
+    if (m_mockCursorPos.has_value()) {
+        dropPos = viewport()->mapFromGlobal(*m_mockCursorPos);
+    }
+    QListWidgetItem* targetItem = itemAt(dropPos);
+    if (!targetItem && fromRow > 0) {
+        auto itemAbove = item(fromRow - 1);
+        if (itemAbove && visualItemRect(itemAbove).contains(dropPos)) {
+            targetItem = itemAbove;
+        }
+    }
+
     if (slot < 0) {
-        QPoint pos = event->position().toPoint();
-        QListWidgetItem* targetItem = itemAt(pos);
         slot = count();
         if (targetItem) {
             int targetRow = row(targetItem);
             QRect rect = visualItemRect(targetItem);
-            if (pos.y() < rect.center().y()) {
+            if (dropPos.y() < rect.center().y()) {
                 slot = targetRow;
             } else {
                 slot = targetRow + 1;
             }
         } else {
-            if (pos.y() <= 0) {
+            if (dropPos.y() <= 0) {
                 slot = 0;
-            } else if (pos.y() >= viewport()->height()) {
+            } else if (dropPos.y() >= viewport()->height()) {
                 slot = getBackgroundRow();
             }
         }
@@ -682,6 +692,43 @@ void LayerListWidget::dropEvent(QDropEvent* event) {
     event->accept();
 
     if (newRow == fromRow || fromRow < 0 || fromRow >= count() || newRow < 0 || newRow >= count()) {
+        if (newRow == fromRow && fromRow > 0 && fromRow < count()) {
+            if (m_panel && m_panel->document()) {
+                auto doc = m_panel->document();
+                int totalLayers = static_cast<int>(doc->layers().size());
+                if (count() == totalLayers) {
+                    int targetRow = targetItem ? row(targetItem) : -1;
+                    if (targetRow >= 0 && targetRow < fromRow) {
+                        int targetDocIdx = totalLayers - 1 - targetRow;
+                        auto grp = std::dynamic_pointer_cast<GroupLayer>(doc->getLayer(targetDocIdx));
+                        if (grp) {
+                            bool isImmediatelyBelow = true;
+                            for (int r = targetRow + 1; r < fromRow; ++r) {
+                                int dIdx = totalLayers - 1 - r;
+                                auto l = doc->getLayer(dIdx);
+                                if (!l || l->parentGroup() != grp) {
+                                    isImmediatelyBelow = false;
+                                    break;
+                                }
+                            }
+                            if (isImmediatelyBelow) {
+                                int fromDocIdx = totalLayers - 1 - fromRow;
+                                auto layer = doc->getLayer(fromDocIdx);
+                                if (layer && layer->parentGroup() != grp) {
+                                    grp->setExpanded(true);
+                                    auto oldParent = layer->parentGroup();
+                                    doc->setLayerParentGroup(fromDocIdx, grp);
+                                    if (doc->undoStack()) {
+                                        doc->undoStack()->push(new ChangeLayerParentGroupCommand(doc, layer, oldParent, grp));
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return;
     }
 
@@ -1321,8 +1368,12 @@ QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {
                 hasTargetGroups = true;
                 QString actTitle = g->name();
                 if (layer->parentGroup() == g) actTitle += " (所属中)";
-                groupMenu->addAction(actTitle, [this, layerIndex, g]() {
+                groupMenu->addAction(actTitle, [this, layerIndex, g, layer]() {
+                    auto oldParent = layer ? layer->parentGroup() : nullptr;
                     m_document->setLayerParentGroup(layerIndex, g);
+                    if (m_document->undoStack() && layer) {
+                        m_document->undoStack()->push(new ChangeLayerParentGroupCommand(m_document, layer, oldParent, g));
+                    }
                 });
             }
         }
@@ -1332,8 +1383,12 @@ QMenu* LayerPanelWidget::createContextMenu(const QPoint& pos) {
         act->setEnabled(false);
     }
     if (layer->parentGroup()) {
-        menu->addAction("グループから解除", [this, layerIndex]() {
+        menu->addAction("グループから解除", [this, layerIndex, layer]() {
+            auto oldParent = layer ? layer->parentGroup() : nullptr;
             m_document->setLayerParentGroup(layerIndex, nullptr);
+            if (m_document->undoStack() && layer) {
+                m_document->undoStack()->push(new ChangeLayerParentGroupCommand(m_document, layer, oldParent, nullptr));
+            }
         });
     }
 
