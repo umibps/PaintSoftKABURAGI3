@@ -697,29 +697,37 @@ void LayerListWidget::dropEvent(QDropEvent* event) {
                 auto doc = m_panel->document();
                 int totalLayers = static_cast<int>(doc->layers().size());
                 if (count() == totalLayers) {
-                    int targetRow = targetItem ? row(targetItem) : -1;
-                    if (targetRow >= 0 && targetRow < fromRow) {
-                        int targetDocIdx = totalLayers - 1 - targetRow;
-                        auto grp = std::dynamic_pointer_cast<GroupLayer>(doc->getLayer(targetDocIdx));
-                        if (grp) {
-                            bool isImmediatelyBelow = true;
-                            for (int r = targetRow + 1; r < fromRow; ++r) {
-                                int dIdx = totalLayers - 1 - r;
-                                auto l = doc->getLayer(dIdx);
-                                if (!l || l->parentGroup() != grp) {
-                                    isImmediatelyBelow = false;
-                                    break;
-                                }
+                    // 移動されたレイヤーの一つ上の可視レイヤーを探す
+                    int aboveRow = fromRow - 1;
+                    while (aboveRow >= 0 && isRowHidden(aboveRow)) {
+                        aboveRow--;
+                    }
+                    if (aboveRow >= 0) {
+                        int aboveDocIdx = totalLayers - 1 - aboveRow;
+                        auto layerAbove = doc->getLayer(aboveDocIdx);
+                        if (layerAbove) {
+                            std::shared_ptr<GroupLayer> targetGroup = nullptr;
+                            if (layerAbove->type() == LayerType::Group) {
+                                targetGroup = std::dynamic_pointer_cast<GroupLayer>(layerAbove);
+                            } else {
+                                targetGroup = layerAbove->parentGroup();
                             }
-                            if (isImmediatelyBelow) {
+
+                            if (targetGroup) {
                                 int fromDocIdx = totalLayers - 1 - fromRow;
                                 auto layer = doc->getLayer(fromDocIdx);
-                                if (layer && layer->parentGroup() != grp) {
-                                    grp->setExpanded(true);
+                                if (layer && layer->parentGroup() != targetGroup) {
+                                    // 先祖グループも含めて展開
+                                    auto cur = targetGroup;
+                                    while (cur) {
+                                        cur->setExpanded(true);
+                                        cur = cur->parentGroup();
+                                    }
+                                    doc->setActiveLayerIndex(fromDocIdx);
                                     auto oldParent = layer->parentGroup();
-                                    doc->setLayerParentGroup(fromDocIdx, grp);
+                                    doc->setLayerParentGroup(fromDocIdx, targetGroup);
                                     if (doc->undoStack()) {
-                                        doc->undoStack()->push(new ChangeLayerParentGroupCommand(doc, layer, oldParent, grp));
+                                        doc->undoStack()->push(new ChangeLayerParentGroupCommand(doc, layer, oldParent, targetGroup));
                                     }
                                     return;
                                 }

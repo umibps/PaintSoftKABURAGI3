@@ -655,6 +655,81 @@ int main(int argc, char** argv) {
     }
 
     {
+        std::cout << "[TEST] Testing dropping layer whose layer above is inside a group without order change..." << std::endl;
+        Document testDoc(200, 200);
+        // Default doc has 背景 (0), レイヤー 1 (1)
+        // Add a group layer:
+        auto grp = testDoc.addGroupLayer(); // doc index 2
+        // Put レイヤー 1 inside グループ 1:
+        testDoc.setLayerParentGroup(1, grp);
+        assert(testDoc.getLayer(1)->parentGroup() == grp);
+        // Add another raster layer "レイヤー 2" below the group in document or at bottom
+        // Let's add a raster layer and move it below レイヤー 1:
+        auto layer2 = testDoc.addRasterLayer("レイヤー 2"); // doc index 3
+        // Move doc 3 to doc 1 so layer 2 is below layer 1 in document (and therefore below layer 1 visually)
+        // Currently: 0: 背景, 1: レイヤー 1 (in grp), 2: グループ 1, 3: レイヤー 2
+        testDoc.moveLayer(3, 1);
+        // Now document is: 0: 背景, 1: レイヤー 2 (no group), 2: レイヤー 1 (in grp), 3: グループ 1
+        // In visual list (reversed):
+        // row 0: グループ 1 (doc 3)
+        // row 1: レイヤー 1 (doc 2, in grp)
+        // row 2: レイヤー 2 (doc 1, NO group)
+        // row 3: 背景 (doc 0)
+
+        LayerPanelWidget panel;
+        panel.setDocument(&testDoc);
+        panel.resize(300, 400);
+        panel.show();
+        app.processEvents();
+
+        auto listWidget = panel.findChild<LayerListWidget*>();
+        assert(listWidget != nullptr);
+        assert(listWidget->count() == 4);
+
+        int l2DocIdx = -1;
+        for (int i = 0; i < 4; ++i) {
+            if (testDoc.getLayer(i)->name() == "レイヤー 2") {
+                l2DocIdx = i;
+                break;
+            }
+        }
+        assert(l2DocIdx != -1);
+        assert(testDoc.getLayer(l2DocIdx)->parentGroup() == nullptr);
+
+        // row 2 is "レイヤー 2", row 1 is "レイヤー 1" (inside grp)
+        auto itemLayer2 = listWidget->item(2);
+        auto itemLayer1 = listWidget->item(1);
+        QRect rectLayer2 = listWidget->visualItemRect(itemLayer2);
+        QPoint dropPos = rectLayer2.center();
+
+        // Simulate drop event without changing order:
+        listWidget->setDragStartRow(2); // fromRow = 2 ("レイヤー 2")
+        listWidget->setDropSlot(2);     // slot = 2 -> newRow = 2 (order doesn't change)
+        QMimeData mime;
+        mime.setData("application/x-kaburagi-layer", "2");
+        QDropEvent dropEv(dropPos, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        listWidget->executeDrop(&dropEv);
+        app.processEvents();
+
+        // Verify that レイヤー 2 is now inside グループ 1!
+        assert(testDoc.getLayer(l2DocIdx)->parentGroup() == grp);
+        std::cout << "[PASS] Layer whose layer above was inside a group was added to that group on no-order-change drop!" << std::endl;
+
+        // Test Undo
+        assert(testDoc.undoStack() != nullptr);
+        testDoc.undoStack()->undo();
+        app.processEvents();
+        assert(testDoc.getLayer(l2DocIdx)->parentGroup() == nullptr);
+        std::cout << "[PASS] Undo reverted group membership!" << std::endl;
+
+        // Test Redo
+        testDoc.undoStack()->redo();
+        app.processEvents();
+        assert(testDoc.getLayer(l2DocIdx)->parentGroup() == grp);
+        std::cout << "[PASS] Redo restored group membership!" << std::endl;
+    }
+
+    {
         std::cout << "[TEST] Testing Filter Dialogs settings persistence..." << std::endl;
         Document testDoc(200, 200);
 
