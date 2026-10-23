@@ -57,6 +57,8 @@ class AiAssistantDockWidget;
 class PreviewWindow;
 class ReferenceImageWindow;
 class CanvasContainer;
+class PageProject;
+class PageManagerWidget;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -145,6 +147,14 @@ public slots:
     void onTogglePreviewWindow(bool checked);
     void onToggleReferenceImageWindow(bool checked);
     void onToggleSelectionEdit(bool checked);
+    void onNewProject();
+    void onOpenProject();
+    void onSaveProject();
+    void onCloseProject();
+    void onBatchExport();
+    void onProjectModified();
+    void openProject(const QString& kapPath);
+    void openPageInTab(int pageIndex, const QString& fullPath);
     void setDrawingColor(const QColor& color);
 
 public:
@@ -257,6 +267,9 @@ private:
     QDockWidget* m_navLayerDock = nullptr;
     QDockWidget* m_colorBrushDock = nullptr;
     AiAssistantDockWidget* m_aiAssistantDock = nullptr;
+    QDockWidget* m_pageManagerDock = nullptr;
+    PageManagerWidget* m_pageManager = nullptr;
+    std::shared_ptr<PageProject> m_currentProject = nullptr;
 
     QComboBox* m_smoothCombo = nullptr;
     QLabel* m_statusMemoryLabel = nullptr;
@@ -377,6 +390,9 @@ public:
     ToolBoxWidget* toolBox() const { return m_toolBox; }
     QStackedWidget* toolSettingsStack() const { return m_toolSettingsStack; }
     GradientSettingsWidget* gradientSettings() const { return m_gradientSettings; }
+    PageManagerWidget* pageManager() const { return m_pageManager; }
+    QDockWidget* pageManagerDock() const { return m_pageManagerDock; }
+    std::shared_ptr<PageProject> currentProject() const { return m_currentProject; }
     ToolType currentTool() const { return m_currentTool; }
     void onToolChangedForTest(ToolType tool) { onToolChanged(tool); }
     void setDocumentForTest(Document* doc) { setupDocument(doc); }

@@ -84,11 +84,19 @@ set(CORE_SOURCES
     src/core/FilterProcessor.cpp
     src/core/DisplayFilterManager.hpp
     src/core/DisplayFilterManager.cpp
+    src/core/PageProject.hpp
+    src/core/PageProject.cpp
 )
 
 set(GUI_SOURCES
     src/gui/MainWindow.hpp
     src/gui/MainWindow.cpp
+    src/gui/NewProjectDialog.hpp
+    src/gui/NewProjectDialog.cpp
+    src/gui/BatchExportDialog.hpp
+    src/gui/BatchExportDialog.cpp
+    src/gui/PageManagerWidget.hpp
+    src/gui/PageManagerWidget.cpp
     src/gui/PreviewWindow.hpp
     src/gui/PreviewWindow.cpp
     src/gui/ReferenceImageWindow.hpp
@@ -424,6 +432,18 @@ add_executable(test_ui_improvements
     ${GUI_SOURCES}
 )
 target_link_libraries(test_ui_improvements PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Network
+)
+
+add_executable(test_page_manager
+    tests/test_page_manager.cpp
+    ${CORE_SOURCES}
+    ${GUI_SOURCES}
+)
+target_link_libraries(test_page_manager PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

@@ -104,6 +104,7 @@ public:
     // コンポジット (全レイヤー合成)
     const TileManager& compositeBuffer() const { return m_compositeBuffer; }
     void composite(const QRect& dirtyRect = QRect());
+    QImage renderToImage();
     QColor samplePixel(int x, int y) const;
 
     // 選択範囲管理 (ピクセル単位 0〜255 グレースケールマスク)

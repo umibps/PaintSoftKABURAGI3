@@ -939,6 +939,11 @@ LayerPtr Document::findClippingBaseLayer(int layerIndex) const {
     return nullptr;
 }
 
+QImage Document::renderToImage() {
+    composite();
+    return m_compositeBuffer.toQImage();
+}
+
 void Document::composite(const QRect& dirtyRect) {
     QRect targetRect = dirtyRect.isEmpty() ? QRect(0, 0, m_width, m_height) : dirtyRect;
 

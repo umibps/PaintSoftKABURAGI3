@@ -43,6 +43,10 @@
 #include "SelectionDialogs.hpp"
 #include "MergePanelDialog.hpp"
 #include "SplitPanelDialog.hpp"
+#include "PageProject.hpp"
+#include "NewProjectDialog.hpp"
+#include "BatchExportDialog.hpp"
+#include "PageManagerWidget.hpp"
 
 namespace Kaburagi {
 
@@ -220,7 +224,9 @@ void MainWindow::createMenuBar() {
 
     auto fileMenu = menu->addMenu(tr("&File"));
     fileMenu->addAction(tr("&New Canvas..."), QKeySequence::New, this, &MainWindow::onNewCanvas);
+    fileMenu->addAction(tr("New &Multi-Page Project..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P), this, &MainWindow::onNewProject);
     fileMenu->addAction(tr("&Open..."), QKeySequence::Open, this, &MainWindow::onOpenCanvas);
+    fileMenu->addAction(tr("Open &Project (.kap)..."), this, &MainWindow::onOpenProject);
     m_recentFilesMenu = fileMenu->addMenu(tr("&Recent Files"));
     fileMenu->addSeparator();
     fileMenu->addAction(tr("&Save"), QKeySequence::Save, this, &MainWindow::onSaveCanvas);
@@ -374,6 +380,48 @@ void MainWindow::createMenuBar() {
 
     connect(canvasMenu, &QMenu::aboutToShow, this, &MainWindow::updateCanvasMenuActions);
     updateCanvasMenuActions();
+
+    auto pageMenu = menu->addMenu(tr("&Page"));
+    pageMenu->addAction(tr("Show &Page Manager Window"), this, [this]() {
+        if (m_pageManagerDock) {
+            m_pageManagerDock->show();
+            m_pageManagerDock->raise();
+        }
+    });
+    pageMenu->addSeparator();
+    pageMenu->addAction(tr("&New Multi-Page Project..."), this, &MainWindow::onNewProject);
+    pageMenu->addAction(tr("&Open Project (.kap)..."), this, &MainWindow::onOpenProject);
+    pageMenu->addAction(tr("&Save Project"), this, &MainWindow::onSaveProject);
+    pageMenu->addAction(tr("&Close Project"), this, &MainWindow::onCloseProject);
+    pageMenu->addSeparator();
+    pageMenu->addAction(tr("&Add Page"), this, [this]() {
+        if (m_pageManager) m_pageManager->onAddPage();
+    });
+    pageMenu->addAction(tr("&Insert Page"), this, [this]() {
+        if (m_pageManager) m_pageManager->onInsertPage();
+    });
+    pageMenu->addAction(tr("&Duplicate Page"), this, [this]() {
+        if (m_pageManager) m_pageManager->onDuplicatePage();
+    });
+    pageMenu->addAction(tr("&Delete Page"), this, [this]() {
+        if (m_pageManager) m_pageManager->onDeletePage();
+    });
+    pageMenu->addSeparator();
+    pageMenu->addAction(tr("Combine to &Spread (Two-Page)"), this, [this]() {
+        if (m_pageManager) m_pageManager->onCombineToSpread();
+    });
+    pageMenu->addAction(tr("Split &Spread into Single Pages"), this, [this]() {
+        if (m_pageManager) m_pageManager->onSplitSpread();
+    });
+    pageMenu->addSeparator();
+    pageMenu->addAction(tr("Import/Replace Page from &File..."), this, [this]() {
+        if (m_pageManager) m_pageManager->onImportPageFile();
+    });
+    pageMenu->addAction(tr("&Realign Page File Names"), this, [this]() {
+        if (m_pageManager) m_pageManager->onRealignFileNames();
+    });
+    pageMenu->addSeparator();
+    pageMenu->addAction(tr("&Batch Export..."), this, &MainWindow::onBatchExport);
 
     auto layerMenu = menu->addMenu(tr("&Layer"));
     m_newRasterLayerAction = layerMenu->addAction(tr("New &Raster Layer"), this, &MainWindow::onNewRasterLayer);
@@ -599,6 +647,27 @@ void MainWindow::createMenuBar() {
     colorMenu->addAction(tr("Float"), this, [this]() {
         m_colorBrushDock->setFloating(true);
         m_colorBrushDock->show();
+        saveSettings();
+    });
+
+    auto pageMgrMenu = windowMenu->addMenu(tr("Page &Manager"));
+    pageMgrMenu->addAction(m_pageManagerDock->toggleViewAction());
+    pageMgrMenu->addSeparator();
+    pageMgrMenu->addAction(tr("Dock to &Left"), this, [this]() {
+        m_pageManagerDock->setFloating(false);
+        addDockWidget(Qt::LeftDockWidgetArea, m_pageManagerDock);
+        m_pageManagerDock->show();
+        saveSettings();
+    });
+    pageMgrMenu->addAction(tr("Dock to &Right"), this, [this]() {
+        m_pageManagerDock->setFloating(false);
+        addDockWidget(Qt::RightDockWidgetArea, m_pageManagerDock);
+        m_pageManagerDock->show();
+        saveSettings();
+    });
+    pageMgrMenu->addAction(tr("Float"), this, [this]() {
+        m_pageManagerDock->setFloating(true);
+        m_pageManagerDock->show();
         saveSettings();
     });
 
@@ -1708,6 +1777,20 @@ void MainWindow::setupLayout() {
     connect(m_aiAssistantDock, &AiAssistantDockWidget::applyAsNewLayer, this, &MainWindow::onAiApplyAsNewLayer);
     connect(m_aiAssistantDock, &AiAssistantDockWidget::applyOverwriteSelection, this, &MainWindow::onAiApplyOverwriteSelection);
 
+    // ページ管理 ドック
+    m_pageManagerDock = new QDockWidget(tr("ページ管理"), this);
+    m_pageManagerDock->setObjectName("PageManagerDock");
+    m_pageManagerDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    m_pageManager = new PageManagerWidget(m_pageManagerDock);
+    m_pageManagerDock->setWidget(m_pageManager);
+    addDockWidget(Qt::LeftDockWidgetArea, m_pageManagerDock);
+    m_pageManagerDock->hide();
+
+    connect(m_pageManager, &PageManagerWidget::pageOpenRequested, this, &MainWindow::openPageInTab);
+    connect(m_pageManager, &PageManagerWidget::requestNewProject, this, &MainWindow::onNewProject);
+    connect(m_pageManager, &PageManagerWidget::requestBatchExport, this, &MainWindow::onBatchExport);
+    connect(m_pageManager, &PageManagerWidget::projectModified, this, &MainWindow::onProjectModified);
+
     // ドックウィジェットの配置変更（移動・フローティング切替・表示切替）時の設定永続化
     auto onDockLayoutChanged = [this]() {
         if (!m_isRestoringSettings) {
@@ -1725,6 +1808,10 @@ void MainWindow::setupLayout() {
     connect(m_aiAssistantDock, &QDockWidget::dockLocationChanged, this, onDockLayoutChanged);
     connect(m_aiAssistantDock, &QDockWidget::topLevelChanged, this, onDockLayoutChanged);
     connect(m_aiAssistantDock, &QDockWidget::visibilityChanged, this, onDockLayoutChanged);
+
+    connect(m_pageManagerDock, &QDockWidget::dockLocationChanged, this, onDockLayoutChanged);
+    connect(m_pageManagerDock, &QDockWidget::topLevelChanged, this, onDockLayoutChanged);
+    connect(m_pageManagerDock, &QDockWidget::visibilityChanged, this, onDockLayoutChanged);
 
     if (m_toolSplitter) {
         connect(m_toolSplitter, &QSplitter::splitterMoved, this, [this](int, int) {
@@ -1847,6 +1934,15 @@ void MainWindow::saveSettings() {
         settings.setValue("AiAssistant_width", m_aiAssistantDock->width());
         if (m_aiAssistantDock->isFloating()) {
             settings.setValue("AiAssistant_geometry", m_aiAssistantDock->geometry());
+        }
+    }
+    if (m_pageManagerDock) {
+        settings.setValue("PageManager_floating", m_pageManagerDock->isFloating());
+        settings.setValue("PageManager_visible", m_pageManagerDock->isVisible());
+        settings.setValue("PageManager_area", static_cast<int>(dockWidgetArea(m_pageManagerDock)));
+        settings.setValue("PageManager_width", m_pageManagerDock->width());
+        if (m_pageManagerDock->isFloating()) {
+            settings.setValue("PageManager_geometry", m_pageManagerDock->geometry());
         }
     }
     if (m_toolSplitter) {
@@ -3161,6 +3257,10 @@ void MainWindow::onTabChanged(int index) {
     m_currentFilePath = tab.currentFilePath;
     m_importedImagePath = tab.importedImagePath;
 
+    if (m_pageManager) {
+        m_pageManager->setCurrentPagePath(m_currentFilePath);
+    }
+
     if (m_canvasWidget) m_canvasWidget->setDocument(m_document);
     if (m_layerPanel) m_layerPanel->setDocument(m_document);
     if (m_navigator) m_navigator->setDocument(m_document);
@@ -3532,6 +3632,15 @@ bool MainWindow::onSaveCanvas() {
             updateTabTitle(m_currentTabIndex);
         }
         addRecentFile(m_currentFilePath);
+        if (m_currentProject && m_pageManager) {
+            for (int i = 0; i < m_currentProject->pageCount(); ++i) {
+                if (m_currentProject->pageFullPath(i) == m_currentFilePath) {
+                    m_currentProject->invalidateThumbnail(i);
+                    m_pageManager->refreshPageList();
+                    break;
+                }
+            }
+        }
         updateWindowTitle();
         statusBar()->showMessage(QString("キャンバスを保存しました: %1").arg(m_currentFilePath), 4000);
         return true;
@@ -3613,7 +3722,8 @@ bool MainWindow::onSaveAsCanvas() {
 }
 
 void MainWindow::onOpenCanvas() {
-    QString filter = "対応ファイル (*.kab *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp *.psd);;"
+    QString filter = "すべての対応ファイル (*.kab *.kap *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp *.psd);;"
+                     "ページ管理ファイル (*.kap);;"
                      "PaintSoft KABURAGI キャンバス (*.kab);;"
                      "すべての画像ファイル (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp *.psd);;"
                      "すべてのファイル (*.*)";
@@ -3625,6 +3735,11 @@ void MainWindow::onOpenCanvas() {
 
 void MainWindow::openFile(const QString& filePath) {
     if (filePath.isEmpty()) return;
+
+    if (filePath.endsWith(".kap", Qt::CaseInsensitive)) {
+        openProject(filePath);
+        return;
+    }
 
     if (filePath.endsWith(".kab", Qt::CaseInsensitive)) {
         QString errorMsg;
@@ -4868,6 +4983,149 @@ void MainWindow::onToggleSelectionEdit(bool checked) {
     if (m_canvasWidget) {
         m_canvasWidget->update();
     }
+}
+
+void MainWindow::onNewProject() {
+    NewProjectDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QString errorMsg;
+    auto proj = PageProject::createNewProject(
+        dlg.projectDirectory(),
+        dlg.projectName(),
+        dlg.pageCount(),
+        dlg.canvasWidth(),
+        dlg.canvasHeight(),
+        dlg.canvasDpi(),
+        dlg.bindingDirection(),
+        dlg.startFromRight(),
+        &errorMsg
+    );
+
+    if (!proj) {
+        QMessageBox::critical(this, tr("作成エラー"), QString::fromUtf8("作品の作成に失敗しました:\n%1").arg(errorMsg));
+        return;
+    }
+
+    m_currentProject = proj;
+    if (m_pageManager) {
+        m_pageManager->setProject(m_currentProject);
+    }
+    if (m_pageManagerDock) {
+        m_pageManagerDock->show();
+        m_pageManagerDock->raise();
+    }
+
+    statusBar()->showMessage(tr("作品「%1」を作成しました (%2 ページ)").arg(m_currentProject->name()).arg(m_currentProject->pageCount()), 4000);
+
+    if (m_currentProject->pageCount() > 0) {
+        openPageInTab(0, m_currentProject->pageFullPath(0));
+    }
+}
+
+void MainWindow::onOpenProject() {
+    QString filter = tr("ページ管理ファイル (*.kap);;すべてのファイル (*.*)");
+    QString filePath = QFileDialog::getOpenFileName(this, tr("作品を開く"), QString(), filter);
+    if (!filePath.isEmpty()) {
+        openProject(filePath);
+    }
+}
+
+void MainWindow::onSaveProject() {
+    if (!m_currentProject) {
+        QMessageBox::information(this, tr("情報"), tr("開かれている作品がありません。"));
+        return;
+    }
+    QString errorMsg;
+    if (m_currentProject->saveToFile(QString(), &errorMsg)) {
+        statusBar()->showMessage(tr("作品を保存しました: %1").arg(m_currentProject->projectFilePath()), 3000);
+    } else {
+        QMessageBox::critical(this, tr("保存エラー"), QString::fromUtf8("作品の保存に失敗しました:\n%1").arg(errorMsg));
+    }
+}
+
+void MainWindow::onCloseProject() {
+    if (!m_currentProject) return;
+
+    if (m_currentProject->isDirty()) {
+        auto reply = QMessageBox::question(
+            this,
+            tr("作品の保存"),
+            tr("作品の設定が変更されています。保存しますか？"),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+            QMessageBox::Save
+        );
+        if (reply == QMessageBox::Cancel) return;
+        if (reply == QMessageBox::Save) {
+            onSaveProject();
+        }
+    }
+
+    m_currentProject = nullptr;
+    if (m_pageManager) {
+        m_pageManager->setProject(nullptr);
+    }
+    if (m_pageManagerDock) {
+        m_pageManagerDock->hide();
+    }
+    statusBar()->showMessage(tr("作品を閉じました。"), 3000);
+}
+
+void MainWindow::onBatchExport() {
+    if (!m_currentProject) {
+        QMessageBox::information(this, tr("情報"), tr("一括書き出しを行う作品が開かれていません。"));
+        return;
+    }
+    BatchExportDialog dlg(m_currentProject, this);
+    dlg.exec();
+}
+
+void MainWindow::onProjectModified() {
+    if (m_currentProject) {
+        m_currentProject->saveToFile();
+    }
+}
+
+void MainWindow::openProject(const QString& kapPath) {
+    if (kapPath.isEmpty()) return;
+
+    QString errorMsg;
+    auto proj = PageProject::loadFromFile(kapPath, &errorMsg);
+    if (!proj) {
+        QMessageBox::critical(this, tr("読み込みエラー"), QString::fromUtf8("作品ファイルの読み込みに失敗しました:\n%1").arg(errorMsg));
+        return;
+    }
+
+    m_currentProject = proj;
+    if (m_pageManager) {
+        m_pageManager->setProject(m_currentProject);
+    }
+    if (m_pageManagerDock) {
+        m_pageManagerDock->show();
+        m_pageManagerDock->raise();
+    }
+
+    statusBar()->showMessage(tr("作品を開きました: %1 (%2 ページ)").arg(m_currentProject->name()).arg(m_currentProject->pageCount()), 4000);
+
+    if (m_currentProject->pageCount() > 0) {
+        openPageInTab(0, m_currentProject->pageFullPath(0));
+    }
+}
+
+void MainWindow::openPageInTab(int pageIndex, const QString& fullPath) {
+    Q_UNUSED(pageIndex);
+    if (fullPath.isEmpty()) return;
+
+    // 既に開いているタブがあればそのタブをアクティブにする
+    for (int i = 0; i < m_tabs.size(); ++i) {
+        if (m_tabs[i].currentFilePath == fullPath) {
+            m_tabWidget->setCurrentIndex(i);
+            return;
+        }
+    }
+
+    // まだ開いていない場合は新規タブとして開く
+    openFile(fullPath);
 }
 
 } // namespace Kaburagi
